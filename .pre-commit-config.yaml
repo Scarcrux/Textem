@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: swift-build
+        name: swift build
+        entry: swift build
+        language: system
+        pass_filenames: false
