@@ -41,6 +41,7 @@ bundle: build
 	@mkdir -p $(CONTENTS)/MacOS $(CONTENTS)/Resources
 	@cp $(BUILD_DIR)/$(BIN) $(CONTENTS)/MacOS/$(APP)
 	@cp Resources/Info.plist $(CONTENTS)/Info.plist
+	@cp Resources/AppIcon.icns $(CONTENTS)/Resources/AppIcon.icns
 	@# Ad-hoc sign so WKWebView/WebKit XPC services launch under a stable
 	@# identity. Replace with a real Developer ID for distribution.
 	@codesign --force --deep --sign - $(APP_BUNDLE) 2>/dev/null || true

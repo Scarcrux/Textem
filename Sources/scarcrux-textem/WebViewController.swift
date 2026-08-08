@@ -18,6 +18,9 @@ final class WebViewController: NSViewController {
     // Retain live popup windows (e.g. the Google verification popup) so they
     // aren't deallocated mid-flow.
     private var popups: [PopupWindowController] = []
+    // Drives the dock badge + new-message notifications off the page title.
+    private var titleObservation: NSKeyValueObservation?
+    private var lastUnreadCount = 0
 
     override func loadView() {
         let configuration = WKWebViewConfiguration()
@@ -50,8 +53,39 @@ final class WebViewController: NSViewController {
             webView.isInspectable = true
         }
 
+        // Google puts the unread count in the document title, e.g.
+        // "(3) Messages". Observe it to drive the badge/notifications without
+        // scraping the DOM.
+        titleObservation = webView.observe(\.title, options: [.new]) { [weak self] _, change in
+            // Read the title from the change (Sendable) and hop to the main
+            // actor rather than touching the isolated webView.title here.
+            let newTitle = change.newValue ?? nil
+            Task { @MainActor in self?.handleTitleChange(newTitle) }
+        }
+
         self.webView = webView
         self.view = webView
+    }
+
+    private func handleTitleChange(_ title: String?) {
+        let count = Self.parseUnreadCount(from: title)
+        NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
+
+        // Notify only when the count rises and Textem isn't the active app —
+        // no point pinging you about a thread you're already looking at.
+        if count > lastUnreadCount, !NSApp.isActive {
+            NotificationManager.shared.notifyNewMessages(newCount: count - lastUnreadCount)
+        }
+        lastUnreadCount = count
+    }
+
+    // Pull the integer out of a leading "(N)" in the title; 0 if absent.
+    static func parseUnreadCount(from title: String?) -> Int {
+        guard let title,
+              let open = title.firstIndex(of: "("),
+              let close = title[open...].firstIndex(of: ")") else { return 0 }
+        let inner = title[title.index(after: open)..<close]
+        return Int(inner) ?? 0
     }
 
     override func viewDidLoad() {

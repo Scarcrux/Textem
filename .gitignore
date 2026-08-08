@@ -21,3 +21,7 @@ DerivedData/
 
 # Build output bundle
 *.app/
+
+# Icon intermediates (regenerable from tools/make_icon.swift)
+tools/icon_1024.png
+tools/AppIcon.iconset/

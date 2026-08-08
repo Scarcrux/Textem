@@ -11,6 +11,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         windowController = controller
+
+        // Native notifications: clicking a banner refocuses the window.
+        NotificationManager.shared.configure { [weak self] in
+            self?.windowController?.showWindow(nil)
+            self?.windowController?.window?.makeKeyAndOrderFront(nil)
+        }
+        NotificationManager.shared.requestAuthorization()
     }
 
     // Re-open the window when the dock icon is clicked and nothing is visible.
