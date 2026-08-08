@@ -4,6 +4,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.mainMenu = MainMenu.build(appName: "Textem")
+
         let controller = MainWindowController()
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
