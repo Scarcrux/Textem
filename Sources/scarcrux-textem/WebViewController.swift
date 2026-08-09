@@ -18,9 +18,10 @@ final class WebViewController: NSViewController {
     // Retain live popup windows (e.g. the Google verification popup) so they
     // aren't deallocated mid-flow.
     private var popups: [PopupWindowController] = []
-    // Drives the dock badge + new-message notifications off the page title.
-    private var titleObservation: NSKeyValueObservation?
+    // Latest unread count reported by the JS bridge.
     private var lastUnreadCount = 0
+    // Notified whenever the unread count changes (drives the menu-bar item).
+    var onUnreadCountChanged: ((Int) -> Void)?
 
     override func loadView() {
         let configuration = WKWebViewConfiguration()
@@ -29,6 +30,15 @@ final class WebViewController: NSViewController {
         let dataStore = WKWebsiteDataStore.default()
         configuration.websiteDataStore = dataStore
         configuration.preferences.isFraudulentWebsiteWarningEnabled = true
+
+        // Install the unread-count bridge (JS -> native message handler).
+        let controller = configuration.userContentController
+        controller.add(self, name: WebBridge.handlerName)
+        controller.addUserScript(WKUserScript(
+            source: WebBridge.userScript,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        ))
 
         // Disable Intelligent Tracking Prevention on the data store. WKWebView
         // partitions/blocks cross-site cookies by default, which severs
@@ -53,39 +63,33 @@ final class WebViewController: NSViewController {
             webView.isInspectable = true
         }
 
-        // Google puts the unread count in the document title, e.g.
-        // "(3) Messages". Observe it to drive the badge/notifications without
-        // scraping the DOM.
-        titleObservation = webView.observe(\.title, options: [.new]) { [weak self] _, change in
-            // Read the title from the change (Sendable) and hop to the main
-            // actor rather than touching the isolated webView.title here.
-            let newTitle = change.newValue ?? nil
-            Task { @MainActor in self?.handleTitleChange(newTitle) }
-        }
-
         self.webView = webView
         self.view = webView
     }
 
-    private func handleTitleChange(_ title: String?) {
-        let count = Self.parseUnreadCount(from: title)
+    // Called from the JS bridge with the current unread count.
+    private func handleUnread(_ count: Int, diag: Any?) {
+        // TEMP diagnostics: log selector counts so we can confirm/retune the
+        // unread heuristic once there's a real unread thread. Remove later.
+        let line = "unread=\(count) diag=\(diag ?? "nil")\n"
+        if let data = line.data(using: .utf8) {
+            let url = URL(fileURLWithPath: "/tmp/textem-unread.log")
+            if let handle = try? FileHandle(forWritingTo: url) {
+                handle.seekToEndOfFile(); handle.write(data); try? handle.close()
+            } else {
+                try? data.write(to: url)
+            }
+        }
+
         NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
 
-        // Notify only when the count rises and Textem isn't the active app —
-        // no point pinging you about a thread you're already looking at.
-        if count > lastUnreadCount, !NSApp.isActive {
+        // Notify only when the count rises, Textem isn't active, and
+        // notifications aren't muted.
+        if count > lastUnreadCount, !NSApp.isActive, !Preferences.notificationsMuted {
             NotificationManager.shared.notifyNewMessages(newCount: count - lastUnreadCount)
         }
         lastUnreadCount = count
-    }
-
-    // Pull the integer out of a leading "(N)" in the title; 0 if absent.
-    static func parseUnreadCount(from title: String?) -> Int {
-        guard let title,
-              let open = title.firstIndex(of: "("),
-              let close = title[open...].firstIndex(of: ")") else { return 0 }
-        let inner = title[title.index(after: open)..<close]
-        return Int(inner) ?? 0
+        onUnreadCountChanged?(count)
     }
 
     override func viewDidLoad() {
@@ -131,6 +135,17 @@ extension WebViewController: WKNavigationDelegate {
             return
         }
         decisionHandler(.allow)
+    }
+}
+
+extension WebViewController: WKScriptMessageHandler {
+    func userContentController(_ userContentController: WKUserContentController,
+                              didReceive message: WKScriptMessage) {
+        guard message.name == WebBridge.handlerName,
+              let body = message.body as? [String: Any],
+              body["type"] as? String == "unread" else { return }
+        let count = (body["count"] as? Int) ?? (body["count"] as? NSNumber)?.intValue ?? 0
+        handleUnread(count, diag: body["diag"])
     }
 }
 

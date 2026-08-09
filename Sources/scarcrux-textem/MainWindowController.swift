@@ -1,7 +1,9 @@
 import AppKit
 
 final class MainWindowController: NSWindowController {
-    convenience init() {
+    let webViewController = WebViewController()
+
+    init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -18,9 +20,10 @@ final class MainWindowController: NSWindowController {
         // Persist window position/size across launches.
         window.setFrameAutosaveName("TextemMainWindow")
 
-        let webController = WebViewController()
-        window.contentViewController = webController
-
-        self.init(window: window)
+        super.init(window: window)
+        window.contentViewController = webViewController
     }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
