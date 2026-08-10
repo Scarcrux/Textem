@@ -1,0 +1,38 @@
+name: release
+
+# Cut a release by pushing a version tag, e.g. `git tag v0.1.0 && git push --tags`.
+# Produces a DRAFT GitHub Release with the .dmg attached (review, then publish).
+# Signing/notarization can be added later via repo secrets + `make release`.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build + test
+        run: |
+          swift build -c release
+          swift test
+
+      - name: Package .dmg
+        run: make dmg
+
+      - name: Publish draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Textem ${{ github.ref_name }}
+          files: Textem.dmg
+          body: |
+            Unsigned pre-release build of Textem ${{ github.ref_name }}.
+
+            macOS Gatekeeper will warn on first launch (right-click → Open,
+            or System Settings → Privacy & Security → Open Anyway). Signed +
+            notarized builds will follow once a Developer ID is configured.
