@@ -14,6 +14,7 @@ enum MainMenu {
         let appMenu = NSMenu()
         appItem.submenu = appMenu
 
+        appMenu.addItem(withTitle: "Sign-in Help…", action: Selector(("showSignInHelp:")), keyEquivalent: "")
         appMenu.addItem(withTitle: "New Conversation", action: Selector(("compose:")), keyEquivalent: "n")
         appMenu.addItem(withTitle: "Settings…", action: Selector(("showSettings:")), keyEquivalent: ",")
         appMenu.addItem(.separator())

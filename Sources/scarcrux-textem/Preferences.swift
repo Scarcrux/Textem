@@ -13,6 +13,13 @@ enum Preferences {
         static let menuBarOnly = "menuBarOnly"
         static let notificationsMuted = "notificationsMuted"
         static let zoom = "zoom"
+        static let hasSeenOnboarding = "hasSeenOnboarding"
+    }
+
+    // Whether the first-run sign-in guidance has been shown.
+    static var hasSeenOnboarding: Bool {
+        get { defaults.bool(forKey: Key.hasSeenOnboarding) }
+        set { defaults.set(newValue, forKey: Key.hasSeenOnboarding) }
     }
 
     // Page zoom factor (1.0 = 100%), clamped 0.5–2.0 by callers.

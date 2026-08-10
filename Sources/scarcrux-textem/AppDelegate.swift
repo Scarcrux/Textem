@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
     private var statusItemController: StatusItemController?
     private var settingsWindowController: SettingsWindowController?
+    private var onboardingWindowController: OnboardingWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build(appName: "Textem")
@@ -41,6 +42,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showMainWindow()
         }
         NotificationManager.shared.requestAuthorization()
+
+        // First-run: steer the user away from the passkey dead-end.
+        if !Preferences.hasSeenOnboarding {
+            showOnboarding()
+        }
+    }
+
+    @objc func showSignInHelp(_ sender: Any?) {
+        showOnboarding()
+    }
+
+    private func showOnboarding() {
+        let controller = OnboardingWindowController(onDone: {
+            Preferences.hasSeenOnboarding = true
+        })
+        onboardingWindowController = controller
+        controller.showWindow(nil)
+        controller.window?.center()
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // Right-click Dock icon: compose + quick account switch (Texty Pro parity).
