@@ -39,6 +39,15 @@ enum MainMenu {
 
         appMenu.addItem(.separator())
 
+        // Find in page.
+        appMenu.addItem(withTitle: "Find…", action: Selector(("performFind:")), keyEquivalent: "f")
+        let findNext = appMenu.addItem(withTitle: "Find Next", action: Selector(("findNext:")), keyEquivalent: "g")
+        findNext.keyEquivalentModifierMask = [.command]
+        let findPrev = appMenu.addItem(withTitle: "Find Previous", action: Selector(("findPrevious:")), keyEquivalent: "g")
+        findPrev.keyEquivalentModifierMask = [.command, .shift]
+
+        appMenu.addItem(.separator())
+
         // Zoom (⌘+ / ⌘- / ⌘0) and always-on-top, routed via the responder chain.
         appMenu.addItem(withTitle: "Zoom In", action: Selector(("zoomIn:")), keyEquivalent: "+")
         appMenu.addItem(withTitle: "Zoom Out", action: Selector(("zoomOut:")), keyEquivalent: "-")

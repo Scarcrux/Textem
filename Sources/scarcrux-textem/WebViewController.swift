@@ -24,6 +24,8 @@ final class WebViewController: NSViewController {
     var onUnreadCountChanged: ((Int) -> Void)?
     // The account's isolated session store.
     private let dataStore: WKWebsiteDataStore
+    // Find-in-page overlay (⌘F).
+    private var findBar: FindBar!
 
     init(dataStore: WKWebsiteDataStore) {
         self.dataStore = dataStore
@@ -74,7 +76,56 @@ final class WebViewController: NSViewController {
         }
 
         self.webView = webView
-        self.view = webView
+
+        // Container hosts the web view plus a hidden find bar pinned to the top.
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 1280, height: 820))
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(webView)
+
+        let bar = FindBar()
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        bar.isHidden = true
+        bar.onFind = { [weak self] query, backwards in self?.find(query, backwards: backwards) }
+        bar.onClose = { [weak self] in self?.closeFind() }
+        container.addSubview(bar)
+        findBar = bar
+
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: container.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            bar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            bar.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+
+        self.view = container
+    }
+
+    // MARK: Find in page (⌘F / ⌘G / ⇧⌘G)
+
+    @objc func performFind(_ sender: Any?) {
+        findBar.isHidden = false
+        findBar.focus()
+    }
+
+    @objc func findNext(_ sender: Any?) { find(findBar.query, backwards: false) }
+    @objc func findPrevious(_ sender: Any?) { find(findBar.query, backwards: true) }
+
+    private func find(_ query: String, backwards: Bool) {
+        guard !query.isEmpty else { return }
+        let config = WKFindConfiguration()
+        config.backwards = backwards
+        config.caseSensitive = false
+        config.wraps = true
+        webView.find(query, configuration: config, completionHandler: { _ in })
+    }
+
+    private func closeFind() {
+        findBar.isHidden = true
+        webView.evaluateJavaScript("window.getSelection && window.getSelection().removeAllRanges()", completionHandler: nil)
+        view.window?.makeFirstResponder(webView)
     }
 
     // Called from the JS bridge with the current unread count.
