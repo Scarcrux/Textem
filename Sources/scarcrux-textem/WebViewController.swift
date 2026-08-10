@@ -68,19 +68,7 @@ final class WebViewController: NSViewController {
     }
 
     // Called from the JS bridge with the current unread count.
-    private func handleUnread(_ count: Int, diag: Any?) {
-        // TEMP diagnostics: log selector counts so we can confirm/retune the
-        // unread heuristic once there's a real unread thread. Remove later.
-        let line = "unread=\(count) diag=\(diag ?? "nil")\n"
-        if let data = line.data(using: .utf8) {
-            let url = URL(fileURLWithPath: "/tmp/textem-unread.log")
-            if let handle = try? FileHandle(forWritingTo: url) {
-                handle.seekToEndOfFile(); handle.write(data); try? handle.close()
-            } else {
-                try? data.write(to: url)
-            }
-        }
-
+    private func handleUnread(_ count: Int) {
         NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
 
         // Notify only when the count rises, Textem isn't active, and
@@ -145,7 +133,7 @@ extension WebViewController: WKScriptMessageHandler {
               let body = message.body as? [String: Any],
               body["type"] as? String == "unread" else { return }
         let count = (body["count"] as? Int) ?? (body["count"] as? NSNumber)?.intValue ?? 0
-        handleUnread(count, diag: body["diag"])
+        handleUnread(count)
     }
 }
 

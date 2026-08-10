@@ -19,34 +19,26 @@ enum WebBridge {
       }
       function lower(s) { return (s || '').toLowerCase(); }
 
-      function labelFor(el) {
-        var label = lower(el.getAttribute('aria-label'));
-        if (!label) {
-          var inner = el.querySelector('[aria-label]');
-          if (inner) label = lower(inner.getAttribute('aria-label'));
-        }
-        return label;
+      // The conversation list lives in the light DOM as
+      // <mws-conversation-list-item> (no shadow roots). Google flags an
+      // unread conversation with data-e2e-is-unread="true" — an automation
+      // hook that's more stable than its minified CSS classes. Fall back to
+      // an aria-label mention of "unread" if that attribute ever disappears.
+      function isUnread(el) {
+        if (el.getAttribute('data-e2e-is-unread') === 'true') return true;
+        if (el.querySelector('[data-e2e-is-unread="true"]')) return true;
+        var al = el.getAttribute('aria-label') || '';
+        if (!al) { var a = el.querySelector('[aria-label]'); if (a) al = a.getAttribute('aria-label') || ''; }
+        return lower(al).indexOf('unread') !== -1;
       }
 
       function countUnread() {
-        var n = 0;
         var items = document.querySelectorAll('mws-conversation-list-item');
-        items.forEach(function(el) {
-          if (labelFor(el).indexOf('unread') !== -1) n++;
-        });
+        var n = 0;
+        for (var i = 0; i < items.length; i++) {
+          if (isUnread(items[i])) n++;
+        }
         return n;
-      }
-
-      function diag() {
-        var aria = 0;
-        document.querySelectorAll('[aria-label]').forEach(function(e) {
-          if (lower(e.getAttribute('aria-label')).indexOf('unread') !== -1) aria++;
-        });
-        return {
-          mws: document.querySelectorAll('mws-conversation-list-item').length,
-          aria: aria,
-          unreadClass: document.querySelectorAll('.unread').length
-        };
       }
 
       var lastCount = -1;
@@ -55,22 +47,22 @@ enum WebBridge {
         var c = countUnread();
         if (c === lastCount && !force) return;
         lastCount = c;
-        post({ type: 'unread', count: c, diag: diag() });
+        post({ type: 'unread', count: c });
       }
 
       try {
         var obs = new MutationObserver(function() {
           clearTimeout(timer);
-          timer = setTimeout(function() { report(false); }, 600);
+          timer = setTimeout(function() { report(false); }, 1000);
         });
         obs.observe(document.documentElement, {
           childList: true, subtree: true,
-          attributes: true, attributeFilter: ['aria-label', 'class']
+          attributes: true, attributeFilter: ['aria-label']
         });
       } catch (e) {}
 
       setInterval(function() { report(true); }, 8000);
-      setTimeout(function() { report(true); }, 1500);
+      setTimeout(function() { report(true); }, 2000);
     })();
     """
 }
