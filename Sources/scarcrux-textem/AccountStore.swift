@@ -8,14 +8,15 @@ import WebKit
 final class AccountStore {
     static let shared = AccountStore()
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private let accountsKey = "accounts.v1"
     private let activeKey = "activeAccountID"
 
     private(set) var accounts: [Account]
     private(set) var activeID: UUID
 
-    private init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         if let data = defaults.data(forKey: accountsKey),
            let list = try? JSONDecoder().decode([Account].self, from: data),
            !list.isEmpty {
@@ -69,7 +70,10 @@ final class AccountStore {
         guard accounts.count > 1,
               let index = accounts.firstIndex(where: { $0.id == id }) else { return }
         let removed = accounts.remove(at: index)
-        if let sid = removed.storeIdentifier, #available(macOS 14.0, *) {
+        // Delete the account's on-disk session (skipped under XCTest, which has
+        // no app bundle for the data-store APIs).
+        let underTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        if let sid = removed.storeIdentifier, #available(macOS 14.0, *), !underTest {
             WKWebsiteDataStore.remove(forIdentifier: sid) { _ in }
         }
         if activeID == id { activeID = accounts[0].id }

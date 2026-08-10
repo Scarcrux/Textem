@@ -8,5 +8,6 @@ let package = Package(
     ],
     targets: [
         .executableTarget(name: "scarcrux-textem"),
+        .testTarget(name: "TextemTests", dependencies: ["scarcrux-textem"]),
     ]
 )
