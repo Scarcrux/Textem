@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItemController: StatusItemController?
     private var settingsWindowController: SettingsWindowController?
     private var onboardingWindowController: OnboardingWindowController?
+    private var globalHotkey: GlobalHotkey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build(appName: "Textem")
@@ -42,6 +43,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showMainWindow()
         }
         NotificationManager.shared.requestAuthorization()
+
+        // System-wide show/hide hotkey (⌥⌘M).
+        let hotkey = GlobalHotkey { [weak self] in
+            if NSApp.isActive {
+                NSApp.hide(nil)
+            } else {
+                self?.showMainWindow()
+            }
+        }
+        hotkey.register()
+        globalHotkey = hotkey
 
         // First-run: steer the user away from the passkey dead-end.
         if !Preferences.hasSeenOnboarding {

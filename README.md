@@ -25,7 +25,9 @@ Early but usable. See [`commandem.toml`](commandem.toml) for the live roadmap
 - **Native notifications** on new messages (click to focus)
 - **Menu-bar presence**, run-in-background, **launch at login**, start-hidden,
   menu-bar-only (hide Dock) modes
-- **Zoom** (⌘+ / ⌘− / ⌘0), **always-on-top**, single condensed app menu
+- **Zoom** (⌘+ / ⌘− / ⌘0), **find in page** (⌘F), **always-on-top**
+- **New conversation** (⌘N / Dock), **copy latest 2FA code** (⇧⌘C)
+- **Global show/hide hotkey** (⌥⌘M), single condensed app menu
 - **Settings** window (⌘,)
 - External links open in your default browser
 
