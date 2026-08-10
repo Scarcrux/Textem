@@ -134,6 +134,13 @@ final class WebViewController: NSViewController {
         }
     }
 
+    // Start a new conversation by clicking Google's compose FAB (mw-fab-link,
+    // confirmed present in the DOM). Texty Pro parity via ⌘N / Dock menu.
+    @objc func compose(_ sender: Any?) {
+        let js = "(function(){var f=document.querySelector('mw-fab-link a, mw-fab-link button, mw-fab-link');if(f){f.click();return true;}return false;})();"
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
     // Toggle keep-window-above-others (Caprine parity).
     @objc func toggleAlwaysOnTop(_ sender: NSMenuItem) {
         guard let window = view.window else { return }

@@ -43,6 +43,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationManager.shared.requestAuthorization()
     }
 
+    // Right-click Dock icon: compose + quick account switch (Texty Pro parity).
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        let compose = NSMenuItem(title: "New Conversation", action: #selector(dockCompose), keyEquivalent: "")
+        compose.target = self
+        menu.addItem(compose)
+
+        let store = AccountStore.shared
+        if store.accounts.count > 1 {
+            menu.addItem(.separator())
+            for account in store.accounts {
+                let item = NSMenuItem(title: account.name, action: #selector(dockSwitch(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = account.id.uuidString
+                item.state = account.id == store.activeID ? .on : .off
+                menu.addItem(item)
+            }
+        }
+        return menu
+    }
+
+    @objc private func dockCompose() {
+        windowController?.webViewController.compose(nil)
+        showMainWindow()
+    }
+
+    @objc private func dockSwitch(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let id = UUID(uuidString: raw) else { return }
+        switchAccount(id)
+    }
+
     // MARK: Account switching
 
     private func switchAccount(_ id: UUID) {
