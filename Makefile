@@ -58,6 +58,35 @@ dmg: bundle
 	@hdiutil create -volname "$(APP)" -srcfolder $(APP_BUNDLE) -ov -format UDZO $(DMG) >/dev/null
 	@echo "built $(DMG)"
 
+# --- Release: Developer ID signing + notarization -----------------
+# Requires your credentials (see README). Examples:
+#   make sign CODESIGN_IDENTITY="Developer ID Application: You (TEAMID)"
+#   make release CODESIGN_IDENTITY="Developer ID Application: You (TEAMID)"
+#   make notarize NOTARY_PROFILE=textem-notary   # from notarytool store-credentials
+CODESIGN_IDENTITY ?= -
+ENTITLEMENTS := Resources/Textem.entitlements
+
+# Hardened runtime is required for notarization. Ad-hoc ("-") is the default
+# so this is testable locally; pass a Developer ID for a distributable build.
+sign: bundle
+	@codesign --force --deep --timestamp --options runtime \
+	  $(if $(wildcard $(ENTITLEMENTS)),--entitlements $(ENTITLEMENTS),) \
+	  --sign "$(CODESIGN_IDENTITY)" $(APP_BUNDLE)
+	@codesign --verify --strict --verbose=2 $(APP_BUNDLE)
+	@echo "signed $(APP_BUNDLE) with: $(CODESIGN_IDENTITY)"
+
+release: sign dmg
+	@echo "release build ready: $(DMG)"
+	@echo "to notarize: make notarize NOTARY_PROFILE=<profile>"
+
+notarize:
+	@test -n "$(NOTARY_PROFILE)" || { echo "set NOTARY_PROFILE (xcrun notarytool store-credentials ...)"; exit 1; }
+	xcrun notarytool submit $(DMG) --keychain-profile "$(NOTARY_PROFILE)" --wait
+	xcrun stapler staple $(APP_BUNDLE)
+	$(MAKE) dmg
+	xcrun stapler staple $(DMG)
+	@echo "notarized + stapled $(DMG)"
+
 clean:
 	rm -rf $(APP_BUNDLE) $(DMG)
 	swift package clean 2>/dev/null || true

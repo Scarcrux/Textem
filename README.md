@@ -50,6 +50,17 @@ make bundle   # just build + produce Textem.app
 real bundle (Info.plist for the user-agent, icon, notifications), which
 `make bundle` assembles.
 
+### Releasing
+
+```sh
+make dmg                                                   # unsigned .dmg (~850 KB)
+make release CODESIGN_IDENTITY="Developer ID Application: You (TEAMID)"
+make notarize NOTARY_PROFILE=<notarytool-profile>          # submit + staple
+```
+
+`sign`/`release` apply a hardened runtime (required for notarization); the app
+runs under it with no extra entitlements.
+
 ## Signing in (important)
 
 Google is removing QR-code pairing in the US in favor of **Google-account
