@@ -20,6 +20,15 @@ final class NotificationManager: NSObject {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
+    // A one-off informational banner (e.g. "Copied code 123456").
+    func notifyInfo(_ body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Textem"
+        content.body = body
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+
     func notifyNewMessages(newCount: Int) {
         let content = UNMutableNotificationContent()
         content.title = "Textem"

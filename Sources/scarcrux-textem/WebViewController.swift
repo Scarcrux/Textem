@@ -185,6 +185,34 @@ final class WebViewController: NSViewController {
         }
     }
 
+    // Copy the most recent verification code to the clipboard (Texty Pro
+    // parity). Scans conversation snippets + visible message text for a 4–8
+    // digit number and copies the newest match. macOS's built-in SMS-code
+    // autofill only covers Apple Messages, so this fills the gap here.
+    @objc func copyLatestCode(_ sender: Any?) {
+        let js = """
+        (function(){
+          var nodes = document.querySelectorAll('mws-text-message-part, mws-conversation-snippet');
+          var re = /\\b(\\d{4,8})\\b/;
+          for (var i = nodes.length - 1; i >= 0; i--) {
+            var t = nodes[i].textContent || '';
+            var m = t.match(re);
+            if (m) return m[1];
+          }
+          return '';
+        })();
+        """
+        webView.evaluateJavaScript(js) { result, _ in
+            let code = (result as? String) ?? ""
+            Task { @MainActor in
+                guard !code.isEmpty else { NSSound.beep(); return }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(code, forType: .string)
+                NotificationManager.shared.notifyInfo("Copied code \(code)")
+            }
+        }
+    }
+
     // Start a new conversation by clicking Google's compose FAB (mw-fab-link,
     // confirmed present in the DOM). Texty Pro parity via ⌘N / Dock menu.
     @objc func compose(_ sender: Any?) {

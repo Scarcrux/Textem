@@ -16,6 +16,8 @@ enum MainMenu {
 
         appMenu.addItem(withTitle: "Sign-in Help…", action: Selector(("showSignInHelp:")), keyEquivalent: "")
         appMenu.addItem(withTitle: "New Conversation", action: Selector(("compose:")), keyEquivalent: "n")
+        let copyCode = appMenu.addItem(withTitle: "Copy Latest Code", action: Selector(("copyLatestCode:")), keyEquivalent: "c")
+        copyCode.keyEquivalentModifierMask = [.command, .shift]
         appMenu.addItem(withTitle: "Settings…", action: Selector(("showSettings:")), keyEquivalent: ",")
         appMenu.addItem(.separator())
 
