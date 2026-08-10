@@ -50,6 +50,14 @@ bundle: build
 run: bundle
 	open $(APP_BUNDLE)
 
+# Package the bundle into a compressed .dmg for distribution. Unsigned for
+# now; Developer ID signing + notarization come before a public release.
+DMG := $(APP).dmg
+dmg: bundle
+	@rm -f $(DMG)
+	@hdiutil create -volname "$(APP)" -srcfolder $(APP_BUNDLE) -ov -format UDZO $(DMG) >/dev/null
+	@echo "built $(DMG)"
+
 clean:
-	rm -rf $(APP_BUNDLE)
+	rm -rf $(APP_BUNDLE) $(DMG)
 	swift package clean 2>/dev/null || true
