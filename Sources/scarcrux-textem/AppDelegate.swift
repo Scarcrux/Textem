@@ -4,6 +4,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
     private var statusItemController: StatusItemController?
+    private var settingsWindowController: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build(appName: "Textem")
@@ -35,6 +36,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showMainWindow()
         }
         NotificationManager.shared.requestAuthorization()
+    }
+
+    @objc func showSettings(_ sender: Any?) {
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController()
+        }
+        settingsWindowController?.showWindow(nil)
+        settingsWindowController?.window?.center()
+        settingsWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func showMainWindow() {

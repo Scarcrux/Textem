@@ -14,6 +14,9 @@ enum MainMenu {
         let appMenu = NSMenu()
         appItem.submenu = appMenu
 
+        appMenu.addItem(withTitle: "Settings…", action: Selector(("showSettings:")), keyEquivalent: ",")
+        appMenu.addItem(.separator())
+
         // Page reload — needed for the pairing dance and general refresh.
         appMenu.addItem(withTitle: "Reload", action: Selector(("reloadPage:")), keyEquivalent: "r")
         let hardReload = appMenu.addItem(withTitle: "Reload from Origin", action: Selector(("reloadFromOrigin:")), keyEquivalent: "r")
