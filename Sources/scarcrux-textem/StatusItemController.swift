@@ -1,16 +1,24 @@
 import AppKit
 
-// Menu-bar (NSStatusItem) presence: shows unread count and hosts the
+// Menu-bar (NSStatusItem) presence: unread count, account switcher, and the
 // background/launch toggles. Always present, so the app has a menu-bar home
 // whether or not the Dock icon is visible.
 @MainActor
 final class StatusItemController: NSObject {
+    struct Actions {
+        let onShow: () -> Void
+        let onSwitchAccount: (UUID) -> Void
+        let onAddAccount: () -> Void
+        let onRenameAccount: () -> Void
+        let onRemoveAccount: () -> Void
+    }
+
     private let statusItem: NSStatusItem
-    private let onShow: () -> Void
+    private let actions: Actions
     private var unreadItem: NSMenuItem?
 
-    init(onShow: @escaping () -> Void) {
-        self.onShow = onShow
+    init(actions: Actions) {
+        self.actions = actions
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -19,7 +27,7 @@ final class StatusItemController: NSObject {
             image?.isTemplate = true
             button.image = image
         }
-        buildMenu()
+        rebuild()
     }
 
     func updateUnread(_ count: Int) {
@@ -27,7 +35,8 @@ final class StatusItemController: NSObject {
         unreadItem?.title = count > 0 ? "\(count) unread" : "No unread messages"
     }
 
-    private func buildMenu() {
+    // Rebuild the whole menu (call after accounts change).
+    func rebuild() {
         let menu = NSMenu()
 
         let show = NSMenuItem(title: "Show Textem", action: #selector(showApp), keyEquivalent: "")
@@ -38,6 +47,27 @@ final class StatusItemController: NSObject {
         unread.isEnabled = false
         unreadItem = unread
         menu.addItem(unread)
+
+        // Accounts section.
+        let store = AccountStore.shared
+        menu.addItem(.separator())
+        let header = NSMenuItem(title: "Accounts", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+        for account in store.accounts {
+            let item = NSMenuItem(title: account.name, action: #selector(switchAccount(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = account.id.uuidString
+            item.state = account.id == store.activeID ? .on : .off
+            menu.addItem(item)
+        }
+        if store.canAddAccounts {
+            menu.addItem(actionItem("Add Account…", #selector(addAccount)))
+        }
+        menu.addItem(actionItem("Rename Current Account…", #selector(renameAccount)))
+        if store.accounts.count > 1 {
+            menu.addItem(actionItem("Remove Current Account…", #selector(removeAccount)))
+        }
 
         menu.addItem(.separator())
         menu.addItem(toggle("Launch at Login", #selector(toggleLaunchAtLogin), LoginItem.isEnabled))
@@ -51,6 +81,12 @@ final class StatusItemController: NSObject {
         statusItem.menu = menu
     }
 
+    private func actionItem(_ title: String, _ action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
     private func toggle(_ title: String, _ action: Selector, _ on: Bool) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
@@ -58,9 +94,16 @@ final class StatusItemController: NSObject {
         return item
     }
 
-    @objc private func showApp() {
-        onShow()
+    @objc private func showApp() { actions.onShow() }
+
+    @objc private func switchAccount(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let id = UUID(uuidString: raw) else { return }
+        actions.onSwitchAccount(id)
     }
+
+    @objc private func addAccount() { actions.onAddAccount() }
+    @objc private func renameAccount() { actions.onRenameAccount() }
+    @objc private func removeAccount() { actions.onRemoveAccount() }
 
     @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
         LoginItem.set(sender.state != .on)
@@ -72,7 +115,7 @@ final class StatusItemController: NSObject {
         Preferences.menuBarOnly = enabled
         sender.state = enabled ? .on : .off
         NSApp.setActivationPolicy(enabled ? .accessory : .regular)
-        if !enabled { onShow() }
+        if !enabled { actions.onShow() }
     }
 
     @objc private func toggleMute(_ sender: NSMenuItem) {

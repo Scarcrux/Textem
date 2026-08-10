@@ -22,18 +22,28 @@ final class WebViewController: NSViewController {
     private var lastUnreadCount = 0
     // Notified whenever the unread count changes (drives the menu-bar item).
     var onUnreadCountChanged: ((Int) -> Void)?
+    // The account's isolated session store.
+    private let dataStore: WKWebsiteDataStore
+
+    init(dataStore: WKWebsiteDataStore) {
+        self.dataStore = dataStore
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func loadView() {
         let configuration = WKWebViewConfiguration()
-        // Persistent store: keeps the pairing/session (and Google cookies)
-        // across launches so you don't re-authenticate every time.
-        let dataStore = WKWebsiteDataStore.default()
+        // Persistent store (per account): keeps the pairing/session across
+        // relaunches so you don't re-authenticate every time.
         configuration.websiteDataStore = dataStore
         configuration.preferences.isFraudulentWebsiteWarningEnabled = true
 
         // Install the unread-count bridge (JS -> native message handler).
+        // Weak proxy avoids a retain cycle so we can free this VC on switch.
         let controller = configuration.userContentController
-        controller.add(self, name: WebBridge.handlerName)
+        controller.add(WeakScriptMessageHandler(self), name: WebBridge.handlerName)
         controller.addUserScript(WKUserScript(
             source: WebBridge.userScript,
             injectionTime: .atDocumentEnd,
@@ -83,6 +93,17 @@ final class WebViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         webView.load(URLRequest(url: Self.messagesURL))
+    }
+
+    // Detach the web view before this controller is replaced (account switch)
+    // so it stops loading, drops the bridge handler, and can deallocate.
+    func teardown() {
+        webView.stopLoading()
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        let controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        controller.removeScriptMessageHandler(forName: WebBridge.handlerName)
     }
 
     // Reachable via the View > Reload menu item (⌘R) through the responder
