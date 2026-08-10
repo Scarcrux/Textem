@@ -14,16 +14,18 @@ enum MainMenu {
         let appMenu = NSMenu()
         appItem.submenu = appMenu
 
-        appMenu.addItem(withTitle: "Sign-in Help…", action: Selector(("showSignInHelp:")), keyEquivalent: "")
-        appMenu.addItem(withTitle: "New Conversation", action: Selector(("compose:")), keyEquivalent: "n")
-        let copyCode = appMenu.addItem(withTitle: "Copy Latest Code", action: Selector(("copyLatestCode:")), keyEquivalent: "c")
+        // App-action selectors are typed #selectors (no runtime target set, so
+        // they still route through the responder chain to the web VC / delegate).
+        appMenu.addItem(withTitle: "Sign-in Help…", action: #selector(AppDelegate.showSignInHelp(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "New Conversation", action: #selector(WebViewController.compose(_:)), keyEquivalent: "n")
+        let copyCode = appMenu.addItem(withTitle: "Copy Latest Code", action: #selector(WebViewController.copyLatestCode(_:)), keyEquivalent: "c")
         copyCode.keyEquivalentModifierMask = [.command, .shift]
-        appMenu.addItem(withTitle: "Settings…", action: Selector(("showSettings:")), keyEquivalent: ",")
+        appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
         appMenu.addItem(.separator())
 
         // Page reload — needed for the pairing dance and general refresh.
-        appMenu.addItem(withTitle: "Reload", action: Selector(("reloadPage:")), keyEquivalent: "r")
-        let hardReload = appMenu.addItem(withTitle: "Reload from Origin", action: Selector(("reloadFromOrigin:")), keyEquivalent: "r")
+        appMenu.addItem(withTitle: "Reload", action: #selector(WebViewController.reloadPage(_:)), keyEquivalent: "r")
+        let hardReload = appMenu.addItem(withTitle: "Reload from Origin", action: #selector(WebViewController.reloadFromOrigin(_:)), keyEquivalent: "r")
         hardReload.keyEquivalentModifierMask = [.command, .shift]
 
         appMenu.addItem(.separator())
@@ -42,19 +44,19 @@ enum MainMenu {
         appMenu.addItem(.separator())
 
         // Find in page.
-        appMenu.addItem(withTitle: "Find…", action: Selector(("performFind:")), keyEquivalent: "f")
-        let findNext = appMenu.addItem(withTitle: "Find Next", action: Selector(("findNext:")), keyEquivalent: "g")
+        appMenu.addItem(withTitle: "Find…", action: #selector(WebViewController.performFind(_:)), keyEquivalent: "f")
+        let findNext = appMenu.addItem(withTitle: "Find Next", action: #selector(WebViewController.findNext(_:)), keyEquivalent: "g")
         findNext.keyEquivalentModifierMask = [.command]
-        let findPrev = appMenu.addItem(withTitle: "Find Previous", action: Selector(("findPrevious:")), keyEquivalent: "g")
+        let findPrev = appMenu.addItem(withTitle: "Find Previous", action: #selector(WebViewController.findPrevious(_:)), keyEquivalent: "g")
         findPrev.keyEquivalentModifierMask = [.command, .shift]
 
         appMenu.addItem(.separator())
 
         // Zoom (⌘+ / ⌘- / ⌘0) and always-on-top, routed via the responder chain.
-        appMenu.addItem(withTitle: "Zoom In", action: Selector(("zoomIn:")), keyEquivalent: "+")
-        appMenu.addItem(withTitle: "Zoom Out", action: Selector(("zoomOut:")), keyEquivalent: "-")
-        appMenu.addItem(withTitle: "Actual Size", action: Selector(("zoomReset:")), keyEquivalent: "0")
-        appMenu.addItem(withTitle: "Always on Top", action: Selector(("toggleAlwaysOnTop:")), keyEquivalent: "")
+        appMenu.addItem(withTitle: "Zoom In", action: #selector(WebViewController.zoomIn(_:)), keyEquivalent: "+")
+        appMenu.addItem(withTitle: "Zoom Out", action: #selector(WebViewController.zoomOut(_:)), keyEquivalent: "-")
+        appMenu.addItem(withTitle: "Actual Size", action: #selector(WebViewController.zoomReset(_:)), keyEquivalent: "0")
+        appMenu.addItem(withTitle: "Always on Top", action: #selector(WebViewController.toggleAlwaysOnTop(_:)), keyEquivalent: "")
 
         appMenu.addItem(.separator())
 
