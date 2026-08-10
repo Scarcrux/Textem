@@ -34,6 +34,14 @@ enum MainMenu {
 
         appMenu.addItem(.separator())
 
+        // Zoom (⌘+ / ⌘- / ⌘0) and always-on-top, routed via the responder chain.
+        appMenu.addItem(withTitle: "Zoom In", action: Selector(("zoomIn:")), keyEquivalent: "+")
+        appMenu.addItem(withTitle: "Zoom Out", action: Selector(("zoomOut:")), keyEquivalent: "-")
+        appMenu.addItem(withTitle: "Actual Size", action: Selector(("zoomReset:")), keyEquivalent: "0")
+        appMenu.addItem(withTitle: "Always on Top", action: Selector(("toggleAlwaysOnTop:")), keyEquivalent: "")
+
+        appMenu.addItem(.separator())
+
         appMenu.addItem(withTitle: "Hide \(appName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]

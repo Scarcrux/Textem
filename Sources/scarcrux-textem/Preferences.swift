@@ -12,6 +12,13 @@ enum Preferences {
         static let quitOnClose = "quitOnClose"
         static let menuBarOnly = "menuBarOnly"
         static let notificationsMuted = "notificationsMuted"
+        static let zoom = "zoom"
+    }
+
+    // Page zoom factor (1.0 = 100%), clamped 0.5–2.0 by callers.
+    static var zoom: Double {
+        get { let v = defaults.double(forKey: Key.zoom); return v == 0 ? 1.0 : v }
+        set { defaults.set(newValue, forKey: Key.zoom) }
     }
 
     // Launch to the menu bar/background instead of showing the window.

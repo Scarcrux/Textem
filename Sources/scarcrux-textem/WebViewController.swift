@@ -91,6 +91,36 @@ final class WebViewController: NSViewController {
         webView.reload()
     }
 
+    // MARK: Zoom (⌘+ / ⌘- / ⌘0) — a Texty Pro feature, free here.
+
+    @objc func zoomIn(_ sender: Any?) { setZoom(Preferences.zoom + 0.1) }
+    @objc func zoomOut(_ sender: Any?) { setZoom(Preferences.zoom - 0.1) }
+    @objc func zoomReset(_ sender: Any?) { setZoom(1.0) }
+
+    private func setZoom(_ factor: Double) {
+        let clamped = min(2.0, max(0.5, (factor * 10).rounded() / 10))
+        Preferences.zoom = clamped
+        applyZoom()
+    }
+
+    private func applyZoom() {
+        let factor = Preferences.zoom
+        if #available(macOS 14.0, *) {
+            webView.pageZoom = factor
+        } else {
+            // CSS-zoom fallback for macOS 13; re-applied after each load.
+            webView.evaluateJavaScript("document.documentElement.style.zoom='\(factor)'", completionHandler: nil)
+        }
+    }
+
+    // Toggle keep-window-above-others (Caprine parity).
+    @objc func toggleAlwaysOnTop(_ sender: NSMenuItem) {
+        guard let window = view.window else { return }
+        let on = sender.state != .on
+        window.level = on ? .floating : .normal
+        sender.state = on ? .on : .off
+    }
+
     // Hard reload back to the messages entry point (⇧⌘R) for when the session
     // is wedged and a plain reload won't recover it.
     @objc func reloadFromOrigin(_ sender: Any?) {
@@ -123,6 +153,10 @@ extension WebViewController: WKNavigationDelegate {
             return
         }
         decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        applyZoom()
     }
 }
 
