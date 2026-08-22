@@ -38,10 +38,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showMainWindow()
         }
 
-        // Native notifications: clicking a banner refocuses the window.
-        NotificationManager.shared.configure { [weak self] in
-            self?.showMainWindow()
-        }
+        // Native notifications: click focuses the window; inline reply routes
+        // to the active account's web view.
+        NotificationManager.shared.configure(
+            onOpen: { [weak self] in self?.showMainWindow() },
+            onReply: { [weak self] text in self?.windowController?.webViewController.quickReply(text) }
+        )
         NotificationManager.shared.requestAuthorization()
 
         // System-wide show/hide hotkey (⌥⌘M).

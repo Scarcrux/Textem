@@ -14,6 +14,31 @@ enum Preferences {
         static let notificationsMuted = "notificationsMuted"
         static let zoom = "zoom"
         static let hasSeenOnboarding = "hasSeenOnboarding"
+        static let hideNotificationPreview = "hideNotificationPreview"
+        static let blurMessages = "blurMessages"
+        static let hideAvatars = "hideAvatars"
+    }
+
+    // Posted when a privacy toggle changes so the live web view re-applies CSS.
+    static let privacyChanged = Notification.Name("TextemPrivacyChanged")
+
+    // Notifications show only "New message" instead of sender + snippet.
+    static var hideNotificationPreview: Bool {
+        get { defaults.bool(forKey: Key.hideNotificationPreview) }
+        set { defaults.set(newValue, forKey: Key.hideNotificationPreview) }
+    }
+
+    // Privacy: blur message text/snippets (clears on hover) so shoulder-surfers
+    // can't read them. Display-only — does not affect what's sent.
+    static var blurMessages: Bool {
+        get { defaults.bool(forKey: Key.blurMessages) }
+        set { defaults.set(newValue, forKey: Key.blurMessages) }
+    }
+
+    // Privacy: hide contact avatars.
+    static var hideAvatars: Bool {
+        get { defaults.bool(forKey: Key.hideAvatars) }
+        set { defaults.set(newValue, forKey: Key.hideAvatars) }
     }
 
     // Whether the first-run sign-in guidance has been shown.

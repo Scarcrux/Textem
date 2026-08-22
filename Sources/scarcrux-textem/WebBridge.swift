@@ -41,13 +41,38 @@ enum WebBridge {
         return n;
       }
 
+      // Best-effort sender + snippet of the newest unread conversation, for
+      // rich notifications. Selectors are heuristic (Google's DOM is minified).
+      function latestUnread() {
+        var items = document.querySelectorAll('mws-conversation-list-item');
+        for (var i = 0; i < items.length; i++) {
+          if (!isUnread(items[i])) continue;
+          var el = items[i];
+          var snip = '';
+          var snipEl = el.querySelector('mws-conversation-snippet');
+          if (snipEl) snip = (snipEl.textContent || '').trim();
+          var name = '';
+          var nameEl = el.querySelector('h3, .name, [data-e2e-conversation-name]');
+          if (nameEl) name = (nameEl.textContent || '').trim();
+          if (!name) {
+            var al = el.getAttribute('aria-label') || '';
+            name = al.replace(/unread.*/i, '').replace(/[,.].*$/, '').trim();
+          }
+          return { sender: name, snippet: snip };
+        }
+        return null;
+      }
+
       var lastCount = -1;
       var timer = null;
       function report(force) {
         var c = countUnread();
         if (c === lastCount && !force) return;
         lastCount = c;
-        post({ type: 'unread', count: c });
+        var msg = { type: 'unread', count: c };
+        var latest = latestUnread();
+        if (latest) { msg.sender = latest.sender; msg.snippet = latest.snippet; }
+        post(msg);
       }
 
       try {

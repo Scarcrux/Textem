@@ -9,7 +9,15 @@ struct SettingsView: View {
     @AppStorage("quitOnClose") private var quitOnClose = false
     @AppStorage("menuBarOnly") private var menuBarOnly = false
     @AppStorage("notificationsMuted") private var notificationsMuted = false
+    @AppStorage("hideNotificationPreview") private var hideNotificationPreview = false
+    @AppStorage("blurMessages") private var blurMessages = false
+    @AppStorage("hideAvatars") private var hideAvatars = false
     @State private var launchAtLogin = LoginItem.isEnabled
+
+    // Notify the live web view to re-apply privacy CSS after a toggle.
+    private func privacyChanged() {
+        NotificationCenter.default.post(name: Preferences.privacyChanged, object: nil)
+    }
 
     var body: some View {
         Form {
@@ -34,12 +42,27 @@ struct SettingsView: View {
 
             Section("Notifications") {
                 Toggle("Mute notifications", isOn: $notificationsMuted)
+                Toggle("Hide sender & preview in notifications", isOn: $hideNotificationPreview)
                 Text("The dock badge still updates while muted.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Privacy") {
+                Toggle("Blur message previews (clears on hover)", isOn: Binding(
+                    get: { blurMessages },
+                    set: { blurMessages = $0; privacyChanged() }
+                ))
+                Toggle("Hide avatars", isOn: Binding(
+                    get: { hideAvatars },
+                    set: { hideAvatars = $0; privacyChanged() }
+                ))
+                Text("Display-only — these hide content from view but don't change what's sent (read receipts are server-side).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 440, height: 320)
+        .frame(width: 460, height: 470)
     }
 }

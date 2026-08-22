@@ -128,14 +128,15 @@ final class WebViewController: NSViewController {
         view.window?.makeFirstResponder(webView)
     }
 
-    // Called from the JS bridge with the current unread count.
-    private func handleUnread(_ count: Int) {
+    // Called from the JS bridge with the current unread count (+ optional
+    // sender/snippet of the newest unread conversation).
+    private func handleUnread(_ count: Int, sender: String?, snippet: String?) {
         NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
 
         // Notify only when the count rises, Textem isn't active, and
         // notifications aren't muted.
         if count > lastUnreadCount, !NSApp.isActive, !Preferences.notificationsMuted {
-            NotificationManager.shared.notifyNewMessages(newCount: count - lastUnreadCount)
+            NotificationManager.shared.notifyNewMessages(newCount: count - lastUnreadCount, sender: sender, snippet: snippet)
         }
         lastUnreadCount = count
         onUnreadCountChanged?(count)
@@ -144,6 +145,73 @@ final class WebViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         webView.load(URLRequest(url: Self.messagesURL))
+        // Re-apply privacy CSS when a toggle changes at runtime.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(applyPrivacyCSS),
+            name: Preferences.privacyChanged, object: nil
+        )
+    }
+
+    // Inline reply from a notification: open the newest unread conversation,
+    // type the text, and send. Best-effort DOM automation — composer/send
+    // selectors are heuristic and need a live message to fully verify.
+    func quickReply(_ text: String) {
+        guard let data = try? JSONEncoder().encode(text),
+              let json = String(data: data, encoding: .utf8) else { return }
+        let js = """
+        (function(reply){
+          var items = document.querySelectorAll('mws-conversation-list-item');
+          var target = null;
+          for (var i = 0; i < items.length; i++) {
+            var el = items[i];
+            if (el.getAttribute('data-e2e-is-unread') === 'true' || el.querySelector('[data-e2e-is-unread="true"]')) { target = el; break; }
+          }
+          if (!target) target = items[0];
+          if (!target) return;
+          (target.querySelector('a') || target).click();
+          setTimeout(function(){
+            var box = document.querySelector('textarea[data-e2e-message-input-box], mws-message-compose textarea, textarea, [contenteditable="true"]');
+            if (!box) return;
+            box.focus();
+            if ('value' in box) {
+              var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+              setter.call(box, reply);
+              box.dispatchEvent(new Event('input', { bubbles: true }));
+            } else {
+              box.textContent = reply;
+              box.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            setTimeout(function(){
+              var send = document.querySelector('[data-e2e-send-button], button[aria-label*="Send" i]');
+              if (send) send.click();
+            }, 250);
+          }, 700);
+        })(\(json));
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    // Inject/refresh the privacy CSS (blur messages, hide avatars) based on
+    // current prefs. Display-only; does not change what is sent.
+    @objc func applyPrivacyCSS() {
+        var css = ""
+        if Preferences.hideAvatars {
+            css += "mws-avatar{visibility:hidden !important;}"
+        }
+        if Preferences.blurMessages {
+            css += "mws-conversation-snippet,mws-text-message-part{filter:blur(6px);transition:filter .12s;}"
+            css += "mws-conversation-snippet:hover,mws-text-message-part:hover{filter:none;}"
+        }
+        guard let data = try? JSONEncoder().encode(css),
+              let json = String(data: data, encoding: .utf8) else { return }
+        let js = """
+        (function(css){
+          var s = document.getElementById('textem-privacy');
+          if (!s) { s = document.createElement('style'); s.id = 'textem-privacy'; document.documentElement.appendChild(s); }
+          s.textContent = css;
+        })(\(json));
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
     }
 
     // Detach the web view before this controller is replaced (account switch)
@@ -264,6 +332,7 @@ extension WebViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         applyZoom()
+        applyPrivacyCSS()
     }
 }
 
@@ -274,7 +343,9 @@ extension WebViewController: WKScriptMessageHandler {
               let body = message.body as? [String: Any],
               body["type"] as? String == "unread" else { return }
         let count = (body["count"] as? Int) ?? (body["count"] as? NSNumber)?.intValue ?? 0
-        handleUnread(count)
+        let sender = body["sender"] as? String
+        let snippet = body["snippet"] as? String
+        handleUnread(count, sender: sender, snippet: snippet)
     }
 }
 
