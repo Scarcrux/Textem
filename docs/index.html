@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Textem — native Google Messages for macOS</title>
+  <meta name="description" content="A lightweight, free, open-source native macOS client for Google Messages for web. Dock badge, native notifications, menu bar, multiple accounts.">
+  <style>
+    :root {
+      --blue: #1766db;
+      --blue-light: #33a0fa;
+      --ink: #14181f;
+      --muted: #5b6472;
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --border: #e3e8ef;
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-font-smoothing: antialiased; }
+    body {
+      margin: 0; color: var(--ink); background: var(--bg);
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    a { color: var(--blue); }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px; }
+    header { text-align: center; padding: 72px 20px 40px; }
+    .icon {
+      width: 96px; height: 96px; border-radius: 22px; display: inline-block;
+      background: linear-gradient(180deg, var(--blue-light), var(--blue));
+      box-shadow: 0 10px 30px rgba(23,102,219,.28); position: relative; margin-bottom: 22px;
+    }
+    .icon::before {
+      content: ""; position: absolute; left: 22px; top: 30px; width: 52px; height: 34px;
+      background: #fff; border-radius: 11px;
+    }
+    .icon::after {
+      content: ""; position: absolute; left: 30px; top: 40px; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--blue); box-shadow: 12px 0 0 var(--blue), 24px 0 0 var(--blue);
+    }
+    h1 { font-size: 44px; margin: 0 0 8px; letter-spacing: -.02em; }
+    .tag { font-size: 20px; color: var(--muted); margin: 0 auto 28px; max-width: 620px; }
+    .btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-block; padding: 12px 22px; border-radius: 12px; font-weight: 600;
+      text-decoration: none; border: 1px solid var(--border);
+    }
+    .btn.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .btn.ghost { background: var(--card); color: var(--ink); }
+    .note { color: var(--muted); font-size: 14px; margin-top: 14px; }
+    section { padding: 24px 0 8px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .feat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+    .feat h3 { margin: 0 0 6px; font-size: 16px; }
+    .feat p { margin: 0; color: var(--muted); font-size: 14px; }
+    .callout {
+      background: #fff7ed; border: 1px solid #fed7aa; border-radius: 14px; padding: 18px 20px; margin-top: 8px;
+    }
+    .callout strong { color: #9a3412; }
+    footer { text-align: center; color: var(--muted); font-size: 13px; padding: 48px 20px 60px; }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header class="wrap">
+    <span class="icon" aria-hidden="true"></span>
+    <h1>Textem</h1>
+    <p class="tag">A lightweight, native macOS client for Google Messages — free and open-source. The tiny-footprint alternative to paid wrappers and dead Electron apps.</p>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/Scarcrux/scarcrux-textem/releases/latest">Download</a>
+      <a class="btn ghost" href="https://github.com/Scarcrux/scarcrux-textem">View on GitHub</a>
+    </div>
+    <p class="note">macOS 13+ · a few MB (system WebKit, no bundled Chromium)</p>
+  </header>
+
+  <main class="wrap">
+    <section>
+      <div class="grid">
+        <div class="feat"><h3>Native notifications + badge</h3><p>Dock unread badge and native banners — click to jump to the thread.</p></div>
+        <div class="feat"><h3>Menu bar &amp; background</h3><p>Menu-bar presence, launch at login, run in background, menu-bar-only mode.</p></div>
+        <div class="feat"><h3>Multiple accounts</h3><p>Isolated sessions per Google account with a quick switcher. No other client does this.</p></div>
+        <div class="feat"><h3>Shortcuts</h3><p>Zoom, find in page, new conversation, copy latest 2FA code, global show/hide hotkey.</p></div>
+        <div class="feat"><h3>Private by design</h3><p>Zero telemetry, local-only session, notarized release. Just a native shell around the web client.</p></div>
+        <div class="feat"><h3>Free &amp; open-source</h3><p>MIT-licensed. Every feature paid apps lock behind “Pro”, at no cost.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="callout">
+        <p><strong>Signing in:</strong> choose <strong>“Enter your password”</strong> and a non-passkey second step (Google prompt, SMS/email code, or authenticator). Passkeys don’t work inside an embedded web view — it’s a platform limitation, not a bug. You only sign in once.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Unofficial. Not affiliated with, endorsed by, or sponsored by Google. “Google Messages” is a trademark of Google LLC.</p>
+    <p><a href="https://github.com/Scarcrux/scarcrux-textem">GitHub</a> · MIT License · © 2026 Scarcrux</p>
+  </footer>
+</body>
+</html>
