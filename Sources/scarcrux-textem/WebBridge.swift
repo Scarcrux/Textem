@@ -49,16 +49,23 @@ enum WebBridge {
           if (!isUnread(items[i])) continue;
           var el = items[i];
           var snip = '';
-          var snipEl = el.querySelector('mws-conversation-snippet');
+          var snipEl = el.querySelector('[data-e2e-conversation-snippet], mws-conversation-snippet');
           if (snipEl) snip = (snipEl.textContent || '').trim();
           var name = '';
-          var nameEl = el.querySelector('h3, .name, [data-e2e-conversation-name]');
+          var nameEl = el.querySelector('[data-e2e-conversation-name], h3, .name');
           if (nameEl) name = (nameEl.textContent || '').trim();
           if (!name) {
             var al = el.getAttribute('aria-label') || '';
             name = al.replace(/unread.*/i, '').replace(/[,.].*$/, '').trim();
           }
-          return { sender: name, snippet: snip };
+          // The conversation's stable id lives on the row's <a> as
+          // data-e2e-conversation (confirmed against the live DOM). Carrying it
+          // through the notification is what lets a reply target THIS thread
+          // rather than whatever happens to be unread when the user replies.
+          var convId = '';
+          var idLink = el.querySelector('a[data-e2e-conversation]');
+          if (idLink) convId = idLink.getAttribute('data-e2e-conversation') || '';
+          return { sender: name, snippet: snip, convId: convId };
         }
         return null;
       }
@@ -71,7 +78,7 @@ enum WebBridge {
         lastCount = c;
         var msg = { type: 'unread', count: c };
         var latest = latestUnread();
-        if (latest) { msg.sender = latest.sender; msg.snippet = latest.snippet; }
+        if (latest) { msg.sender = latest.sender; msg.snippet = latest.snippet; msg.convId = latest.convId; }
         post(msg);
       }
 

@@ -13,9 +13,9 @@ final class NotificationManager: NSObject {
     private static let replyActionID = "textem.reply"
 
     private var onOpen: (() -> Void)?
-    private var onReply: ((String) -> Void)?
+    private var onReply: ((String, String?) -> Void)?
 
-    func configure(onOpen: @escaping () -> Void, onReply: @escaping (String) -> Void) {
+    func configure(onOpen: @escaping () -> Void, onReply: @escaping (String, String?) -> Void) {
         self.onOpen = onOpen
         self.onReply = onReply
         let center = UNUserNotificationCenter.current()
@@ -51,10 +51,13 @@ final class NotificationManager: NSObject {
         UNUserNotificationCenter.current().add(request)
     }
 
-    func notifyNewMessages(newCount: Int, sender: String?, snippet: String?) {
+    func notifyNewMessages(newCount: Int, sender: String?, snippet: String?, convId: String?) {
         let content = UNMutableNotificationContent()
         content.sound = .default
         content.categoryIdentifier = Self.categoryID
+        // Pin the notification to its conversation so an inline reply lands in
+        // THIS thread, not whichever one is unread by the time the user replies.
+        if let convId, !convId.isEmpty { content.userInfo = ["convId": convId] }
 
         if Preferences.hideNotificationPreview {
             content.title = "Textem"
@@ -88,8 +91,9 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         // Inline reply: forward the typed text; otherwise focus the window.
         if let textResponse = response as? UNTextInputNotificationResponse {
             let text = textResponse.userText
+            let convId = response.notification.request.content.userInfo["convId"] as? String
             completionHandler()
-            Task { @MainActor in self.onReply?(text) }
+            Task { @MainActor in self.onReply?(text, convId) }
             return
         }
         completionHandler()

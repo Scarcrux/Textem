@@ -42,7 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // to the active account's web view.
         NotificationManager.shared.configure(
             onOpen: { [weak self] in self?.showMainWindow() },
-            onReply: { [weak self] text in self?.windowController?.webViewController.quickReply(text) }
+            onReply: { [weak self] text, convId in
+                self?.windowController?.webViewController.quickReply(text, convId: convId)
+            }
         )
         NotificationManager.shared.requestAuthorization()
 

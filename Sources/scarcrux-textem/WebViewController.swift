@@ -31,6 +31,9 @@ final class WebViewController: NSViewController {
     // fault (offline at login, sleep/wake, DNS blip) strands the user on a white
     // window forever. Retry with backoff, then surface a real error.
     private var errorView: LoadErrorView!
+    // Text of an in-flight inline reply, so a failure can hand it back to the
+    // user instead of losing what they typed.
+    private var pendingReplyText: String?
     private var loadRetryCount = 0
     private var loadRetryTask: Task<Void, Never>?
     private static let maxLoadRetries = 5
@@ -150,13 +153,14 @@ final class WebViewController: NSViewController {
 
     // Called from the JS bridge with the current unread count (+ optional
     // sender/snippet of the newest unread conversation).
-    private func handleUnread(_ count: Int, sender: String?, snippet: String?) {
+    private func handleUnread(_ count: Int, sender: String?, snippet: String?, convId: String?) {
         NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
 
         // Notify only when the count rises, Textem isn't active, and
         // notifications aren't muted.
         if count > lastUnreadCount, !NSApp.isActive, !Preferences.notificationsMuted {
-            NotificationManager.shared.notifyNewMessages(newCount: count - lastUnreadCount, sender: sender, snippet: snippet)
+            NotificationManager.shared.notifyNewMessages(
+                newCount: count - lastUnreadCount, sender: sender, snippet: snippet, convId: convId)
         }
         lastUnreadCount = count
         onUnreadCountChanged?(count)
@@ -180,23 +184,37 @@ final class WebViewController: NSViewController {
     // Inline reply from a notification: open the newest unread conversation,
     // type the text, and send. Best-effort DOM automation — composer/send
     // selectors are heuristic and need a live message to fully verify.
-    func quickReply(_ text: String) {
-        guard let data = try? JSONEncoder().encode(text),
-              let json = String(data: data, encoding: .utf8) else { return }
+    // Inline reply from a notification.
+    //
+    // Targets the EXACT conversation the notification was for, via
+    // data-e2e-conversation (confirmed present on the live DOM). The previous
+    // implementation replied to the "first unread" row, which meant a message
+    // arriving between notification and reply could send your text to the WRONG
+    // person. If the target row isn't found we now FAIL rather than guess.
+    //
+    // Polls for the composer and send button instead of racing fixed delays,
+    // and reports the outcome so a failed reply surfaces instead of vanishing.
+    func quickReply(_ text: String, convId: String?) {
+        guard let textData = try? JSONEncoder().encode(text),
+              let textJSON = String(data: textData, encoding: .utf8),
+              let idData = try? JSONEncoder().encode(convId ?? ""),
+              let idJSON = String(data: idData, encoding: .utf8) else { return }
+        pendingReplyText = text
         let js = """
-        (function(reply){
-          var items = document.querySelectorAll('mws-conversation-list-item');
-          var target = null;
-          for (var i = 0; i < items.length; i++) {
-            var el = items[i];
-            if (el.getAttribute('data-e2e-is-unread') === 'true' || el.querySelector('[data-e2e-is-unread="true"]')) { target = el; break; }
-          }
-          if (!target) target = items[0];
-          if (!target) return;
-          (target.querySelector('a') || target).click();
-          setTimeout(function(){
+        (function(reply, convId){
+          function post(o){ try { window.webkit.messageHandlers['\(WebBridge.handlerName)'].postMessage(o); } catch(e){} }
+          function fail(r){ post({ type: 'replyResult', ok: false, reason: r }); }
+          if (!convId) { fail('no-conversation-id'); return; }
+          var link = document.querySelector('a[data-e2e-conversation="' + convId + '"]');
+          if (!link) { fail('conversation-not-found'); return; }
+          link.click();
+          var t0 = Date.now();
+          (function waitBox(){
             var box = document.querySelector('textarea[data-e2e-message-input-box], mws-message-compose textarea, textarea, [contenteditable="true"]');
-            if (!box) return;
+            if (!box) {
+              if (Date.now() - t0 > 6000) { fail('composer-not-found'); return; }
+              setTimeout(waitBox, 100); return;
+            }
             box.focus();
             if ('value' in box) {
               var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
@@ -206,14 +224,34 @@ final class WebViewController: NSViewController {
               box.textContent = reply;
               box.dispatchEvent(new Event('input', { bubbles: true }));
             }
-            setTimeout(function(){
+            var t1 = Date.now();
+            (function waitSend(){
               var send = document.querySelector('[data-e2e-send-button], button[aria-label*="Send" i]');
-              if (send) send.click();
-            }, 250);
-          }, 700);
-        })(\(json));
+              if (!send || send.disabled) {
+                if (Date.now() - t1 > 4000) { fail('send-button-unavailable'); return; }
+                setTimeout(waitSend, 100); return;
+              }
+              send.click();
+              post({ type: 'replyResult', ok: true });
+            })();
+          })();
+        })(\(textJSON), \(idJSON));
         """
         webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    // A reply that silently vanishes is worse than one that fails loudly — the
+    // user believes it sent. State the cause and hand the text back.
+    private func handleReplyResult(ok: Bool, reason: String?) {
+        let text = pendingReplyText
+        pendingReplyText = nil
+        guard !ok else { return }
+        let detail = reason ?? "unknown"
+        NSLog("[Textem] inline reply failed: %@", detail)
+        var preview = ""
+        if let text, !text.isEmpty { preview = " — “\(text.prefix(60))”" }
+        NotificationManager.shared.notifyInfo(
+            "Reply not sent (\(detail))\(preview). Open Textem to send it.")
     }
 
     // Inject/refresh the privacy CSS (blur messages, hide avatars) based on
@@ -346,11 +384,40 @@ final class WebViewController: NSViewController {
               signInForm: !!document.querySelector('input[type=email], #identifierId')
             })
             """
-            self.webView.evaluateJavaScript(js) { result, error in
-                let page = (result as? String) ?? "js-error: \(error?.localizedDescription ?? "unknown")"
-                let text = "[selfcheck] \(native)\npage=\(page)\n"
-                try? text.write(toFile: "/tmp/textem-selfcheck.log", atomically: true, encoding: .utf8)
-            }
+            // Structure of a conversation row + composer, so reply-targeting can be
+            // built on the real DOM. SHAPE ONLY: ids masked, no text scraped.
+            let shapeJS = """
+            (function(){
+              function attrs(e){ var o=[]; for (var i=0;i<e.attributes.length;i++) o.push(e.attributes[i].name); return o; }
+              var el = document.querySelector('mws-conversation-list-item');
+              if (!el) return JSON.stringify({found:false});
+              var a = el.querySelector('a[href]');
+              var href = a ? a.getAttribute('href') : null;
+              var dataAttrs = [];
+              var all = el.querySelectorAll('*');
+              for (var k=0;k<all.length && dataAttrs.length<15;k++){
+                for (var m=0;m<all[k].attributes.length;m++){
+                  var n = all[k].attributes[m].name;
+                  if (n.indexOf('data-')===0 && dataAttrs.indexOf(n)===-1) dataAttrs.push(n);
+                }
+              }
+              var box = document.querySelector('textarea[data-e2e-message-input-box], mws-message-compose textarea, textarea, [contenteditable="true"]');
+              var send = document.querySelector('[data-e2e-send-button], button[aria-label*="Send" i]');
+              return JSON.stringify({
+                found:true,
+                itemAttrs: attrs(el),
+                linkAttrs: a ? attrs(a) : null,
+                hrefShape: href ? href.replace(/[A-Za-z0-9_-]{8,}/g,'<id>') : null,
+                dataAttrs: dataAttrs,
+                composer: box ? box.tagName + ':' + attrs(box).join(',') : null,
+                sendBtn: send ? send.tagName + ':' + attrs(send).join(',') : null
+              });
+            })()
+            """
+            let page = (try? await self.webView.evaluateJavaScript(js)) as? String ?? "js-unavailable"
+            let shape = (try? await self.webView.evaluateJavaScript(shapeJS)) as? String ?? "js-unavailable"
+            let text = "[selfcheck] \(native)\npage=\(page)\nshape=\(shape)\n"
+            try? text.write(toFile: "/tmp/textem-selfcheck.log", atomically: true, encoding: .utf8)
         }
     }
 
@@ -442,12 +509,19 @@ extension WebViewController: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController,
                               didReceive message: WKScriptMessage) {
         guard message.name == WebBridge.handlerName,
-              let body = message.body as? [String: Any],
-              body["type"] as? String == "unread" else { return }
-        let count = (body["count"] as? Int) ?? (body["count"] as? NSNumber)?.intValue ?? 0
-        let sender = body["sender"] as? String
-        let snippet = body["snippet"] as? String
-        handleUnread(count, sender: sender, snippet: snippet)
+              let body = message.body as? [String: Any] else { return }
+        switch body["type"] as? String {
+        case "unread":
+            let count = (body["count"] as? Int) ?? (body["count"] as? NSNumber)?.intValue ?? 0
+            handleUnread(count,
+                         sender: body["sender"] as? String,
+                         snippet: body["snippet"] as? String,
+                         convId: body["convId"] as? String)
+        case "replyResult":
+            handleReplyResult(ok: (body["ok"] as? Bool) ?? false, reason: body["reason"] as? String)
+        default:
+            return
+        }
     }
 }
 
