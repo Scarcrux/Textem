@@ -9,6 +9,7 @@ import AppKit
 // with a stated cause and a Retry.
 final class LoadErrorView: NSView {
     private let titleLabel = NSTextField(labelWithString: "Can’t reach Google Messages")
+
     private let detailLabel = NSTextField(labelWithString: "")
     var onRetry: (() -> Void)?
 
@@ -48,7 +49,12 @@ final class LoadErrorView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     // Self-describing: the message states the actual underlying cause.
-    func present(message: String) {
+    // Shown from the FIRST failure (as "Reconnecting…") rather than only after
+    // retries are spent — otherwise the user stares at an unexplained blank
+    // window for the whole backoff ladder, which is the very complaint this
+    // view exists to fix.
+    func present(message: String, isRetrying: Bool) {
+        titleLabel.stringValue = isRetrying ? "Reconnecting…" : "Can’t reach Google Messages"
         detailLabel.stringValue = message
         isHidden = false
     }

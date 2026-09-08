@@ -6,6 +6,18 @@ final class WebViewController: NSViewController {
     // unrecognized UA gets a degraded page or a refusal.
     private static let messagesURL = URL(string: "https://messages.google.com/web/")!
 
+    // Entry point for every load path (initial, retry, reload-from-origin).
+    // TEXTEM_FORCE_LOAD_FAIL=1 swaps in an unresolvable host (.invalid is
+    // reserved by RFC 2606, so DNS is guaranteed to fail) to exercise the
+    // failure path on demand — a transient network fault is precisely the thing
+    // you cannot summon when you want to verify the handling for it.
+    private static var entryURL: URL {
+        if ProcessInfo.processInfo.environment["TEXTEM_FORCE_LOAD_FAIL"] == "1" {
+            return URL(string: "https://textem-force-load-fail.invalid/")!
+        }
+        return messagesURL
+    }
+
     // Present as desktop Safari. This is the single most load-bearing line
     // in the whole spike — without it Google may not serve the full client,
     // and it's our first lever if the new account sign-in gets blocked as
@@ -168,7 +180,7 @@ final class WebViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        webView.load(URLRequest(url: Self.messagesURL))
+        webView.load(URLRequest(url: Self.entryURL))
         // Diagnostic (TEXTEM_SELFCHECK=1): dump web-view state to a file shortly
         // after launch. Screen recording + accessibility are denied to tooling on
         // this machine, so this is how a "blank window" report becomes an actual
@@ -362,7 +374,7 @@ final class WebViewController: NSViewController {
     // Hard reload back to the messages entry point (⇧⌘R) for when the session
     // is wedged and a plain reload won't recover it.
     @objc func reloadFromOrigin(_ sender: Any?) {
-        webView.load(URLRequest(url: Self.messagesURL))
+        webView.load(URLRequest(url: Self.entryURL))
     }
 
     // Writes what the web view actually contains — URL, load state, and whether
@@ -371,7 +383,8 @@ final class WebViewController: NSViewController {
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 15_000_000_000)
             guard let self else { return }
-            let native = "url=\(self.webView.url?.absoluteString ?? "nil")"
+            let native = "errorShown=\(!(self.errorView?.isHidden ?? true))"
+                + " url=\(self.webView.url?.absoluteString ?? "nil")"
                 + " title=\(self.webView.title ?? "nil")"
                 + " loading=\(self.webView.isLoading)"
                 + " progress=\(String(format: "%.2f", self.webView.estimatedProgress))"
@@ -426,7 +439,7 @@ final class WebViewController: NSViewController {
         loadRetryTask?.cancel()
         loadRetryCount = 0
         errorView.isHidden = true
-        webView.load(URLRequest(url: Self.messagesURL))
+        webView.load(URLRequest(url: Self.entryURL))
     }
 
     // A failed navigation has no UI of its own — see the note on `errorView`.
@@ -444,16 +457,21 @@ final class WebViewController: NSViewController {
 
         guard loadRetryCount < Self.maxLoadRetries else {
             errorView.present(message: ns.localizedDescription
-                + "\n\nTextem couldn’t load Google Messages. Check your connection, then Retry.")
+                + "\n\nTextem couldn’t load Google Messages. Check your connection, then Retry.",
+                isRetrying: false)
             return
         }
         loadRetryCount += 1
         let delay = pow(2.0, Double(loadRetryCount - 1))  // 1, 2, 4, 8, 16s
+        errorView.present(
+            message: "\(ns.localizedDescription)\n\nRetrying in \(Int(delay))s "
+                + "(attempt \(loadRetryCount) of \(Self.maxLoadRetries))…",
+            isRetrying: true)
         loadRetryTask?.cancel()
         loadRetryTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard let self, !Task.isCancelled else { return }
-            self.webView.load(URLRequest(url: Self.messagesURL))
+            self.webView.load(URLRequest(url: Self.entryURL))
         }
     }
 
