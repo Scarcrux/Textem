@@ -26,6 +26,14 @@ final class WebViewController: NSViewController {
     private let dataStore: WKWebsiteDataStore
     // Find-in-page overlay (⌘F).
     private var findBar: FindBar!
+    // Load-failure recovery. WKWebView paints a FAILED navigation as a blank
+    // white page and reports nothing on its own, so without this a transient
+    // fault (offline at login, sleep/wake, DNS blip) strands the user on a white
+    // window forever. Retry with backoff, then surface a real error.
+    private var errorView: LoadErrorView!
+    private var loadRetryCount = 0
+    private var loadRetryTask: Task<Void, Never>?
+    private static let maxLoadRetries = 5
 
     init(dataStore: WKWebsiteDataStore) {
         self.dataStore = dataStore
@@ -90,6 +98,14 @@ final class WebViewController: NSViewController {
         container.addSubview(bar)
         findBar = bar
 
+        // Covers the web view only when a load has definitively failed.
+        let errorView = LoadErrorView()
+        errorView.translatesAutoresizingMaskIntoConstraints = false
+        errorView.isHidden = true
+        errorView.onRetry = { [weak self] in self?.retryLoadNow() }
+        container.addSubview(errorView)
+        self.errorView = errorView
+
         NSLayoutConstraint.activate([
             webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -98,6 +114,10 @@ final class WebViewController: NSViewController {
             bar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             bar.topAnchor.constraint(equalTo: container.topAnchor),
+            errorView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            errorView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            errorView.topAnchor.constraint(equalTo: container.topAnchor),
+            errorView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
 
         self.view = container
@@ -145,6 +165,11 @@ final class WebViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         webView.load(URLRequest(url: Self.messagesURL))
+        // Diagnostic (TEXTEM_SELFCHECK=1): dump web-view state to a file shortly
+        // after launch. Screen recording + accessibility are denied to tooling on
+        // this machine, so this is how a "blank window" report becomes an actual
+        // cause instead of a guess. Off unless explicitly enabled.
+        if ProcessInfo.processInfo.environment["TEXTEM_SELFCHECK"] == "1" { scheduleSelfCheck() }
         // Re-apply privacy CSS when a toggle changes at runtime.
         NotificationCenter.default.addObserver(
             self, selector: #selector(applyPrivacyCSS),
@@ -302,6 +327,69 @@ final class WebViewController: NSViewController {
         webView.load(URLRequest(url: Self.messagesURL))
     }
 
+    // Writes what the web view actually contains — URL, load state, and whether
+    // the Messages DOM or a sign-in form is present — to /tmp/textem-selfcheck.log.
+    private func scheduleSelfCheck() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            guard let self else { return }
+            let native = "url=\(self.webView.url?.absoluteString ?? "nil")"
+                + " title=\(self.webView.title ?? "nil")"
+                + " loading=\(self.webView.isLoading)"
+                + " progress=\(String(format: "%.2f", self.webView.estimatedProgress))"
+            let js = """
+            JSON.stringify({
+              href: location.href,
+              ready: document.readyState,
+              bodyLen: document.body ? (document.body.innerText || '').length : -1,
+              convItems: document.querySelectorAll('mws-conversation-list-item').length,
+              signInForm: !!document.querySelector('input[type=email], #identifierId')
+            })
+            """
+            self.webView.evaluateJavaScript(js) { result, error in
+                let page = (result as? String) ?? "js-error: \(error?.localizedDescription ?? "unknown")"
+                let text = "[selfcheck] \(native)\npage=\(page)\n"
+                try? text.write(toFile: "/tmp/textem-selfcheck.log", atomically: true, encoding: .utf8)
+            }
+        }
+    }
+
+    // Immediate retry (Retry button); clears any pending backoff.
+    private func retryLoadNow() {
+        loadRetryTask?.cancel()
+        loadRetryCount = 0
+        errorView.isHidden = true
+        webView.load(URLRequest(url: Self.messagesURL))
+    }
+
+    // A failed navigation has no UI of its own — see the note on `errorView`.
+    // Transient faults get retried with exponential backoff; once those are
+    // spent we state the cause rather than leaving a blank window.
+    private func handleLoadFailure(_ error: Error) {
+        let ns = error as NSError
+        // Cancellations are normal (redirects, our own decidePolicy .cancel),
+        // not failures — retrying them would fight the page.
+        if ns.domain == NSURLErrorDomain, ns.code == NSURLErrorCancelled { return }
+        if ns.domain == "WebKitErrorDomain", ns.code == 102 { return }  // frame load interrupted
+
+        NSLog("[Textem] load failed (attempt %d/%d): %@ %d %@",
+              loadRetryCount + 1, Self.maxLoadRetries, ns.domain, ns.code, ns.localizedDescription)
+
+        guard loadRetryCount < Self.maxLoadRetries else {
+            errorView.present(message: ns.localizedDescription
+                + "\n\nTextem couldn’t load Google Messages. Check your connection, then Retry.")
+            return
+        }
+        loadRetryCount += 1
+        let delay = pow(2.0, Double(loadRetryCount - 1))  // 1, 2, 4, 8, 16s
+        loadRetryTask?.cancel()
+        loadRetryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.webView.load(URLRequest(url: Self.messagesURL))
+        }
+    }
+
     // Keep Google/Messages hosts inside the app; send everything else to the
     // user's default browser (avoids opening random links in the shell).
     private func isInternal(_ url: URL) -> Bool {
@@ -331,8 +419,22 @@ extension WebViewController: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // A good load clears the failure state.
+        loadRetryCount = 0
+        loadRetryTask?.cancel()
+        errorView.isHidden = true
         applyZoom()
         applyPrivacyCSS()
+    }
+
+    func webView(_ webView: WKWebView,
+                 didFailProvisionalNavigation navigation: WKNavigation!,
+                 withError error: Error) {
+        handleLoadFailure(error)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        handleLoadFailure(error)
     }
 }
 
