@@ -70,6 +70,7 @@ final class WebViewController: NSViewController {
     private var pendingOpenAttempts = 0
     private var loadRetryCount = 0
     private var loadRetryTask: Task<Void, Never>?
+    private var didExportLibGMCookies = false
     private static let maxLoadRetries = 5
 
     init(accountID: UUID, dataStore: WKWebsiteDataStore) {
@@ -687,6 +688,21 @@ extension WebViewController: WKNavigationDelegate {
         errorView.isHidden = true
         applyZoom()
         applyPrivacyCSS()
+        exportLibGMCookiesIfRequested()
+    }
+
+    private func exportLibGMCookiesIfRequested() {
+        guard LibGMCookieExporter.isEnabled, !didExportLibGMCookies else { return }
+        didExportLibGMCookies = true
+        LibGMCookieExporter.export(from: dataStore) { [weak self] result in
+            switch result {
+            case .success(let count):
+                NSLog("[Textem] libgm probe cookie handoff ready (%d cookies)", count)
+            case .failure(let error):
+                self?.didExportLibGMCookies = false
+                NSLog("[Textem] libgm probe cookie handoff failed: %@", error.localizedDescription)
+            }
+        }
     }
 
     func webView(_ webView: WKWebView,
