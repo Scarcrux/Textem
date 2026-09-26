@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
     private var statusItemController: StatusItemController?
     private var settingsWindowController: SettingsWindowController?
+    private var linkPreviewWindowController: LinkPreviewWindowController?
     private var onboardingWindowController: OnboardingWindowController?
     private var globalHotkey: GlobalHotkey?
 
@@ -36,6 +37,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if !Preferences.startHidden {
             showMainWindow()
+        }
+
+        if LinkPreviewStore.isEnabled {
+            showLinkPreviews(nil)
         }
 
         // Native notifications: click focuses the window; inline reply routes
@@ -222,6 +227,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindowController?.window?.center()
         settingsWindowController?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc func showLinkPreviews(_ sender: Any?) {
+        do {
+            let document = try LinkPreviewStore.load()
+            let controller = LinkPreviewWindowController(document: document)
+            linkPreviewWindowController = controller
+            controller.showWindow(nil)
+            controller.window?.center()
+            controller.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } catch {
+            presentInfo(error.localizedDescription)
+        }
     }
 
     private func showMainWindow() {

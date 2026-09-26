@@ -21,6 +21,9 @@ enum MainMenu {
         let copyCode = appMenu.addItem(withTitle: "Copy Latest Code", action: #selector(WebViewController.copyLatestCode(_:)), keyEquivalent: "c")
         copyCode.keyEquivalentModifierMask = [.command, .shift]
         appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
+        if LinkPreviewStore.isEnabled {
+            appMenu.addItem(withTitle: "Native Link Previews…", action: #selector(AppDelegate.showLinkPreviews(_:)), keyEquivalent: "")
+        }
         appMenu.addItem(.separator())
 
         // Page reload — needed for the pairing dance and general refresh.
