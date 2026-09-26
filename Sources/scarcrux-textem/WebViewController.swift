@@ -105,7 +105,8 @@ final class WebViewController: NSViewController {
             PayloadProbe.prepareLog()
             controller.add(WeakScriptMessageHandler(self), name: PayloadProbe.handlerName)
             controller.addUserScript(WKUserScript(
-                source: PayloadProbe.userScript,
+                source: PayloadProbe.userScript(targetHint:
+                    ProcessInfo.processInfo.environment["TEXTEM_PAYLOAD_PROBE_TARGET"]),
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: true
             ))
