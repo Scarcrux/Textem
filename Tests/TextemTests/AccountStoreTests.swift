@@ -37,7 +37,12 @@ final class AccountStoreTests: XCTestCase {
         let store = AccountStore(defaults: freshDefaults())
         let account = store.addAccount(name: "Work")
         store.setActive(account.id)
-        store.remove(account.id)
+        var completionCalled = false
+        store.remove(account.id) { error in
+            XCTAssertNil(error)
+            completionCalled = true
+        }
+        XCTAssertTrue(completionCalled)
         XCTAssertEqual(store.accounts.count, 1)
         XCTAssertEqual(store.activeID, store.accounts[0].id)
 

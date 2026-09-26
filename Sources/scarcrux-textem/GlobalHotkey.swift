@@ -28,15 +28,19 @@ final class GlobalHotkey {
             return noErr
         }
 
-        InstallEventHandler(
+        let handlerStatus = InstallEventHandler(
             GetApplicationEventTarget(),
             callback, 1, &eventType,
             Unmanaged.passUnretained(self).toOpaque(),
             &handlerRef
         )
+        guard handlerStatus == noErr else {
+            NSLog("[Textem] global hotkey handler registration failed: %d", handlerStatus)
+            return
+        }
 
         let hotKeyID = EventHotKeyID(signature: OSType(0x5458544D), id: 1) // "TXTM"
-        RegisterEventHotKey(
+        let hotkeyStatus = RegisterEventHotKey(
             UInt32(kVK_ANSI_M),
             UInt32(cmdKey | optionKey),
             hotKeyID,
@@ -44,5 +48,11 @@ final class GlobalHotkey {
             0,
             &hotKeyRef
         )
+        if hotkeyStatus != noErr {
+            NSLog("[Textem] global hotkey ⌥⌘M is unavailable: %d", hotkeyStatus)
+            if let handlerRef { RemoveEventHandler(handlerRef) }
+            handlerRef = nil
+        }
     }
+
 }

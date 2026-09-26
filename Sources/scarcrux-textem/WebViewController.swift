@@ -18,24 +18,39 @@ final class WebViewController: NSViewController {
         return messagesURL
     }
 
+    private static func isAllowedNavigationURL(_ url: URL) -> Bool {
+        if WebNavigationPolicy.isAllowedTopLevelURL(url) { return true }
+        return ProcessInfo.processInfo.environment["TEXTEM_FORCE_LOAD_FAIL"] == "1"
+            && url.host == "textem-force-load-fail.invalid"
+    }
+
     // Present as desktop Safari. This is the single most load-bearing line
     // in the whole spike — without it Google may not serve the full client,
     // and it's our first lever if the new account sign-in gets blocked as
     // an "insecure browser".
-    private static let desktopUserAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
-        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+    static var desktopUserAgent: String {
+        // Safari intentionally freezes the macOS token at 10_15_7 for web
+        // compatibility. Read the installed Safari version so Textem does not
+        // impersonate one increasingly stale browser forever.
+        let safariVersion = Bundle(path: "/Applications/Safari.app")?
+            .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let version = safariVersion?.split(separator: ".").prefix(2).joined(separator: ".")
+            ?? "17.4"
+        return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(version) Safari/605.1.15"
+    }
 
     private var webView: WKWebView!
     // Retain live popup windows (e.g. the Google verification popup) so they
     // aren't deallocated mid-flow.
     private var popups: [PopupWindowController] = []
-    // Latest unread count reported by the JS bridge.
-    private var lastUnreadCount = 0
     // Notified whenever the unread count changes (drives the menu-bar item).
     var onUnreadCountChanged: ((Int) -> Void)?
+    private let accountID: UUID
     // The account's isolated session store.
     private let dataStore: WKWebsiteDataStore
+    private var activityTracker = ConversationActivityTracker()
+    private var bridgeReady = false
     // Find-in-page overlay (⌘F).
     private var findBar: FindBar!
     // Load-failure recovery. WKWebView paints a FAILED navigation as a blank
@@ -43,14 +58,22 @@ final class WebViewController: NSViewController {
     // fault (offline at login, sleep/wake, DNS blip) strands the user on a white
     // window forever. Retry with backoff, then surface a real error.
     private var errorView: LoadErrorView!
-    // Text of an in-flight inline reply, so a failure can hand it back to the
-    // user instead of losing what they typed.
-    private var pendingReplyText: String?
+    private struct PendingReply {
+        let id: UUID
+        let text: String
+        let conversationID: String
+    }
+    private var replyQueue: [PendingReply] = []
+    private var activeReply: PendingReply?
+    private var replyTimeoutTask: Task<Void, Never>?
+    private var pendingOpenConversationID: String?
+    private var pendingOpenAttempts = 0
     private var loadRetryCount = 0
     private var loadRetryTask: Task<Void, Never>?
     private static let maxLoadRetries = 5
 
-    init(dataStore: WKWebsiteDataStore) {
+    init(accountID: UUID, dataStore: WKWebsiteDataStore) {
+        self.accountID = accountID
         self.dataStore = dataStore
         super.init(nibName: nil, bundle: nil)
     }
@@ -94,9 +117,11 @@ final class WebViewController: NSViewController {
         webView.uiDelegate = self
         // Allow attaching Safari's Web Inspector (Develop > Textem) to debug
         // the sign-in/verification flow.
+        #if DEBUG
         if #available(macOS 13.3, *) {
             webView.isInspectable = true
         }
+        #endif
 
         self.webView = webView
 
@@ -163,19 +188,23 @@ final class WebViewController: NSViewController {
         view.window?.makeFirstResponder(webView)
     }
 
-    // Called from the JS bridge with the current unread count (+ optional
-    // sender/snippet of the newest unread conversation).
-    private func handleUnread(_ count: Int, sender: String?, snippet: String?, convId: String?) {
+    private func handleSnapshot(_ count: Int, rows: [ConversationSnapshot]) {
         NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
-
-        // Notify only when the count rises, Textem isn't active, and
-        // notifications aren't muted.
-        if count > lastUnreadCount, !NSApp.isActive, !Preferences.notificationsMuted {
-            NotificationManager.shared.notifyNewMessages(
-                newCount: count - lastUnreadCount, sender: sender, snippet: snippet, convId: convId)
+        let events = activityTracker.update(rows)
+        if !NSApp.isActive, !Preferences.notificationsMuted {
+            for event in events {
+                NotificationManager.shared.notifyNewMessage(
+                    sender: event.sender,
+                    snippet: event.snippet,
+                    accountID: accountID,
+                    conversationID: event.id
+                )
+            }
         }
-        lastUnreadCount = count
         onUnreadCountChanged?(count)
+        bridgeReady = true
+        openPendingConversationIfReady()
+        processNextReplyIfReady()
     }
 
     override func viewDidLoad() {
@@ -193,77 +222,194 @@ final class WebViewController: NSViewController {
         )
     }
 
-    // Inline reply from a notification: open the newest unread conversation,
-    // type the text, and send. Best-effort DOM automation — composer/send
-    // selectors are heuristic and need a live message to fully verify.
-    // Inline reply from a notification.
-    //
-    // Targets the EXACT conversation the notification was for, via
-    // data-e2e-conversation (confirmed present on the live DOM). The previous
-    // implementation replied to the "first unread" row, which meant a message
-    // arriving between notification and reply could send your text to the WRONG
-    // person. If the target row isn't found we now FAIL rather than guess.
-    //
-    // Polls for the composer and send button instead of racing fixed delays,
-    // and reports the outcome so a failed reply surfaces instead of vanishing.
-    func quickReply(_ text: String, convId: String?) {
-        guard let textData = try? JSONEncoder().encode(text),
-              let textJSON = String(data: textData, encoding: .utf8),
-              let idData = try? JSONEncoder().encode(convId ?? ""),
-              let idJSON = String(data: idData, encoding: .utf8) else { return }
-        pendingReplyText = text
-        let js = """
-        (function(reply, convId){
-          function post(o){ try { window.webkit.messageHandlers['\(WebBridge.handlerName)'].postMessage(o); } catch(e){} }
-          function fail(r){ post({ type: 'replyResult', ok: false, reason: r }); }
-          if (!convId) { fail('no-conversation-id'); return; }
-          var link = document.querySelector('a[data-e2e-conversation="' + convId + '"]');
-          if (!link) { fail('conversation-not-found'); return; }
-          link.click();
-          var t0 = Date.now();
-          (function waitBox(){
-            var box = document.querySelector('textarea[data-e2e-message-input-box], mws-message-compose textarea, textarea, [contenteditable="true"]');
-            if (!box) {
-              if (Date.now() - t0 > 6000) { fail('composer-not-found'); return; }
-              setTimeout(waitBox, 100); return;
-            }
-            box.focus();
-            if ('value' in box) {
-              var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-              setter.call(box, reply);
-              box.dispatchEvent(new Event('input', { bubbles: true }));
-            } else {
-              box.textContent = reply;
-              box.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-            var t1 = Date.now();
-            (function waitSend(){
-              var send = document.querySelector('[data-e2e-send-button], button[aria-label*="Send" i]');
-              if (!send || send.disabled) {
-                if (Date.now() - t1 > 4000) { fail('send-button-unavailable'); return; }
-                setTimeout(waitSend, 100); return;
-              }
-              send.click();
-              post({ type: 'replyResult', ok: true });
-            })();
-          })();
-        })(\(textJSON), \(idJSON));
-        """
-        webView.evaluateJavaScript(js, completionHandler: nil)
+    // Notification replies are queued and run one at a time. The page must
+    // report a real Messages snapshot before automation starts, which also lets
+    // a reply switch back to its originating account without racing page load.
+    func quickReply(_ text: String, conversationID: String?) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let conversationID, !conversationID.isEmpty else {
+            NotificationManager.shared.notifyInfo("Reply not sent: missing message or conversation.")
+            return
+        }
+        replyQueue.append(PendingReply(
+            id: UUID(), text: text, conversationID: conversationID))
+        processNextReplyIfReady()
     }
 
-    // A reply that silently vanishes is worse than one that fails loudly — the
-    // user believes it sent. State the cause and hand the text back.
-    private func handleReplyResult(ok: Bool, reason: String?) {
-        let text = pendingReplyText
-        pendingReplyText = nil
-        guard !ok else { return }
-        let detail = reason ?? "unknown"
-        NSLog("[Textem] inline reply failed: %@", detail)
-        var preview = ""
-        if let text, !text.isEmpty { preview = " — “\(text.prefix(60))”" }
-        NotificationManager.shared.notifyInfo(
-            "Reply not sent (\(detail))\(preview). Open Textem to send it.")
+    func openConversation(_ conversationID: String?) {
+        guard let conversationID, !conversationID.isEmpty else { return }
+        pendingOpenConversationID = conversationID
+        pendingOpenAttempts = 0
+        openPendingConversationIfReady()
+    }
+
+    private func openPendingConversationIfReady() {
+        guard bridgeReady, let conversationID = pendingOpenConversationID,
+              let idJSON = Self.jsonString(conversationID) else { return }
+        pendingOpenConversationID = nil
+        let js = """
+        (function(convId) {
+          var links = document.querySelectorAll('a[data-e2e-conversation]');
+          for (var i = 0; i < links.length; i++) {
+            if (links[i].getAttribute('data-e2e-conversation') === convId) {
+              links[i].click();
+              return true;
+            }
+          }
+          return false;
+        })(\(idJSON));
+        """
+        webView.evaluateJavaScript(js) { [weak self] result, error in
+            guard error != nil || (result as? Bool) != true else { return }
+            Task { @MainActor in
+                guard let self else { return }
+                self.pendingOpenAttempts += 1
+                if self.pendingOpenAttempts >= 3 {
+                    NotificationManager.shared.notifyInfo(
+                        "The conversation from that notification is no longer in the list.")
+                } else {
+                    self.pendingOpenConversationID = conversationID
+                }
+            }
+        }
+    }
+
+    private func processNextReplyIfReady() {
+        guard bridgeReady, activeReply == nil, !replyQueue.isEmpty else { return }
+        let reply = replyQueue.removeFirst()
+        activeReply = reply
+        guard let requestJSON = Self.jsonString(reply.id.uuidString),
+              let textJSON = Self.jsonString(reply.text),
+              let idJSON = Self.jsonString(reply.conversationID) else {
+            finishReply(reply, ok: false, statusUnknown: false, reason: "encoding-failed")
+            return
+        }
+
+        // Fail closed: after clicking the row, wait until location exactly
+        // matches that row's href before querying a composer. The old code
+        // queried immediately and could type into the previously open thread.
+        let js = """
+        (function(requestId, reply, convId) {
+          function post(o) {
+            o.type = 'replyResult'; o.requestId = requestId;
+            try { window.webkit.messageHandlers['\(WebBridge.handlerName)'].postMessage(o); } catch(e) {}
+          }
+          function fail(reason) { post({ ok: false, unknown: false, reason: reason }); }
+          function route(url) {
+            var u = new URL(url, location.href);
+            return u.origin + u.pathname + u.search + u.hash;
+          }
+          function valueOf(box) {
+            return ('value' in box) ? box.value : (box.textContent || '');
+          }
+
+          var links = document.querySelectorAll('a[data-e2e-conversation]');
+          var link = null;
+          for (var i = 0; i < links.length; i++) {
+            if (links[i].getAttribute('data-e2e-conversation') === convId) { link = links[i]; break; }
+          }
+          if (!link || !link.href) { fail('conversation-not-found'); return; }
+          var targetRoute = route(link.href);
+          if (route(location.href) !== targetRoute) link.click();
+
+          var started = Date.now();
+          (function waitForTarget() {
+            if (route(location.href) !== targetRoute) {
+              if (Date.now() - started > 10000) { fail('conversation-not-selected'); return; }
+              setTimeout(waitForTarget, 100); return;
+            }
+
+            var box = document.querySelector(
+              'textarea[data-e2e-message-input-box], mws-message-compose textarea, mws-message-compose [contenteditable="true"]');
+            if (!box) {
+              if (Date.now() - started > 10000) { fail('composer-not-found'); return; }
+              setTimeout(waitForTarget, 100); return;
+            }
+
+            box.focus();
+            if ('value' in box) {
+              var proto = box instanceof HTMLTextAreaElement
+                ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+              var descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+              if (!descriptor || !descriptor.set) { fail('composer-unsupported'); return; }
+              descriptor.set.call(box, reply);
+            } else {
+              box.textContent = reply;
+            }
+            box.dispatchEvent(new InputEvent('input', {
+              bubbles: true, inputType: 'insertText', data: reply
+            }));
+
+            var sendStarted = Date.now();
+            (function waitForSend() {
+              if (route(location.href) !== targetRoute) { fail('conversation-changed'); return; }
+              if (valueOf(box) !== reply) {
+                if (Date.now() - sendStarted > 4000) { fail('composer-rejected-text'); return; }
+                setTimeout(waitForSend, 100); return;
+              }
+              var compose = box.closest('mws-message-compose');
+              var send = compose ? compose.querySelector('[data-e2e-send-button], button[aria-label="Send"]') : null;
+              if (!send) send = document.querySelector('[data-e2e-send-button]');
+              if (!send || send.disabled) {
+                if (Date.now() - sendStarted > 4000) { fail('send-button-unavailable'); return; }
+                setTimeout(waitForSend, 100); return;
+              }
+              send.click();
+
+              var confirmStarted = Date.now();
+              (function confirmSubmission() {
+                if (valueOf(box) === '') { post({ ok: true }); return; }
+                if (Date.now() - confirmStarted > 5000) {
+                  post({ ok: false, unknown: true, reason: 'submission-unconfirmed' });
+                  return;
+                }
+                setTimeout(confirmSubmission, 100);
+              })();
+            })();
+          })();
+        })(\(requestJSON), \(textJSON), \(idJSON));
+        """
+
+        webView.evaluateJavaScript(js) { [weak self] _, error in
+            guard let error else { return }
+            Task { @MainActor in
+                self?.finishReply(reply, ok: false, statusUnknown: false,
+                                  reason: "javascript-error: \(error.localizedDescription)")
+            }
+        }
+        replyTimeoutTask?.cancel()
+        replyTimeoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 22_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.finishReply(reply, ok: false, statusUnknown: true, reason: "timed-out")
+        }
+    }
+
+    private func finishReply(_ reply: PendingReply, ok: Bool,
+                             statusUnknown: Bool, reason: String?) {
+        guard activeReply?.id == reply.id else { return }
+        activeReply = nil
+        replyTimeoutTask?.cancel()
+        replyTimeoutTask = nil
+        if !ok {
+            let detail = reason ?? "unknown"
+            NSLog("[Textem] inline reply failed: %@", detail)
+            if statusUnknown {
+                NotificationManager.shared.notifyInfo(
+                    "Reply status unknown (\(detail)). Check the thread before resending.")
+            } else {
+                let preview = Preferences.hideNotificationPreview
+                    ? "" : " — “\(reply.text.prefix(60))”"
+                NotificationManager.shared.notifyInfo(
+                    "Reply not sent (\(detail))\(preview). Open Textem to send it.")
+            }
+        }
+        processNextReplyIfReady()
+    }
+
+    private static func jsonString(_ value: String) -> String? {
+        guard let data = try? JSONEncoder().encode(value) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     // Inject/refresh the privacy CSS (blur messages, hide avatars) based on
@@ -292,6 +438,15 @@ final class WebViewController: NSViewController {
     // Detach the web view before this controller is replaced (account switch)
     // so it stops loading, drops the bridge handler, and can deallocate.
     func teardown() {
+        bridgeReady = false
+        replyTimeoutTask?.cancel()
+        replyTimeoutTask = nil
+        if activeReply != nil || !replyQueue.isEmpty {
+            NotificationManager.shared.notifyInfo(
+                "Reply not sent because the active account changed.")
+        }
+        activeReply = nil
+        replyQueue.removeAll()
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
@@ -351,7 +506,9 @@ final class WebViewController: NSViewController {
                 guard !code.isEmpty else { NSSound.beep(); return }
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(code, forType: .string)
-                NotificationManager.shared.notifyInfo("Copied code \(code)")
+                NotificationManager.shared.notifyInfo(
+                    Preferences.hideNotificationPreview
+                        ? "Copied verification code" : "Copied code \(code)")
             }
         }
     }
@@ -430,7 +587,9 @@ final class WebViewController: NSViewController {
             let page = (try? await self.webView.evaluateJavaScript(js)) as? String ?? "js-unavailable"
             let shape = (try? await self.webView.evaluateJavaScript(shapeJS)) as? String ?? "js-unavailable"
             let text = "[selfcheck] \(native)\npage=\(page)\nshape=\(shape)\n"
-            try? text.write(toFile: "/tmp/textem-selfcheck.log", atomically: true, encoding: .utf8)
+            let path = ProcessInfo.processInfo.environment["TEXTEM_SELFCHECK_PATH"]
+                ?? "/tmp/textem-selfcheck.log"
+            try? text.write(toFile: path, atomically: true, encoding: .utf8)
         }
     }
 
@@ -475,14 +634,6 @@ final class WebViewController: NSViewController {
         }
     }
 
-    // Keep Google/Messages hosts inside the app; send everything else to the
-    // user's default browser (avoids opening random links in the shell).
-    private func isInternal(_ url: URL) -> Bool {
-        guard let host = url.host?.lowercased() else { return false }
-        return host.hasSuffix("google.com")
-            || host.hasSuffix("gstatic.com")
-            || host.hasSuffix("googleusercontent.com")
-    }
 }
 
 extension WebViewController: WKNavigationDelegate {
@@ -490,17 +641,28 @@ extension WebViewController: WKNavigationDelegate {
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url else {
-            decisionHandler(.allow)
+            decisionHandler(.cancel)
             return
         }
 
-        // Externally-triggered navigations to non-Google hosts open in Safari.
-        if navigationAction.navigationType == .linkActivated, !isInternal(url) {
-            NSWorkspace.shared.open(url)
+        let isEmbeddedFrame = navigationAction.targetFrame?.isMainFrame == false
+        let isAllowed = isEmbeddedFrame
+            ? WebNavigationPolicy.isAllowedEmbeddedURL(url)
+            : Self.isAllowedNavigationURL(url)
+        guard isAllowed else {
+            // Only explicit user gestures may launch another application. A
+            // script/redirect to an untrusted origin is simply blocked.
+            if navigationAction.navigationType == .linkActivated {
+                NSWorkspace.shared.open(url)
+            }
             decisionHandler(.cancel)
             return
         }
         decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        bridgeReady = false
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -521,22 +683,52 @@ extension WebViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         handleLoadFailure(error)
     }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        bridgeReady = false
+        handleLoadFailure(NSError(
+            domain: "Textem.WebKit",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "The Google Messages web process stopped unexpectedly."]
+        ))
+    }
 }
 
 extension WebViewController: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController,
                               didReceive message: WKScriptMessage) {
         guard message.name == WebBridge.handlerName,
+              message.webView === webView,
+              message.frameInfo.isMainFrame,
+              WebNavigationPolicy.isAllowedBridgeOrigin(
+                scheme: message.frameInfo.securityOrigin.protocol,
+                host: message.frameInfo.securityOrigin.host),
               let body = message.body as? [String: Any] else { return }
         switch body["type"] as? String {
-        case "unread":
+        case "snapshot":
             let count = (body["count"] as? Int) ?? (body["count"] as? NSNumber)?.intValue ?? 0
-            handleUnread(count,
-                         sender: body["sender"] as? String,
-                         snippet: body["snippet"] as? String,
-                         convId: body["convId"] as? String)
+            let rows = (body["rows"] as? [[String: Any]] ?? []).compactMap { row -> ConversationSnapshot? in
+                guard let id = row["id"] as? String, !id.isEmpty,
+                      let fingerprint = row["fingerprint"] as? String else { return nil }
+                return ConversationSnapshot(
+                    id: id,
+                    sender: row["sender"] as? String ?? "",
+                    snippet: row["snippet"] as? String ?? "",
+                    fingerprint: fingerprint,
+                    isUnread: (row["unread"] as? Bool) ?? false
+                )
+            }
+            handleSnapshot(count, rows: rows)
         case "replyResult":
-            handleReplyResult(ok: (body["ok"] as? Bool) ?? false, reason: body["reason"] as? String)
+            guard let rawID = body["requestId"] as? String,
+                  let id = UUID(uuidString: rawID),
+                  let reply = activeReply, reply.id == id else { return }
+            finishReply(
+                reply,
+                ok: (body["ok"] as? Bool) ?? false,
+                statusUnknown: (body["unknown"] as? Bool) ?? false,
+                reason: body["reason"] as? String
+            )
         default:
             return
         }
@@ -552,6 +744,11 @@ extension WebViewController: WKUIDelegate {
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard let url = navigationAction.request.url,
+              WebNavigationPolicy.isAllowedTopLevelURL(url) else {
+            if let url = navigationAction.request.url { NSWorkspace.shared.open(url) }
+            return nil
+        }
         let popup = PopupWindowController(configuration: configuration) { [weak self] controller in
             self?.popups.removeAll { $0 === controller }
         }

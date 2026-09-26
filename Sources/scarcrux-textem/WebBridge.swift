@@ -1,100 +1,97 @@
 import Foundation
 
-// Injected JavaScript that reports Google Messages' unread state to native.
-// Google doesn't expose the unread count in the document title (it's
-// "Google Messages for web: Conversations"), so we read it from the DOM:
-// conversation list items whose accessibility label marks them unread.
-// aria-labels are more stable than Google's minified CSS class names.
-//
-// The `diag` payload carries alternate selector counts so the native side
-// can log them and we can retune if Google changes their markup.
+// Injected JavaScript reports complete conversation-row snapshots. Native code
+// compares their fingerprints so a new message in an already-unread thread is
+// observable even though the unread-conversation count does not change.
 enum WebBridge {
     static let handlerName = "textem"
 
     static let userScript = """
     (function() {
+      // Popup configurations inherit the opener's user-content controller.
+      // Never let an account/sign-in popup impersonate the Messages page.
+      if (window.opener) return;
+
       var HANDLER = 'textem';
       function post(obj) {
         try { window.webkit.messageHandlers[HANDLER].postMessage(obj); } catch (e) {}
       }
       function lower(s) { return (s || '').toLowerCase(); }
+      function clean(s) { return (s || '').replace(/\\s+/g, ' ').trim(); }
 
-      // The conversation list lives in the light DOM as
-      // <mws-conversation-list-item> (no shadow roots). Google flags an
-      // unread conversation with data-e2e-is-unread="true" — an automation
-      // hook that's more stable than its minified CSS classes. Fall back to
-      // an aria-label mention of "unread" if that attribute ever disappears.
       function isUnread(el) {
         if (el.getAttribute('data-e2e-is-unread') === 'true') return true;
         if (el.querySelector('[data-e2e-is-unread="true"]')) return true;
         var al = el.getAttribute('aria-label') || '';
-        if (!al) { var a = el.querySelector('[aria-label]'); if (a) al = a.getAttribute('aria-label') || ''; }
+        if (!al) {
+          var labelled = el.querySelector('[aria-label]');
+          if (labelled) al = labelled.getAttribute('aria-label') || '';
+        }
         return lower(al).indexOf('unread') !== -1;
       }
 
-      function countUnread() {
+      function snapshot() {
         var items = document.querySelectorAll('mws-conversation-list-item');
-        var n = 0;
+        var rows = [];
         for (var i = 0; i < items.length; i++) {
-          if (isUnread(items[i])) n++;
-        }
-        return n;
-      }
-
-      // Best-effort sender + snippet of the newest unread conversation, for
-      // rich notifications. Selectors are heuristic (Google's DOM is minified).
-      function latestUnread() {
-        var items = document.querySelectorAll('mws-conversation-list-item');
-        for (var i = 0; i < items.length; i++) {
-          if (!isUnread(items[i])) continue;
           var el = items[i];
-          var snip = '';
-          var snipEl = el.querySelector('[data-e2e-conversation-snippet], mws-conversation-snippet');
-          if (snipEl) snip = (snipEl.textContent || '').trim();
-          var name = '';
-          var nameEl = el.querySelector('[data-e2e-conversation-name], h3, .name');
-          if (nameEl) name = (nameEl.textContent || '').trim();
-          if (!name) {
-            var al = el.getAttribute('aria-label') || '';
-            name = al.replace(/unread.*/i, '').replace(/[,.].*$/, '').trim();
-          }
-          // The conversation's stable id lives on the row's <a> as
-          // data-e2e-conversation (confirmed against the live DOM). Carrying it
-          // through the notification is what lets a reply target THIS thread
-          // rather than whatever happens to be unread when the user replies.
-          var convId = '';
           var idLink = el.querySelector('a[data-e2e-conversation]');
-          if (idLink) convId = idLink.getAttribute('data-e2e-conversation') || '';
-          return { sender: name, snippet: snip, convId: convId };
+          var id = idLink ? (idLink.getAttribute('data-e2e-conversation') || '') : '';
+          // Rows without a stable id cannot safely support notification actions.
+          if (!id) continue;
+
+          var snippetEl = el.querySelector('[data-e2e-conversation-snippet], mws-conversation-snippet');
+          var snippet = snippetEl ? clean(snippetEl.textContent) : '';
+          var nameEl = el.querySelector('[data-e2e-conversation-name], h3, .name');
+          var sender = nameEl ? clean(nameEl.textContent) : '';
+          if (!sender) {
+            var label = el.getAttribute('aria-label') || '';
+            sender = clean(label.replace(/unread.*/i, '').replace(/[,.].*$/, ''));
+          }
+
+          // Do not include relative timestamps or unread styling: those change
+          // without a new message and would create false notifications.
+          rows.push({
+            id: id,
+            sender: sender,
+            snippet: snippet,
+            fingerprint: sender + '|' + snippet,
+            unread: isUnread(el)
+          });
         }
-        return null;
+        return rows;
       }
 
-      var lastCount = -1;
+      var lastSerialized = null;
       var timer = null;
       function report(force) {
-        var c = countUnread();
-        if (c === lastCount && !force) return;
-        lastCount = c;
-        var msg = { type: 'unread', count: c };
-        var latest = latestUnread();
-        if (latest) { msg.sender = latest.sender; msg.snippet = latest.snippet; msg.convId = latest.convId; }
-        post(msg);
+        var rows = snapshot();
+        var serialized = JSON.stringify(rows);
+        if (!force && serialized === lastSerialized) return;
+        lastSerialized = serialized;
+        var unread = 0;
+        for (var i = 0; i < rows.length; i++) if (rows[i].unread) unread++;
+        post({ type: 'snapshot', count: unread, rows: rows });
       }
 
       try {
         var obs = new MutationObserver(function() {
           clearTimeout(timer);
-          timer = setTimeout(function() { report(false); }, 1000);
+          timer = setTimeout(function() { report(false); }, 250);
         });
         obs.observe(document.documentElement, {
-          childList: true, subtree: true,
-          attributes: true, attributeFilter: ['aria-label']
+          childList: true,
+          subtree: true,
+          characterData: true,
+          attributes: true,
+          attributeFilter: ['aria-label', 'data-e2e-is-unread', 'data-e2e-conversation', 'href']
         });
       } catch (e) {}
 
+      // The periodic report heals missed or implementation-specific DOM changes;
+      // native fingerprinting makes duplicate reports harmless.
       setInterval(function() { report(true); }, 8000);
-      setTimeout(function() { report(true); }, 2000);
+      setTimeout(function() { report(true); }, 500);
     })();
     """
 }

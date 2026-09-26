@@ -1,5 +1,8 @@
 name: build
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -10,16 +13,13 @@ jobs:
   build:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Show Swift version
         run: swift --version
 
-      - name: Build (release)
-        run: swift build -c release
-
       - name: Test
-        run: swift test
+        run: xcrun --toolchain XcodeDefault swift test
 
       - name: Bundle Textem.app
         run: make bundle

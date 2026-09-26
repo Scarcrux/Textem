@@ -1,8 +1,8 @@
 repos:
   - repo: local
     hooks:
-      - id: swift-build
-        name: swift build
-        entry: swift build
+      - id: swift-test
+        name: swift test
+        entry: xcrun --toolchain XcodeDefault swift test
         language: system
         pass_filenames: false

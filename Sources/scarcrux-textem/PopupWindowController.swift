@@ -19,9 +19,12 @@ final class PopupWindowController: NSWindowController {
         // Must build the popup from the passed-in configuration, per the
         // WKUIDelegate contract, so it shares state with the opener.
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.customUserAgent = WebViewController.desktopUserAgent
+        #if DEBUG
         if #available(macOS 13.3, *) {
             webView.isInspectable = true
         }
+        #endif
         self.webView = webView
         self.onClose = onClose
 
@@ -52,7 +55,29 @@ extension PopupWindowController: WKUIDelegate {
     }
 }
 
-extension PopupWindowController: WKNavigationDelegate {}
+extension PopupWindowController: WKNavigationDelegate {
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.cancel)
+            return
+        }
+        let isEmbeddedFrame = navigationAction.targetFrame?.isMainFrame == false
+        let isAllowed = isEmbeddedFrame
+            ? WebNavigationPolicy.isAllowedEmbeddedURL(url)
+            : WebNavigationPolicy.isAllowedTopLevelURL(url)
+        guard isAllowed else {
+            if let url = navigationAction.request.url,
+               navigationAction.navigationType == .linkActivated {
+                NSWorkspace.shared.open(url)
+            }
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+}
 
 extension PopupWindowController: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {

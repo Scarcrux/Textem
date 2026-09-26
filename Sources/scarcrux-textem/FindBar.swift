@@ -33,8 +33,8 @@ final class FindBar: NSView {
         field.action = #selector(searchAction)
         field.sendsSearchStringImmediately = false
 
-        let prev = button("‹", #selector(prevAction))
-        let next = button("›", #selector(nextAction))
+        let prev = button("‹", accessibilityLabel: "Previous match", #selector(prevAction))
+        let next = button("›", accessibilityLabel: "Next match", #selector(nextAction))
         let done = NSButton(title: "Done", target: self, action: #selector(closeAction))
         done.bezelStyle = .rounded
 
@@ -54,9 +54,11 @@ final class FindBar: NSView {
         ])
     }
 
-    private func button(_ title: String, _ action: Selector) -> NSButton {
+    private func button(_ title: String, accessibilityLabel: String,
+                        _ action: Selector) -> NSButton {
         let b = NSButton(title: title, target: self, action: action)
         b.bezelStyle = .rounded
+        b.setAccessibilityLabel(accessibilityLabel)
         return b
     }
 

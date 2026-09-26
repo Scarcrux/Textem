@@ -10,7 +10,9 @@ final class MainWindowController: NSWindowController {
 
     init() {
         let account = AccountStore.shared.active
-        webViewController = WebViewController(dataStore: AccountStore.shared.dataStore(for: account))
+        webViewController = WebViewController(
+            accountID: account.id,
+            dataStore: AccountStore.shared.dataStore(for: account))
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
@@ -35,7 +37,9 @@ final class MainWindowController: NSWindowController {
     // Swap the content web view for a different account's session.
     func switchTo(_ account: Account) {
         let old = webViewController
-        let new = WebViewController(dataStore: AccountStore.shared.dataStore(for: account))
+        let new = WebViewController(
+            accountID: account.id,
+            dataStore: AccountStore.shared.dataStore(for: account))
         new.onUnreadCountChanged = onUnreadCountChanged
         webViewController = new
         window?.contentViewController = new

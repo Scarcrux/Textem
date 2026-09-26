@@ -14,22 +14,27 @@ jobs:
   release:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build + test
-        run: |
-          swift build -c release
-          swift test
+        run: xcrun --toolchain XcodeDefault swift test
 
       - name: Package .dmg
-        run: make dmg
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          version="${version%%-*}"
+          make dmg VERSION="$version" BUILD_NUMBER="${GITHUB_RUN_NUMBER}"
+          shasum -a 256 Textem.dmg > Textem.dmg.sha256
 
       - name: Publish draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           draft: true
           name: Textem ${{ github.ref_name }}
-          files: Textem.dmg
+          files: |
+            Textem.dmg
+            Textem.dmg.sha256
           body: |
             Unsigned pre-release build of Textem ${{ github.ref_name }}.
 

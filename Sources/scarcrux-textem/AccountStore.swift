@@ -66,18 +66,62 @@ final class AccountStore {
         persist()
     }
 
-    func remove(_ id: UUID) {
+    func remove(_ id: UUID, completion: @escaping (Error?) -> Void = { _ in }) {
         guard accounts.count > 1,
-              let index = accounts.firstIndex(where: { $0.id == id }) else { return }
-        let removed = accounts.remove(at: index)
-        // Delete the account's on-disk session (skipped under XCTest, which has
-        // no app bundle for the data-store APIs).
-        let underTest = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-        if let sid = removed.storeIdentifier, #available(macOS 14.0, *), !underTest {
-            WKWebsiteDataStore.remove(forIdentifier: sid) { _ in }
+              let removed = accounts.first(where: { $0.id == id }) else {
+            completion(nil)
+            return
         }
-        if activeID == id { activeID = accounts[0].id }
-        persist()
+
+        let finishRemoval = { [weak self] in
+            guard let self,
+                  let index = self.accounts.firstIndex(where: { $0.id == id }) else {
+                completion(nil)
+                return
+            }
+            self.accounts.remove(at: index)
+            if self.activeID == id { self.activeID = self.accounts[0].id }
+            self.persist()
+            completion(nil)
+        }
+
+        // Only remove account metadata after WebKit confirms deletion. The UI
+        // promises that removal deletes the local session, so silently ignoring
+        // this callback would turn a privacy guarantee into a best effort.
+        let process = ProcessInfo.processInfo
+        let underTest = process.processName == "xctest"
+            || process.environment["XCTestConfigurationFilePath"] != nil
+        if underTest {
+            finishRemoval()
+        } else if let sid = removed.storeIdentifier, #available(macOS 14.0, *) {
+            WKWebsiteDataStore.remove(forIdentifier: sid) { error in
+                Task { @MainActor in
+                    if let error { completion(error) } else { finishRemoval() }
+                }
+            }
+        } else {
+            // The migrated first account intentionally uses WebKit's unnamed
+            // default store. It has no identifier to remove, so clear every
+            // website-data type and verify that no records remain.
+            let store = WKWebsiteDataStore.default()
+            let types = WKWebsiteDataStore.allWebsiteDataTypes()
+            store.removeData(ofTypes: types, modifiedSince: .distantPast) {
+                store.fetchDataRecords(ofTypes: types) { records in
+                    Task { @MainActor in
+                        guard records.isEmpty else {
+                            completion(NSError(
+                                domain: "Textem.AccountStore",
+                                code: 1,
+                                userInfo: [NSLocalizedDescriptionKey:
+                                    "WebKit still reports \(records.count) local data record(s)."]
+                            ))
+                            return
+                        }
+                        finishRemoval()
+                    }
+                }
+            }
+        }
     }
 
     func dataStore(for account: Account) -> WKWebsiteDataStore {

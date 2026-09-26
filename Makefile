@@ -8,12 +8,19 @@
 APP        := Textem
 BUNDLE_ID  := com.scarcrux.textem
 CONFIG     := release
-BUILD_DIR  := .build/$(CONFIG)
+SWIFT      ?= xcrun --toolchain XcodeDefault swift
+ARCHS      ?= arm64 x86_64
+DEPLOYMENT_TARGET ?= 13.0
 BIN        := scarcrux-textem
+ARCH_BUILD_ROOT := .build/textem-arch
+UNIVERSAL_BIN := .build/textem-universal/$(BIN)
 APP_BUNDLE := $(APP).app
 CONTENTS   := $(APP_BUNDLE)/Contents
+VERSION    ?= 0.1.0
+BUILD_NUMBER ?= 1
 
-.PHONY: all build bundle run clean icloud-heal
+.PHONY: all build bundle run clean icloud-heal dmg sign release notarize require-developer-id
+.NOTPARALLEL: release notarize
 
 all: bundle
 
@@ -34,18 +41,32 @@ icloud-heal:
 	fi
 
 build: icloud-heal
-	swift build -c $(CONFIG)
+	@set -e; for arch in $(ARCHS); do \
+	  $(SWIFT) build -c $(CONFIG) \
+	    --triple "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
+	    --scratch-path "$(ARCH_BUILD_ROOT)/$$arch"; \
+	done
+	@mkdir -p $(dir $(UNIVERSAL_BIN))
+	@set -e; bins=""; for arch in $(ARCHS); do \
+	  bin_dir="$$($(SWIFT) build -c $(CONFIG) \
+	    --triple "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
+	    --scratch-path "$(ARCH_BUILD_ROOT)/$$arch" --show-bin-path)"; \
+	  bins="$$bins $$bin_dir/$(BIN)"; \
+	done; lipo -create $$bins -output $(UNIVERSAL_BIN)
 
 bundle: build
 	@rm -rf $(APP_BUNDLE)
 	@mkdir -p $(CONTENTS)/MacOS $(CONTENTS)/Resources
-	@cp $(BUILD_DIR)/$(BIN) $(CONTENTS)/MacOS/$(APP)
+	@cp $(UNIVERSAL_BIN) $(CONTENTS)/MacOS/$(APP)
 	@cp Resources/Info.plist $(CONTENTS)/Info.plist
 	@cp Resources/AppIcon.icns $(CONTENTS)/Resources/AppIcon.icns
+	@/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" $(CONTENTS)/Info.plist
+	@/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(BUILD_NUMBER)" $(CONTENTS)/Info.plist
 	@# Ad-hoc sign so WKWebView/WebKit XPC services launch under a stable
 	@# identity. Replace with a real Developer ID for distribution.
-	@codesign --force --deep --sign - $(APP_BUNDLE) 2>/dev/null || true
-	@echo "built $(APP_BUNDLE)"
+	@codesign --force --deep --sign - $(APP_BUNDLE)
+	@for arch in $(ARCHS); do lipo -verify_arch "$$arch" $(CONTENTS)/MacOS/$(APP); done
+	@echo "built $(APP_BUNDLE) $(VERSION) ($(BUILD_NUMBER)) for $(ARCHS)"
 
 run: bundle
 	open $(APP_BUNDLE)
@@ -55,7 +76,7 @@ run: bundle
 DMG := $(APP).dmg
 dmg: bundle
 	@rm -f $(DMG)
-	@hdiutil create -volname "$(APP)" -srcfolder $(APP_BUNDLE) -ov -format UDZO $(DMG) >/dev/null
+	@hdiutil create -quiet -volname "$(APP)" -srcfolder $(APP_BUNDLE) -ov -format UDZO $(DMG)
 	@echo "built $(DMG)"
 
 # --- Release: Developer ID signing + notarization -----------------
@@ -75,18 +96,29 @@ sign: bundle
 	@codesign --verify --strict --verbose=2 $(APP_BUNDLE)
 	@echo "signed $(APP_BUNDLE) with: $(CODESIGN_IDENTITY)"
 
-release: sign dmg
+require-developer-id:
+	@test "$(CODESIGN_IDENTITY)" != "-" || { echo "set CODESIGN_IDENTITY to a Developer ID Application certificate"; exit 1; }
+
+release: require-developer-id sign dmg
 	@echo "release build ready: $(DMG)"
 	@echo "to notarize: make notarize NOTARY_PROFILE=<profile>"
 
 notarize:
 	@test -n "$(NOTARY_PROFILE)" || { echo "set NOTARY_PROFILE (xcrun notarytool store-credentials ...)"; exit 1; }
-	xcrun notarytool submit $(DMG) --keychain-profile "$(NOTARY_PROFILE)" --wait
+	@codesign --verify --deep --strict --verbose=2 $(APP_BUNDLE)
+	@rm -f .build/$(APP)-notary.zip
+	@ditto -c -k --keepParent $(APP_BUNDLE) .build/$(APP)-notary.zip
+	xcrun notarytool submit .build/$(APP)-notary.zip --keychain-profile "$(NOTARY_PROFILE)" --wait
 	xcrun stapler staple $(APP_BUNDLE)
-	$(MAKE) dmg
+	xcrun stapler validate $(APP_BUNDLE)
+	@rm -f .build/$(APP)-notary.zip $(DMG)
+	@hdiutil create -quiet -volname "$(APP)" -srcfolder $(APP_BUNDLE) -ov -format UDZO $(DMG)
+	xcrun notarytool submit $(DMG) --keychain-profile "$(NOTARY_PROFILE)" --wait
 	xcrun stapler staple $(DMG)
+	xcrun stapler validate $(DMG)
 	@echo "notarized + stapled $(DMG)"
 
 clean:
 	rm -rf $(APP_BUNDLE) $(DMG)
-	swift package clean 2>/dev/null || true
+	rm -rf $(ARCH_BUILD_ROOT) $(dir $(UNIVERSAL_BIN))
+	$(SWIFT) package clean 2>/dev/null || true

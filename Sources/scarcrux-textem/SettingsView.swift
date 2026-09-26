@@ -17,6 +17,18 @@ struct SettingsView: View {
     // Notify the live web view to re-apply privacy CSS after a toggle.
     private func privacyChanged() {
         NotificationCenter.default.post(name: Preferences.privacyChanged, object: nil)
+        settingsChanged()
+    }
+
+    private func settingsChanged() {
+        NotificationCenter.default.post(name: Preferences.settingsChanged, object: nil)
+    }
+
+    private func notifying(_ binding: Binding<Bool>) -> Binding<Bool> {
+        Binding(
+            get: { binding.wrappedValue },
+            set: { binding.wrappedValue = $0; settingsChanged() }
+        )
     }
 
     var body: some View {
@@ -27,22 +39,24 @@ struct SettingsView: View {
                     set: { newValue in
                         LoginItem.set(newValue)
                         launchAtLogin = LoginItem.isEnabled
+                        settingsChanged()
                     }
                 ))
-                Toggle("Start hidden (menu bar only at launch)", isOn: $startHidden)
+                Toggle("Start hidden (menu bar only at launch)", isOn: notifying($startHidden))
                 Toggle("Menu bar only (hide Dock icon)", isOn: Binding(
                     get: { menuBarOnly },
                     set: { newValue in
                         menuBarOnly = newValue
                         NSApp.setActivationPolicy(newValue ? .accessory : .regular)
+                        settingsChanged()
                     }
                 ))
-                Toggle("Quit when window is closed", isOn: $quitOnClose)
+                Toggle("Quit when window is closed", isOn: notifying($quitOnClose))
             }
 
             Section("Notifications") {
-                Toggle("Mute notifications", isOn: $notificationsMuted)
-                Toggle("Hide sender & preview in notifications", isOn: $hideNotificationPreview)
+                Toggle("Mute notifications", isOn: notifying($notificationsMuted))
+                Toggle("Hide sender & preview in notifications", isOn: notifying($hideNotificationPreview))
                 Text("The dock badge still updates while muted.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

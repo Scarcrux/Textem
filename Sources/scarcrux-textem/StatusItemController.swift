@@ -28,6 +28,10 @@ final class StatusItemController: NSObject {
             button.image = image
         }
         rebuild()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(settingsChanged),
+            name: Preferences.settingsChanged, object: nil
+        )
     }
 
     func updateUnread(_ count: Int) {
@@ -95,6 +99,8 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func showApp() { actions.onShow() }
+
+    @objc private func settingsChanged() { rebuild() }
 
     @objc private func switchAccount(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let id = UUID(uuidString: raw) else { return }

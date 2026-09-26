@@ -41,9 +41,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Native notifications: click focuses the window; inline reply routes
         // to the active account's web view.
         NotificationManager.shared.configure(
-            onOpen: { [weak self] in self?.showMainWindow() },
-            onReply: { [weak self] text, convId in
-                self?.windowController?.webViewController.quickReply(text, convId: convId)
+            onOpen: { [weak self] accountID, conversationID in
+                self?.openNotification(accountID: accountID, conversationID: conversationID)
+            },
+            onReply: { [weak self] text, accountID, conversationID in
+                self?.replyFromNotification(
+                    text, accountID: accountID, conversationID: conversationID)
             }
         )
         NotificationManager.shared.requestAuthorization()
@@ -113,11 +116,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Account switching
 
-    private func switchAccount(_ id: UUID) {
-        AccountStore.shared.setActive(id)
-        windowController?.switchTo(AccountStore.shared.active)
+    @discardableResult
+    private func switchAccount(_ id: UUID, show: Bool = true) -> Bool {
+        guard AccountStore.shared.accounts.contains(where: { $0.id == id }) else { return false }
+        if AccountStore.shared.activeID != id {
+            AccountStore.shared.setActive(id)
+            windowController?.switchTo(AccountStore.shared.active)
+        }
         statusItemController?.rebuild()
+        if show { showMainWindow() }
+        return true
+    }
+
+    private func openNotification(accountID: UUID?, conversationID: String?) {
+        if let accountID, !switchAccount(accountID, show: false) {
+            NotificationManager.shared.notifyInfo(
+                "That notification belongs to an account that has been removed.")
+        }
+        windowController?.webViewController.openConversation(conversationID)
         showMainWindow()
+    }
+
+    private func replyFromNotification(_ text: String, accountID: UUID?,
+                                       conversationID: String?) {
+        if let accountID, !switchAccount(accountID, show: false) {
+            NotificationManager.shared.notifyInfo(
+                "Reply not sent: its account has been removed.")
+            return
+        }
+        windowController?.webViewController.quickReply(
+            text, conversationID: conversationID)
     }
 
     private func addAccount() {
@@ -143,15 +171,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func removeAccount() {
         let current = AccountStore.shared.active
-        guard AccountStore.shared.accounts.count > 1 else { return }
+        let store = AccountStore.shared
+        guard store.accounts.count > 1,
+              let fallback = store.accounts.first(where: { $0.id != current.id }) else { return }
         let alert = NSAlert()
         alert.messageText = "Remove “\(current.name)”?"
         alert.informativeText = "This signs the account out and deletes its local session on this Mac."
         alert.addButton(withTitle: "Remove")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        AccountStore.shared.remove(current.id)
-        switchAccount(AccountStore.shared.active.id)
+
+        // Tear down the active web view before asking WebKit to delete its data
+        // store. Keep the account entry if deletion fails so the UI never claims
+        // a local session was removed when it was not.
+        _ = switchAccount(fallback.id)
+        store.remove(current.id) { [weak self] error in
+            self?.statusItemController?.rebuild()
+            if let error {
+                self?.presentInfo(
+                    "The account was not removed because its local session could not be deleted: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func promptForText(title: String, message: String, defaultValue: String) -> String? {

@@ -1,7 +1,7 @@
 # Textem
 
 A lightweight, **native** macOS client for [Google Messages for web](https://messages.google.com/web) —
-free and open-source. Textem hosts the Google Messages web client in a
+free and MIT-licensed. Textem hosts the Google Messages web client in a
 `WKWebView` and wraps it in real macOS chrome: dock unread badge, native
 notifications, menu-bar presence, launch-at-login, zoom, and more.
 
@@ -22,22 +22,26 @@ Early but usable. See [`commandem.toml`](commandem.toml) for the live roadmap
 - Loads Google Messages for web with a persistent session (pair once, stay
   paired across relaunches)
 - Dock **unread badge** and **menu-bar item** with unread count
-- **Native notifications** on new messages (click to focus)
+- **Native notifications** on new messages (click to restore the exact account/thread)
+- Fail-closed **inline reply** routed to the notification's exact account and conversation
 - **Menu-bar presence**, run-in-background, **launch at login**, start-hidden,
   menu-bar-only (hide Dock) modes
 - **Zoom** (⌘+ / ⌘− / ⌘0), **find in page** (⌘F), **always-on-top**
 - **New conversation** (⌘N / Dock), **copy latest 2FA code** (⇧⌘C)
 - **Global show/hide hotkey** (⌥⌘M), single condensed app menu
 - **Settings** window (⌘,)
-- External links open in your default browser
+- Multiple Google accounts with isolated persistent sessions (macOS 14+)
+- Opt-in message-preview blur, avatar hiding, and notification-preview privacy
+- External links open in your default browser; untrusted redirects are blocked
 
-**Planned** — inline reply, copy-2FA, Dock-compose, find-in-page, multiple
-Google accounts, opt-in privacy tweaks, notarized `.dmg` + auto-update.
+**Distribution status** — the repository and alpha release are currently
+private/draft. A public, Developer ID-signed and notarized universal `.dmg` is
+planned for 1.0; there is no public download yet.
 
 ## Requirements
 
 - macOS 13 (Ventura) or later
-- Swift 6 toolchain (Xcode 16+) to build
+- Xcode with a Swift 6 toolchain to build
 
 ## Build & run
 
@@ -46,20 +50,23 @@ make run      # build release, wrap into Textem.app, and launch it
 make bundle   # just build + produce Textem.app
 ```
 
-`swift build` alone only compiles the bare binary — a `WKWebView` app needs a
+The Makefile selects Xcode's compiler explicitly and builds a universal
+Apple-silicon + Intel executable. `swift build` alone only compiles the bare binary — a `WKWebView` app needs a
 real bundle (Info.plist for the user-agent, icon, notifications), which
 `make bundle` assembles.
 
 ### Releasing
 
 ```sh
-make dmg                                                   # unsigned .dmg (~850 KB)
-make release CODESIGN_IDENTITY="Developer ID Application: You (TEAMID)"
-make notarize NOTARY_PROFILE=<notarytool-profile>          # submit + staple
+make dmg VERSION=0.1.0 BUILD_NUMBER=1                      # unsigned test .dmg
+make release CODESIGN_IDENTITY="Developer ID Application: …" VERSION=0.1.0
+make notarize NOTARY_PROFILE=<notarytool-profile>          # notarize app + final DMG
 ```
 
-`sign`/`release` apply a hardened runtime (required for notarization); the app
-runs under it with no extra entitlements.
+`release` refuses the ad-hoc default and requires a Developer ID identity.
+`notarize` submits and staples the signed app, packages that exact app, then
+submits and staples the final DMG. The app runs under the hardened runtime with
+no extra entitlements.
 
 ## Signing in (important)
 
@@ -85,8 +92,11 @@ adds native integration around it:
 - Desktop-Safari user-agent so Google serves the full client
 - Persistent `WKWebsiteDataStore` for the session
 - A small injected JS bridge reports the unread count (read from
-  `data-e2e-is-unread` conversation items) to native code for the badge and
-  notifications
+  `data-e2e-is-unread` conversation items) and per-thread content fingerprints
+  to native code for the badge and notifications
+
+Textem adds no analytics, telemetry endpoint, account service, or relay.
+Google's web client still communicates with Google under Google's own policies.
 
 ## License
 

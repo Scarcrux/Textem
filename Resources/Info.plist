@@ -15,7 +15,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.0.1</string>
+	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
@@ -26,10 +26,5 @@
 	<string>NSApplication</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.social-networking</string>
-	<!-- Required so the process can access Bluetooth for the passkey
-	     cross-device (caBLE) verification the new Google sign-in uses.
-	     Without this string, the caBLE handshake fails outright. -->
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Textem uses Bluetooth to verify your Google sign-in with a nearby device.</string>
 </dict>
 </plist>

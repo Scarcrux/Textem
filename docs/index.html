@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Textem — native Google Messages for macOS</title>
-  <meta name="description" content="A lightweight, free, open-source native macOS client for Google Messages for web. Dock badge, native notifications, menu bar, multiple accounts.">
+  <meta name="description" content="A lightweight, free, MIT-licensed native macOS client for Google Messages for web. Dock badge, native notifications, menu bar, multiple accounts.">
   <link rel="canonical" href="https://textem.scarcrux.com/">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <meta name="theme-color" content="#f6f8fb" media="(prefers-color-scheme: light)">
@@ -13,7 +13,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Textem">
   <meta property="og:title" content="Textem — native Google Messages for macOS">
-  <meta property="og:description" content="A lightweight, free, open-source native macOS client for Google Messages for web. Dock badge, native notifications, menu bar, multiple accounts.">
+  <meta property="og:description" content="A lightweight, free, MIT-licensed native macOS client for Google Messages for web. Dock badge, native notifications, menu bar, multiple accounts.">
   <meta property="og:url" content="https://textem.scarcrux.com/">
   <meta property="og:image" content="https://textem.scarcrux.com/og-image.png">
   <meta property="og:image:width" content="1200">
@@ -22,7 +22,7 @@
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Textem — native Google Messages for macOS">
-  <meta name="twitter:description" content="A lightweight, free, open-source native macOS client for Google Messages for web.">
+  <meta name="twitter:description" content="A lightweight, free, MIT-licensed native macOS client for Google Messages for web.">
   <meta name="twitter:image" content="https://textem.scarcrux.com/og-image.png">
   <style>
     :root {
@@ -69,6 +69,16 @@
       font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
     a { color: var(--blue); }
+    a:focus-visible, summary:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+    .skip {
+      position: absolute; left: 12px; top: -60px; z-index: 10; padding: 10px 14px;
+      background: var(--card); color: var(--ink); border: 2px solid var(--blue); border-radius: 8px;
+    }
+    .skip:focus { top: 12px; }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+    }
     .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px; }
     header { text-align: center; padding: 72px 20px 40px; }
     .icon {
@@ -93,6 +103,7 @@
     }
     .btn.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
     .btn.ghost { background: var(--card); color: var(--ink); }
+    .btn.disabled { background: var(--card); color: var(--muted); cursor: not-allowed; }
     .note { color: var(--muted); font-size: 14px; margin-top: 14px; }
     section { padding: 24px 0 8px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
@@ -129,30 +140,32 @@
   </style>
 </head>
 <body>
+  <a class="skip" href="#main">Skip to main content</a>
   <header class="wrap">
     <span class="icon" aria-hidden="true"></span>
     <h1>Textem</h1>
-    <p class="tag">A lightweight, native macOS client for Google Messages — free and open-source. The tiny-footprint alternative to paid wrappers and dead Electron apps.</p>
+    <p class="tag">A lightweight, native macOS client for Google Messages — free and MIT-licensed. The tiny-footprint alternative to paid wrappers and dead Electron apps.</p>
     <div class="btns">
-      <a class="btn primary" href="https://github.com/Scarcrux/Textem/releases/latest">Download</a>
-      <a class="btn ghost" href="https://github.com/Scarcrux/Textem">View on GitHub</a>
+      <span class="btn primary disabled" aria-disabled="true">Signed download coming with 1.0</span>
     </div>
-    <p class="note">macOS 13+ · a few MB (system WebKit, no bundled Chromium)</p>
+    <p class="note">macOS 13+ · Intel and Apple silicon · public source and signed/notarized download planned for 1.0</p>
   </header>
 
-  <main class="wrap">
+  <main class="wrap" id="main">
     <section>
+      <h2 class="sr-only">Features</h2>
       <div class="grid">
         <div class="feat"><h3>Native notifications + badge</h3><p>Dock unread badge and native banners — click to jump to the thread.</p></div>
         <div class="feat"><h3>Menu bar &amp; background</h3><p>Menu-bar presence, launch at login, run in background, menu-bar-only mode.</p></div>
         <div class="feat"><h3>Multiple accounts</h3><p>Isolated sessions per Google account with a quick switcher. No other client does this.</p></div>
         <div class="feat"><h3>Shortcuts</h3><p>Zoom, find in page, new conversation, copy latest 2FA code, global show/hide hotkey.</p></div>
-        <div class="feat"><h3>Private by design</h3><p>Zero telemetry, local-only session, notarized release. Just a native shell around the web client.</p></div>
-        <div class="feat"><h3>Free &amp; open-source</h3><p>MIT-licensed. Every feature paid apps lock behind “Pro”, at no cost.</p></div>
+        <div class="feat"><h3>Private by design</h3><p>Textem adds no telemetry or relay server. Your local session connects directly to Google’s web client.</p></div>
+        <div class="feat"><h3>Free &amp; MIT-licensed</h3><p>Every feature paid wrappers lock behind “Pro,” at no cost. Public source is planned for 1.0.</p></div>
       </div>
     </section>
 
     <section>
+      <h2 class="sr-only">Sign-in notice</h2>
       <div class="callout">
         <p><strong>Signing in:</strong> choose <strong>“Enter your password”</strong> and a non-passkey second step (Google prompt, SMS/email code, or authenticator). Passkeys don’t work inside an embedded web view — it’s a platform limitation, not a bug. You only sign in once.</p>
       </div>
@@ -191,7 +204,7 @@
 
   <footer>
     <p>Unofficial. Not affiliated with, endorsed by, or sponsored by Google. “Google Messages” is a trademark of Google LLC.</p>
-    <p><a href="https://github.com/Scarcrux/Textem">GitHub</a> · MIT License · © 2026 Scarcrux</p>
+    <p>MIT License · © 2026 Scarcrux</p>
   </footer>
 </body>
 </html>

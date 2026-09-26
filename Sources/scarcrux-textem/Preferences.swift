@@ -21,6 +21,8 @@ enum Preferences {
 
     // Posted when a privacy toggle changes so the live web view re-applies CSS.
     static let privacyChanged = Notification.Name("TextemPrivacyChanged")
+    // Posted when Settings changes a value mirrored in the menu-bar menu.
+    static let settingsChanged = Notification.Name("TextemSettingsChanged")
 
     // Notifications show only "New message" instead of sender + snippet.
     static var hideNotificationPreview: Bool {
