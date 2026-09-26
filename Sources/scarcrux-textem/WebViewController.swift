@@ -98,6 +98,19 @@ final class WebViewController: NSViewController {
             forMainFrameOnly: true
         ))
 
+        // Opt-in, metadata-only diagnostic for messages that Google marks as
+        // phone-only. It must be present at document start to observe receive
+        // traffic; normal launches never install it.
+        if ProcessInfo.processInfo.environment["TEXTEM_PAYLOAD_PROBE"] == "1" {
+            PayloadProbe.prepareLog()
+            controller.add(WeakScriptMessageHandler(self), name: PayloadProbe.handlerName)
+            controller.addUserScript(WKUserScript(
+                source: PayloadProbe.userScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            ))
+        }
+
         // Disable Intelligent Tracking Prevention on the data store. WKWebView
         // partitions/blocks cross-site cookies by default, which severs
         // Google's shared login between accounts.google.com and
@@ -453,6 +466,7 @@ final class WebViewController: NSViewController {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
         controller.removeScriptMessageHandler(forName: WebBridge.handlerName)
+        controller.removeScriptMessageHandler(forName: PayloadProbe.handlerName)
     }
 
     // Reachable via the View > Reload menu item (⌘R) through the responder
@@ -697,12 +711,18 @@ extension WebViewController: WKNavigationDelegate {
 extension WebViewController: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController,
                               didReceive message: WKScriptMessage) {
-        guard message.name == WebBridge.handlerName,
-              message.webView === webView,
+        guard message.webView === webView,
               message.frameInfo.isMainFrame,
               WebNavigationPolicy.isAllowedBridgeOrigin(
                 scheme: message.frameInfo.securityOrigin.protocol,
-                host: message.frameInfo.securityOrigin.host),
+                host: message.frameInfo.securityOrigin.host) else { return }
+
+        if message.name == PayloadProbe.handlerName {
+            if let event = message.body as? [String: Any] { PayloadProbe.log(event) }
+            return
+        }
+
+        guard message.name == WebBridge.handlerName,
               let body = message.body as? [String: Any] else { return }
         switch body["type"] as? String {
         case "snapshot":
