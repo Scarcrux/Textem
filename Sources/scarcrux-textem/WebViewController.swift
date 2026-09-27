@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import WebKit
 
 final class WebViewController: NSViewController {
@@ -71,6 +72,9 @@ final class WebViewController: NSViewController {
     private var loadRetryCount = 0
     private var loadRetryTask: Task<Void, Never>?
     private var didExportLibGMCookies = false
+    private var linkPreviewHost: NSView?
+    private var displayedLinkPreviewDocument: LinkPreviewDocument?
+    private var dismissedPhoneOnlyConversation: String?
     private static let maxLoadRetries = 5
 
     init(accountID: UUID, dataStore: WKWebsiteDataStore) {
@@ -222,9 +226,74 @@ final class WebViewController: NSViewController {
         processNextReplyIfReady()
     }
 
+    private func handlePhoneOnlyState(visible: Bool, conversation: String) {
+        if ProcessInfo.processInfo.environment["TEXTEM_PHONE_FALLBACK_SNAPSHOT"] == "1" {
+            return
+        }
+        let normalized = LinkPreviewStore.normalizedConversation(conversation)
+        guard visible else {
+            dismissedPhoneOnlyConversation = nil
+            hideLinkPreviewFallback()
+            return
+        }
+        guard !normalized.isEmpty,
+              dismissedPhoneOnlyConversation != normalized,
+              let document = try? LinkPreviewStore.load(),
+              LinkPreviewStore.matches(document, conversation: conversation) else {
+            hideLinkPreviewFallback()
+            return
+        }
+        showLinkPreviewFallback(document)
+    }
+
+    private func showLinkPreviewFallback(_ document: LinkPreviewDocument) {
+        if linkPreviewHost != nil, displayedLinkPreviewDocument == document { return }
+        hideLinkPreviewFallback()
+
+        let host = NSHostingView(rootView: LinkPreviewFallbackView(
+            document: document,
+            onClose: { [weak self] in
+                guard let self else { return }
+                self.dismissedPhoneOnlyConversation =
+                    LinkPreviewStore.normalizedConversation(document.conversation)
+                self.hideLinkPreviewFallback()
+            }
+        ))
+        host.translatesAutoresizingMaskIntoConstraints = false
+        host.wantsLayer = true
+        host.layer?.shadowColor = NSColor.black.cgColor
+        host.layer?.shadowOpacity = 0.22
+        host.layer?.shadowRadius = 14
+        host.layer?.shadowOffset = NSSize(width: -3, height: 0)
+        view.addSubview(host, positioned: .above, relativeTo: webView)
+        NSLayoutConstraint.activate([
+            host.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            host.topAnchor.constraint(equalTo: view.topAnchor),
+            host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            host.widthAnchor.constraint(equalToConstant: 520),
+            host.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 360),
+        ])
+        displayedLinkPreviewDocument = document
+        linkPreviewHost = host
+    }
+
+    private func hideLinkPreviewFallback() {
+        linkPreviewHost?.removeFromSuperview()
+        linkPreviewHost = nil
+        displayedLinkPreviewDocument = nil
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        webView.load(URLRequest(url: Self.entryURL))
+        let phoneFallbackSnapshot =
+            ProcessInfo.processInfo.environment["TEXTEM_PHONE_FALLBACK_SNAPSHOT"] == "1"
+        if phoneFallbackSnapshot {
+            webView.loadHTMLString(
+                "<html><body style='margin:0;background:#202124'></body></html>",
+                baseURL: nil)
+        } else {
+            webView.load(URLRequest(url: Self.entryURL))
+        }
         // Diagnostic (TEXTEM_SELFCHECK=1): dump web-view state to a file shortly
         // after launch. Screen recording + accessibility are denied to tooling on
         // this machine, so this is how a "blank window" report becomes an actual
@@ -235,6 +304,61 @@ final class WebViewController: NSViewController {
             self, selector: #selector(applyPrivacyCSS),
             name: Preferences.privacyChanged, object: nil
         )
+        if phoneFallbackSnapshot {
+            do {
+                let document = try LinkPreviewStore.load()
+                showLinkPreviewFallback(document)
+                schedulePhoneFallbackSnapshot()
+            } catch {
+                let diagnostic = "fallbackLoad=false file=\(LinkPreviewStore.defaultURL.lastPathComponent) "
+                    + "error=\(error.localizedDescription)\n"
+                try? diagnostic.write(
+                    toFile: "/tmp/textem-phone-fallback-snapshot.txt",
+                    atomically: true,
+                    encoding: .utf8)
+            }
+        }
+    }
+
+    private func schedulePhoneFallbackSnapshot() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard let self,
+                  let host = self.linkPreviewHost else {
+                try? "fallbackHost=false\n".write(
+                    toFile: "/tmp/textem-phone-fallback-snapshot.txt",
+                    atomically: true,
+                    encoding: .utf8)
+                return
+            }
+            let view = self.view
+            view.layoutSubtreeIfNeeded()
+            host.layoutSubtreeIfNeeded()
+            view.displayIfNeeded()
+            host.displayIfNeeded()
+            let diagnostic = "fallbackHost=true frame=\(NSStringFromRect(host.frame)) "
+                + "subviews=\(host.subviews.count)\n"
+            try? diagnostic.write(
+                toFile: "/tmp/textem-phone-fallback-snapshot.txt",
+                atomically: true,
+                encoding: .utf8)
+            guard
+                  let representation = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                return
+            }
+            view.cacheDisplay(in: view.bounds, to: representation)
+            guard let data = representation.representation(using: .png, properties: [:]) else {
+                return
+            }
+            let url = URL(fileURLWithPath: "/tmp/textem-phone-fallback-snapshot.png")
+            do {
+                try data.write(to: url, options: .atomic)
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o600], ofItemAtPath: url.path)
+            } catch {
+                NSLog("[Textem] phone-fallback snapshot failed: %@", error.localizedDescription)
+            }
+        }
     }
 
     // Notification replies are queued and run one at a time. The page must
@@ -756,6 +880,11 @@ extension WebViewController: WKScriptMessageHandler {
                 )
             }
             handleSnapshot(count, rows: rows)
+        case "phoneOnlyState":
+            handlePhoneOnlyState(
+                visible: (body["visible"] as? Bool) ?? false,
+                conversation: body["conversation"] as? String ?? ""
+            )
         case "replyResult":
             guard let rawID = body["requestId"] as? String,
                   let id = UUID(uuidString: rawID),

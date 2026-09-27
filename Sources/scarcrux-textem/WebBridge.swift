@@ -18,6 +18,11 @@ enum WebBridge {
       }
       function lower(s) { return (s || '').toLowerCase(); }
       function clean(s) { return (s || '').replace(/\\s+/g, ' ').trim(); }
+      function normalized(s) {
+        var value = clean(s);
+        try { value = value.normalize('NFKC'); } catch (e) {}
+        return value.toLocaleLowerCase();
+      }
 
       function isUnread(el) {
         if (el.getAttribute('data-e2e-is-unread') === 'true') return true;
@@ -63,15 +68,36 @@ enum WebBridge {
       }
 
       var lastSerialized = null;
+      var lastPhoneOnlySerialized = null;
       var timer = null;
+
+      function reportPhoneOnly(force) {
+        var selected = document.querySelector(
+          'mws-conversation-list-item a[aria-selected="true"], ' +
+          'mws-conversation-list-item [aria-selected="true"][href]');
+        var row = selected ? selected.closest('mws-conversation-list-item') : null;
+        var nameEl = row ? row.querySelector('[data-e2e-conversation-name], h3, .name') : null;
+        var conversation = nameEl ? clean(nameEl.textContent) : '';
+        var pageText = document.body ? normalized(document.body.innerText || '') : '';
+        var marker = normalized(
+          'Use the Google Messages app on your phone to chat with ' + conversation);
+        var visible = !!conversation && pageText.indexOf(marker) !== -1;
+        var serialized = JSON.stringify({ visible: visible, conversation: conversation });
+        if (!force && serialized === lastPhoneOnlySerialized) return;
+        lastPhoneOnlySerialized = serialized;
+        post({ type: 'phoneOnlyState', visible: visible, conversation: conversation });
+      }
+
       function report(force) {
         var rows = snapshot();
         var serialized = JSON.stringify(rows);
-        if (!force && serialized === lastSerialized) return;
-        lastSerialized = serialized;
-        var unread = 0;
-        for (var i = 0; i < rows.length; i++) if (rows[i].unread) unread++;
-        post({ type: 'snapshot', count: unread, rows: rows });
+        if (force || serialized !== lastSerialized) {
+          lastSerialized = serialized;
+          var unread = 0;
+          for (var i = 0; i < rows.length; i++) if (rows[i].unread) unread++;
+          post({ type: 'snapshot', count: unread, rows: rows });
+        }
+        reportPhoneOnly(force);
       }
 
       try {
@@ -84,7 +110,7 @@ enum WebBridge {
           subtree: true,
           characterData: true,
           attributes: true,
-          attributeFilter: ['aria-label', 'data-e2e-is-unread', 'data-e2e-conversation', 'href']
+          attributeFilter: ['aria-label', 'aria-selected', 'data-e2e-is-unread', 'data-e2e-conversation', 'href']
         });
       } catch (e) {}
 

@@ -32,6 +32,8 @@ Early but usable. See [`commandem.toml`](commandem.toml) for the live roadmap
 - **Settings** window (⌘,)
 - Multiple Google accounts with isolated persistent sessions (macOS 14+)
 - Opt-in message-preview blur, avatar hiding, and notification-preview privacy
+- An owner-local **phone-only fallback** that surfaces recovered link previews
+  inside the matching conversation when Google withholds it from the web client
 - External links open in your default browser; untrusted redirects are blocked
 
 **Distribution status** — the repository and alpha release are currently
@@ -97,6 +99,11 @@ adds native integration around it:
 
 Textem adds no analytics, telemetry endpoint, account service, or relay.
 Google's web client still communicates with Google under Google's own policies.
+
+The phone-only fallback reads an owner-only local export produced by the
+separate AGPL Experiments/LibGMProbe helper. The helper is not linked or bundled
+into the MIT app. Textem matches the export to the selected conversation before
+displaying it, and keeps the Google view when no exact local match exists.
 
 ## License
 
