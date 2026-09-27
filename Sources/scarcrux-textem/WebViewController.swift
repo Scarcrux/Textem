@@ -238,8 +238,7 @@ final class WebViewController: NSViewController {
         }
         guard !normalized.isEmpty,
               dismissedPhoneOnlyConversation != normalized,
-              let document = try? LinkPreviewStore.load(),
-              LinkPreviewStore.matches(document, conversation: conversation) else {
+              let document = try? LinkPreviewStore.load(matching: conversation) else {
             hideLinkPreviewFallback()
             return
         }

@@ -231,8 +231,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showLinkPreviews(_ sender: Any?) {
         do {
-            let document = try LinkPreviewStore.load()
-            let controller = LinkPreviewWindowController(document: document)
+            let documents = try LinkPreviewStore.loadAll()
+            let controller = LinkPreviewWindowController(documents: documents)
             linkPreviewWindowController = controller
             controller.showWindow(nil)
             controller.window?.center()

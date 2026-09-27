@@ -102,8 +102,10 @@ Google's web client still communicates with Google under Google's own policies.
 
 The phone-only fallback reads an owner-only local export produced by the
 separate AGPL Experiments/LibGMProbe helper. The helper is not linked or bundled
-into the MIT app. Textem matches the export to the selected conversation before
-displaying it, and keeps the Google view when no exact local match exists.
+into the MIT app. The export can retain previews for multiple conversations;
+each helper refresh updates only its target. Textem exact-matches the selected
+conversation before displaying its document and keeps the Google view when no
+local match exists.
 
 ## License
 
