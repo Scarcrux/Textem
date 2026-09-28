@@ -5,7 +5,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
     private var statusItemController: StatusItemController?
     private var settingsWindowController: SettingsWindowController?
-    private var linkPreviewWindowController: LinkPreviewWindowController?
     private var onboardingWindowController: OnboardingWindowController?
     private var globalHotkey: GlobalHotkey?
 
@@ -231,13 +230,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showLinkPreviews(_ sender: Any?) {
         do {
-            let documents = try LinkPreviewStore.loadAll()
-            let controller = LinkPreviewWindowController(documents: documents)
-            linkPreviewWindowController = controller
-            controller.showWindow(nil)
-            controller.window?.center()
-            controller.window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            try windowController?.webViewController.showLinkPreviewLibrary()
+            showMainWindow()
         } catch {
             presentInfo(error.localizedDescription)
         }

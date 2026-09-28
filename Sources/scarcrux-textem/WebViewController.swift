@@ -247,8 +247,6 @@ final class WebViewController: NSViewController {
 
     private func showLinkPreviewFallback(_ document: LinkPreviewDocument) {
         if linkPreviewHost != nil, displayedLinkPreviewDocument == document { return }
-        hideLinkPreviewFallback()
-
         let host = NSHostingView(rootView: LinkPreviewFallbackView(
             document: document,
             onClose: { [weak self] in
@@ -258,6 +256,22 @@ final class WebViewController: NSViewController {
                 self.hideLinkPreviewFallback()
             }
         ))
+        installLinkPreviewHost(host)
+        displayedLinkPreviewDocument = document
+    }
+
+    func showLinkPreviewLibrary() throws {
+        let documents = try LinkPreviewStore.loadAll()
+        let host = NSHostingView(rootView: LinkPreviewLibraryView(
+            documents: documents,
+            onClose: { [weak self] in self?.hideLinkPreviewFallback() }
+        ))
+        installLinkPreviewHost(host)
+        displayedLinkPreviewDocument = nil
+    }
+
+    private func installLinkPreviewHost(_ host: NSView) {
+        hideLinkPreviewFallback()
         host.translatesAutoresizingMaskIntoConstraints = false
         host.wantsLayer = true
         host.layer?.shadowColor = NSColor.black.cgColor
@@ -272,7 +286,6 @@ final class WebViewController: NSViewController {
             host.widthAnchor.constraint(equalToConstant: 520),
             host.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 360),
         ])
-        displayedLinkPreviewDocument = document
         linkPreviewHost = host
     }
 
@@ -305,8 +318,7 @@ final class WebViewController: NSViewController {
         )
         if phoneFallbackSnapshot {
             do {
-                let document = try LinkPreviewStore.load()
-                showLinkPreviewFallback(document)
+                try showLinkPreviewLibrary()
                 schedulePhoneFallbackSnapshot()
             } catch {
                 let diagnostic = "fallbackLoad=false file=\(LinkPreviewStore.defaultURL.lastPathComponent) "
