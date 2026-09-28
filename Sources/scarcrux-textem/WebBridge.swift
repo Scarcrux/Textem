@@ -23,6 +23,20 @@ enum WebBridge {
         try { value = value.normalize('NFKC'); } catch (e) {}
         return value.toLocaleLowerCase();
       }
+      var PHONE_ONLY_PREFIX = 'Use the Google Messages app on your phone to chat with ';
+
+      function phoneOnlyConversation() {
+        var text = document.body ? (document.body.innerText || '') : '';
+        var lines = text.split(/\\r?\\n/);
+        var prefix = normalized(PHONE_ONLY_PREFIX);
+        for (var i = 0; i < lines.length; i++) {
+          var line = clean(lines[i]);
+          if (normalized(line).indexOf(prefix) === 0) {
+            return clean(line.slice(PHONE_ONLY_PREFIX.length));
+          }
+        }
+        return '';
+      }
 
       function isUnread(el) {
         if (el.getAttribute('data-e2e-is-unread') === 'true') return true;
@@ -75,13 +89,11 @@ enum WebBridge {
         var selected = document.querySelector(
           'mws-conversation-list-item a[aria-selected="true"], ' +
           'mws-conversation-list-item [aria-selected="true"][href]');
-        var row = selected ? selected.closest('mws-conversation-list-item') : null;
-        var nameEl = row ? row.querySelector('[data-e2e-conversation-name], h3, .name') : null;
-        var conversation = nameEl ? clean(nameEl.textContent) : '';
-        var pageText = document.body ? normalized(document.body.innerText || '') : '';
-        var marker = normalized(
-          'Use the Google Messages app on your phone to chat with ' + conversation);
-        var visible = !!conversation && pageText.indexOf(marker) !== -1;
+        // Google's row label can append sender metadata inside the same text
+        // node. Read the active pane's notice instead; native matching accepts
+        // an expansion only when it resolves to one stored conversation.
+        var conversation = phoneOnlyConversation();
+        var visible = !!selected && !!conversation;
         var serialized = JSON.stringify({ visible: visible, conversation: conversation });
         if (!force && serialized === lastPhoneOnlySerialized) return;
         lastPhoneOnlySerialized = serialized;

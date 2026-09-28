@@ -696,6 +696,7 @@ final class WebViewController: NSViewController {
                 + " title=\(self.webView.title ?? "nil")"
                 + " loading=\(self.webView.isLoading)"
                 + " progress=\(String(format: "%.2f", self.webView.estimatedProgress))"
+                + " fallbackHost=\(self.linkPreviewHost != nil)"
             let js = """
             JSON.stringify({
               href: location.href,
@@ -724,6 +725,22 @@ final class WebViewController: NSViewController {
               }
               var box = document.querySelector('textarea[data-e2e-message-input-box], mws-message-compose textarea, textarea, [contenteditable="true"]');
               var send = document.querySelector('[data-e2e-send-button], button[aria-label*="Send" i]');
+              var selected = document.querySelectorAll(
+                'mws-conversation-list-item a[aria-selected="true"], ' +
+                'mws-conversation-list-item [aria-selected="true"][href]');
+              var selectedRow = selected.length ? selected[0].closest('mws-conversation-list-item') : null;
+              var selectedName = selectedRow ? selectedRow.querySelector('[data-e2e-conversation-name], h3, .name') : null;
+              var visibleText = (document.body && document.body.innerText) || '';
+              var markerPrefix = 'Use the Google Messages app on your phone to chat with ';
+              var markerConversationChars = 0;
+              var visibleLines = visibleText.split(/\\r?\\n/);
+              for (var lineIndex=0; lineIndex<visibleLines.length; lineIndex++) {
+                var visibleLine = visibleLines[lineIndex].replace(/\\s+/g, ' ').trim();
+                if (visibleLine.toLocaleLowerCase().indexOf(markerPrefix.toLocaleLowerCase()) === 0) {
+                  markerConversationChars = visibleLine.slice(markerPrefix.length).trim().length;
+                  break;
+                }
+              }
               return JSON.stringify({
                 found:true,
                 itemAttrs: attrs(el),
@@ -731,7 +748,11 @@ final class WebViewController: NSViewController {
                 hrefShape: href ? href.replace(/[A-Za-z0-9_-]{8,}/g,'<id>') : null,
                 dataAttrs: dataAttrs,
                 composer: box ? box.tagName + ':' + attrs(box).join(',') : null,
-                sendBtn: send ? send.tagName + ':' + attrs(send).join(',') : null
+                sendBtn: send ? send.tagName + ':' + attrs(send).join(',') : null,
+                selectedLinks: selected.length,
+                selectedNameChars: selectedName ? (selectedName.textContent || '').trim().length : 0,
+                markerConversationChars: markerConversationChars,
+                phoneOnlyMarker: /use\\s+the\\s+google\\s+messages\\s+app\\s+on\\s+your\\s+phone\\s+to\\s+chat\\s+with/i.test(visibleText)
               });
             })()
             """
