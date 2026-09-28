@@ -32,7 +32,7 @@ Early but usable. See [`commandem.toml`](commandem.toml) for the live roadmap
 - **Settings** window (⌘,)
 - Multiple Google accounts with isolated persistent sessions (macOS 14+)
 - Opt-in message-preview blur, avatar hiding, and notification-preview privacy
-- An owner-local **phone-only fallback** that surfaces recovered link previews
+- An owner-local **phone-only fallback** that surfaces recovered text and link previews
   inside the matching conversation when Google withholds it from the web client
 - External links open in your default browser; untrusted redirects are blocked
 
@@ -102,7 +102,8 @@ Google's web client still communicates with Google under Google's own policies.
 
 The phone-only fallback reads an owner-only local export produced by the
 separate AGPL Experiments/LibGMProbe helper. The helper is not linked or bundled
-into the MIT app. The export can retain previews for multiple conversations;
+into the MIT app. The export can retain readable fallback messages and link
+previews for multiple conversations;
 each helper refresh updates only its target. Textem exact-matches the selected
 conversation before displaying its document and keeps the Google view when no
 local match exists.
