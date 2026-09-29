@@ -94,10 +94,22 @@ enum WebBridge {
         // an expansion only when it resolves to one stored conversation.
         var conversation = phoneOnlyConversation();
         var visible = !!selected && !!conversation;
-        var serialized = JSON.stringify({ visible: visible, conversation: conversation });
+        var conversationID = selected
+          ? (selected.getAttribute('data-e2e-conversation') || '') : '';
+        if (!conversationID && selected) {
+          var row = selected.closest('mws-conversation-list-item');
+          var route = row ? row.querySelector('a[data-e2e-conversation]') : null;
+          conversationID = route ? (route.getAttribute('data-e2e-conversation') || '') : '';
+        }
+        var serialized = JSON.stringify({
+          visible: visible, conversation: conversation, conversationID: conversationID
+        });
         if (!force && serialized === lastPhoneOnlySerialized) return;
         lastPhoneOnlySerialized = serialized;
-        post({ type: 'phoneOnlyState', visible: visible, conversation: conversation });
+        post({
+          type: 'phoneOnlyState', visible: visible,
+          conversation: conversation, conversationID: conversationID
+        });
       }
 
       function report(force) {

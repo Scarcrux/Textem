@@ -32,8 +32,9 @@ Early but usable. See [`commandem.toml`](commandem.toml) for the live roadmap
 - **Settings** window (⌘,)
 - Multiple Google accounts with isolated persistent sessions (macOS 14+)
 - Opt-in message-preview blur, avatar hiding, and notification-preview privacy
-- An owner-local **phone-only fallback** that surfaces recovered text and link previews
-  inside the matching conversation when Google withholds it from the web client
+- An owner-local **phone-only preview library** for previously recovered text and
+  links; automatic native refresh is disabled while its separate Google relay
+  cannot coexist safely with the main web inbox
 - External links open in your default browser; untrusted redirects are blocked
 
 **Distribution status** — the repository and alpha release are currently
@@ -50,6 +51,7 @@ planned for 1.0; there is no public download yet.
 ```sh
 make run      # build release, wrap into Textem.app, and launch it
 make bundle   # just build + produce Textem.app
+make install-helper # locally build/install the separate AGPL read helper
 ```
 
 The Makefile selects Xcode's compiler explicitly and builds a universal
@@ -100,13 +102,20 @@ adds native integration around it:
 Textem adds no analytics, telemetry endpoint, account service, or relay.
 Google's web client still communicates with Google under Google's own policies.
 
-The phone-only fallback reads an owner-only local export produced by the
-separate AGPL Experiments/LibGMProbe helper. The helper is not linked or bundled
-into the MIT app. The export can retain readable fallback messages and link
-previews for multiple conversations;
-each helper refresh updates only its target. Textem exact-matches the selected
-conversation before displaying its document and keeps the Google view when no
-local match exists.
+The phone-only research helper is the separate AGPL
+`Experiments/LibGMProbe` executable; it is not linked or bundled into the MIT app.
+Live testing established that Google permits the helper and the embedded web inbox
+to pair, but rejects the inactive relay with HTTP 401 when the active computer
+changes. Normal Textem launches therefore never start the helper or request phone
+pairing merely because a phone-only conversation was selected. The automatic path
+is developer-only behind `TEXTEM_EXPERIMENTAL_AUTOMATIC_RECOVERY=1` until a design
+can preserve the primary inbox.
+
+Readable fallback messages and link previews remain in an owner-only local
+store. Textem matches the stable web route first and otherwise accepts only an
+exact or unique label match. Ambiguous matches and cross-account cookie/session
+mismatches fail closed. Direct helper use is read-only and does not run as a
+permanent background service.
 
 ## License
 
