@@ -6,6 +6,36 @@ final class WebViewController: NSViewController {
     // The web client. Google gates this on the User-Agent; a mobile or
     // unrecognized UA gets a degraded page or a refusal.
     private static let messagesURL = URL(string: "https://messages.google.com/web/")!
+    // Google Messages keeps a fixed conversation-list rail at desktop widths
+    // and a 64-point global toolbar above both columns. Native phone-only
+    // content replaces only the selected conversation region, preserving those
+    // two pieces of spatial context instead of floating over the page.
+    private static let conversationListWidth: CGFloat = 340
+    private static let globalToolbarHeight: CGFloat = 64
+    private static let phoneFallbackSnapshotHTML = """
+    <!doctype html><html><head><style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;
+      background:#202124;color:#e8eaed;font:14px -apple-system,BlinkMacSystemFont,sans-serif}
+    header{height:64px;display:flex;align-items:center;padding:0 24px;border-bottom:1px solid #3c4043;
+      background:#202124;font-size:19px;font-weight:600}header span{margin-left:auto;width:32px;height:32px;
+      border-radius:50%;display:grid;place-items:center;background:#0b57d0;font-size:14px}
+    aside{position:absolute;left:0;top:64px;bottom:0;width:340px;background:#292a2d;
+      border-right:1px solid #3c4043;padding:18px 12px}
+    button{border:0;border-radius:16px;background:#a8c7fa;color:#062e6f;padding:13px 18px;
+      font:600 14px -apple-system;margin:0 8px 18px}
+    .row{height:72px;border-radius:12px;display:flex;align-items:center;gap:12px;padding:0 12px}
+    .row.selected{background:#3c4043}.avatar{width:40px;height:40px;border-radius:50%;
+      background:#7cacf8;display:grid;place-items:center;color:white;font-weight:700}.copy{min-width:0}
+    .name{font-weight:600;margin-bottom:5px}.snippet{color:#bdc1c6;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis;width:220px}main{position:absolute;left:340px;right:0;top:64px;bottom:0;
+      background:#202124;display:grid;place-items:center;color:#9aa0a6}
+    </style></head><body><header>☰ &nbsp; Google Messages<span>T</span></header><aside>
+    <button>Start chat</button>
+    <div class="row"><div class="avatar">A</div><div class="copy"><div class="name">Example contact</div><div class="snippet">A regular conversation</div></div></div>
+    <div class="row selected"><div class="avatar">D</div><div class="copy"><div class="name">Demo delivery</div><div class="snippet">View on your phone</div></div></div>
+    <div class="row"><div class="avatar">B</div><div class="copy"><div class="name">Another contact</div><div class="snippet">See you tomorrow</div></div></div>
+    </aside><main>Phone-only conversation</main></body></html>
+    """
 
     // The separate native helper cannot currently coexist with Google's web
     // relay: activating either client invalidates the other's listener. Keep
@@ -464,17 +494,14 @@ final class WebViewController: NSViewController {
         hideLinkPreviewFallback()
         host.translatesAutoresizingMaskIntoConstraints = false
         host.wantsLayer = true
-        host.layer?.shadowColor = NSColor.black.cgColor
-        host.layer?.shadowOpacity = 0.22
-        host.layer?.shadowRadius = 14
-        host.layer?.shadowOffset = NSSize(width: -3, height: 0)
         view.addSubview(host, positioned: .above, relativeTo: webView)
         NSLayoutConstraint.activate([
+            host.leadingAnchor.constraint(
+                equalTo: view.leadingAnchor, constant: Self.conversationListWidth),
             host.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            host.topAnchor.constraint(equalTo: view.topAnchor),
+            host.topAnchor.constraint(
+                equalTo: view.topAnchor, constant: Self.globalToolbarHeight),
             host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            host.widthAnchor.constraint(equalToConstant: 520),
-            host.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 360),
         ])
         linkPreviewHost = host
     }
@@ -492,9 +519,7 @@ final class WebViewController: NSViewController {
         let phoneRecoverySnapshot =
             ProcessInfo.processInfo.environment["TEXTEM_PHONE_RECOVERY_SNAPSHOT"] == "1"
         if phoneFallbackSnapshot || phoneRecoverySnapshot {
-            webView.loadHTMLString(
-                "<html><body style='margin:0;background:#202124'></body></html>",
-                baseURL: nil)
+            webView.loadHTMLString(Self.phoneFallbackSnapshotHTML, baseURL: nil)
         } else {
             webView.load(URLRequest(url: Self.entryURL))
         }
