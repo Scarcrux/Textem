@@ -9,7 +9,10 @@ final class WebViewController: NSViewController {
     // Google Messages keeps a fixed conversation-list rail at desktop widths
     // and a 64-point global toolbar above both columns. Native phone-only
     // content replaces only the selected conversation region, preserving those
-    // two pieces of spatial context instead of floating over the page.
+    // two pieces of spatial context instead of floating over the page. The
+    // toolbar inset is relative to the view's safe area because this window's
+    // full-size content view extends behind the macOS title bar while WebKit's
+    // visible page does not.
     private static let conversationListWidth: CGFloat = 340
     private static let globalToolbarHeight: CGFloat = 64
     private static let phoneFallbackSnapshotHTML = """
@@ -500,7 +503,8 @@ final class WebViewController: NSViewController {
                 equalTo: view.leadingAnchor, constant: Self.conversationListWidth),
             host.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             host.topAnchor.constraint(
-                equalTo: view.topAnchor, constant: Self.globalToolbarHeight),
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: Self.globalToolbarHeight),
             host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         linkPreviewHost = host
