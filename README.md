@@ -74,19 +74,25 @@ no extra entitlements.
 
 ## Signing in (important)
 
-Google is removing QR-code pairing in the US in favor of **Google-account
-sign-in inside the page**. In an embedded web view this has one hard
-constraint:
+QR-code pairing is no longer available in the US; Google Messages for web now
+pairs through your **Google account**, confirmed with an emoji on your phone.
+In an embedded web view this has one hard constraint:
 
 - ❌ **Passkeys do not work** inside `WKWebView` (an Apple platform limitation
   for sites you don't own — not a bug we can fix). If you pick "Use your
   passkey," the verification will fail.
 - ✅ Instead choose **"Enter your password"**, then a **non-passkey** second
   step — a **Google prompt ("Tap Yes")**, **SMS/email code**, or authenticator.
-- ✅ Finish pairing with the **emoji match**. Your phone's Messages app needs
-  **Settings → Device pairing → "Switch to Google Account pairing"** available.
+- ✅ On your phone, open Google Messages → **account menu (top right) →
+  Device pairing**. When it shows three emoji, tap the one that matches Textem.
+- ⚠️ Google allows **one active computer** at a time. Opening Messages for web
+  in a browser makes that the active one and disconnects Textem; reload Textem
+  (⇧⌘R) to switch back.
 
-You only do this once; the session persists.
+You only do this once; the session persists. (Steps checked against Google's
+[pairing instructions](https://support.google.com/messages/answer/7611075) on
+2026-10-13 — the older "Switch to Google Account pairing" toggle no longer
+exists.)
 
 ## How it works
 

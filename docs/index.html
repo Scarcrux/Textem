@@ -173,11 +173,12 @@
 
     <section id="setup">
       <h2>Getting set up</h2>
-      <p class="lead">Sign in once and Textem stays paired. Here’s the smooth path:</p>
+      <p class="lead">Pair once and Textem stays paired. Here’s the smooth path:</p>
       <ol class="steps">
-        <li><strong>Choose “Enter your password”</strong> on Google’s sign-in screen — not the passkey option.</li>
+        <li><strong>Start on your phone.</strong> Open Google Messages, tap your <em>account menu</em> (top right), then <em>Device pairing</em>.</li>
+        <li><strong>Sign in to Textem with the same Google account</strong> and choose “Enter your password” — not the passkey option.</li>
         <li><strong>Pick a non-passkey second step:</strong> a Google prompt (“Tap Yes” on your phone), an SMS or email code, or an authenticator app.</li>
-        <li><strong>Match the emoji to finish pairing.</strong> On your phone, open <em>Messages → Settings → Device pairing → “Switch to Google Account pairing,”</em> then confirm the emoji that matches what Textem shows.</li>
+        <li><strong>Tap the matching emoji.</strong> Your phone shows three emoji — tap the one that matches what Textem shows. Your phone vibrates when pairing completes.</li>
       </ol>
     </section>
 
@@ -188,8 +189,12 @@
         <p>Passkeys can’t work inside an embedded web view — that’s an Apple platform limitation for sites we don’t own, not a bug in Textem. On the sign-in screen choose <strong>“Enter your password”</strong> and a non-passkey second step (Google prompt, SMS/email code, or authenticator).</p>
       </details>
       <details class="faq">
-        <summary>My phone doesn’t show “Switch to Google Account pairing”</summary>
-        <p>Google is rolling this out gradually, so some accounts don’t have it yet. It’s a server-side rollout that can’t be forced from Textem. Make sure the Messages app on your phone is fully updated, and check again as the rollout expands.</p>
+        <summary>I don’t see Device pairing, or the emoji never appears</summary>
+        <p>Update Google Messages on your phone, then open your <em>account menu</em> (top right) → <em>Device pairing</em>. Make sure your phone and Textem are signed in to the <strong>same</strong> Google account. QR-code pairing is no longer available in the US, so the emoji prompt is the way to pair there.</p>
+      </details>
+      <details class="faq">
+        <summary>Textem disconnected after I used Messages in a browser</summary>
+        <p>Google allows only one active computer at a time per account. Opening Google Messages for web in a browser or on another computer makes that the active one, and Textem loses its connection. Close the other session, then reload Textem (⇧⌘R).</p>
       </details>
       <details class="faq">
         <summary>It keeps asking me to re-confirm, or the pairing won’t stick</summary>

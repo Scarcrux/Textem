@@ -22,11 +22,22 @@ struct OnboardingView: View {
             .padding(12)
             .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
 
+            // Sequence follows Google's own pairing steps (support.google.com/
+            // messages/answer/7611075, verified 2026-10-13): the phone path is
+            // the account menu → Device pairing; the old "Switch to Google
+            // Account pairing" toggle no longer exists and QR pairing is gone in
+            // the US.
             VStack(alignment: .leading, spacing: 10) {
-                step(1, "On the sign-in screen, choose “Enter your password.”")
-                step(2, "For the second step, pick a non-passkey option: a Google prompt (“Tap Yes”), an SMS/email code, or an authenticator.")
-                step(3, "Finish pairing with the emoji match. On your phone: Messages → Settings → Device pairing → “Switch to Google Account pairing.”")
+                step(1, "On your phone, open Google Messages and tap your account menu (top right) → Device pairing.")
+                step(2, "Here, sign in with the same Google account and choose “Enter your password.”")
+                step(3, "For the second step, pick a non-passkey option: a Google prompt (“Tap Yes”), an SMS/email code, or an authenticator.")
+                step(4, "Your phone shows three emoji. Tap the one that matches what Textem shows.")
             }
+
+            Text("Google allows one active computer at a time. Opening Messages for web in a browser makes it the active one and disconnects Textem — reload Textem (⇧⌘R) to switch back.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack {
                 Spacer()
