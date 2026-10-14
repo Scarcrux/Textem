@@ -656,97 +656,14 @@ final class WebViewController: NSViewController {
         guard bridgeReady, activeReply == nil, !replyQueue.isEmpty else { return }
         let reply = replyQueue.removeFirst()
         activeReply = reply
-        guard let requestJSON = Self.jsonString(reply.id.uuidString),
-              let textJSON = Self.jsonString(reply.text),
-              let idJSON = Self.jsonString(reply.conversationID) else {
+        // The script is built by ReplyAutomation so the exact text injected here
+        // is the one exercised against a fixture page in the WebKit tests.
+        guard let js = ReplyAutomation.script(
+            requestID: reply.id.uuidString, text: reply.text,
+            conversationID: reply.conversationID) else {
             finishReply(reply, ok: false, statusUnknown: false, reason: "encoding-failed")
             return
         }
-
-        // Fail closed: after clicking the row, wait until location exactly
-        // matches that row's href before querying a composer. The old code
-        // queried immediately and could type into the previously open thread.
-        let js = """
-        (function(requestId, reply, convId) {
-          function post(o) {
-            o.type = 'replyResult'; o.requestId = requestId;
-            try { window.webkit.messageHandlers['\(WebBridge.handlerName)'].postMessage(o); } catch(e) {}
-          }
-          function fail(reason) { post({ ok: false, unknown: false, reason: reason }); }
-          function route(url) {
-            var u = new URL(url, location.href);
-            return u.origin + u.pathname + u.search + u.hash;
-          }
-          function valueOf(box) {
-            return ('value' in box) ? box.value : (box.textContent || '');
-          }
-
-          var links = document.querySelectorAll('a[data-e2e-conversation]');
-          var link = null;
-          for (var i = 0; i < links.length; i++) {
-            if (links[i].getAttribute('data-e2e-conversation') === convId) { link = links[i]; break; }
-          }
-          if (!link || !link.href) { fail('conversation-not-found'); return; }
-          var targetRoute = route(link.href);
-          if (route(location.href) !== targetRoute) link.click();
-
-          var started = Date.now();
-          (function waitForTarget() {
-            if (route(location.href) !== targetRoute) {
-              if (Date.now() - started > 10000) { fail('conversation-not-selected'); return; }
-              setTimeout(waitForTarget, 100); return;
-            }
-
-            var box = document.querySelector(
-              'textarea[data-e2e-message-input-box], mws-message-compose textarea, mws-message-compose [contenteditable="true"]');
-            if (!box) {
-              if (Date.now() - started > 10000) { fail('composer-not-found'); return; }
-              setTimeout(waitForTarget, 100); return;
-            }
-
-            box.focus();
-            if ('value' in box) {
-              var proto = box instanceof HTMLTextAreaElement
-                ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-              var descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
-              if (!descriptor || !descriptor.set) { fail('composer-unsupported'); return; }
-              descriptor.set.call(box, reply);
-            } else {
-              box.textContent = reply;
-            }
-            box.dispatchEvent(new InputEvent('input', {
-              bubbles: true, inputType: 'insertText', data: reply
-            }));
-
-            var sendStarted = Date.now();
-            (function waitForSend() {
-              if (route(location.href) !== targetRoute) { fail('conversation-changed'); return; }
-              if (valueOf(box) !== reply) {
-                if (Date.now() - sendStarted > 4000) { fail('composer-rejected-text'); return; }
-                setTimeout(waitForSend, 100); return;
-              }
-              var compose = box.closest('mws-message-compose');
-              var send = compose ? compose.querySelector('[data-e2e-send-button], button[aria-label="Send"]') : null;
-              if (!send) send = document.querySelector('[data-e2e-send-button]');
-              if (!send || send.disabled) {
-                if (Date.now() - sendStarted > 4000) { fail('send-button-unavailable'); return; }
-                setTimeout(waitForSend, 100); return;
-              }
-              send.click();
-
-              var confirmStarted = Date.now();
-              (function confirmSubmission() {
-                if (valueOf(box) === '') { post({ ok: true }); return; }
-                if (Date.now() - confirmStarted > 5000) {
-                  post({ ok: false, unknown: true, reason: 'submission-unconfirmed' });
-                  return;
-                }
-                setTimeout(confirmSubmission, 100);
-              })();
-            })();
-          })();
-        })(\(requestJSON), \(textJSON), \(idJSON));
-        """
 
         webView.evaluateJavaScript(js) { [weak self] _, error in
             guard let error else { return }
