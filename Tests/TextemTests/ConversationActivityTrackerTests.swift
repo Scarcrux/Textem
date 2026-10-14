@@ -13,6 +13,24 @@ final class ConversationActivityTrackerTests: XCTestCase {
         )
     }
 
+    func testChangedContentCountSeparatesArrivalFromUnreadDetection() {
+        var tracker = ConversationActivityTracker()
+        _ = tracker.update([row("a", fingerprint: "a1", unread: false), row("b", fingerprint: "b1", unread: false)])
+        XCTAssertEqual(tracker.changedContentCount, 0, "baseline is not a change")
+
+        XCTAssertEqual(tracker.update([row("a", fingerprint: "a1", unread: false), row("b", fingerprint: "b1", unread: false)]), [])
+        XCTAssertEqual(tracker.changedContentCount, 0, "nothing changed")
+
+        // A message lands in a thread the page shows as READ: content changes,
+        // but no event. This is the case the diagnostic must expose.
+        XCTAssertEqual(tracker.update([row("a", fingerprint: "a2", unread: false), row("b", fingerprint: "b1", unread: false)]), [])
+        XCTAssertEqual(tracker.changedContentCount, 1)
+
+        // The same arrival as UNREAD both changes content and emits an event.
+        XCTAssertEqual(tracker.update([row("a", fingerprint: "a2", unread: false), row("b", fingerprint: "b2", unread: true)]).map(\.id), ["b"])
+        XCTAssertEqual(tracker.changedContentCount, 1)
+    }
+
     func testInitialSnapshotEstablishesBaselineWithoutNotifications() {
         var tracker = ConversationActivityTracker()
         XCTAssertEqual(tracker.update([row(fingerprint: "existing")]), [])

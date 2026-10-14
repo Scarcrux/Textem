@@ -95,6 +95,8 @@ final class WebViewController: NSViewController {
     // The account's isolated session store.
     private let dataStore: WKWebsiteDataStore
     private var activityTracker = ConversationActivityTracker()
+    private var lastDiagnosticAt: Date?
+    private var lastDiagnosticUnread: Int?
     private var bridgeReady = false
     // Find-in-page overlay (⌘F).
     private var findBar: FindBar!
@@ -265,9 +267,31 @@ final class WebViewController: NSViewController {
         view.window?.makeFirstResponder(webView)
     }
 
+    // Content-free notification diagnostics. A missing banner has three
+    // causes that look identical from outside the app: the page never got the
+    // message (changed=0), Textem did not see it as unread (changed>0,
+    // events=0), or the bridge stopped reporting (no lines, no heartbeat).
+    // Logs counts and flags only — never names, snippets, or conversation IDs.
+    // Writes on change, plus a heartbeat every 5 minutes to prove the bridge
+    // is alive while Textem is in the background.
+    private func logSnapshotDiagnostics(rows: Int, unread: Int, changed: Int, events: Int) {
+        let now = Date()
+        let heartbeatDue = lastDiagnosticAt.map { now.timeIntervalSince($0) >= 300 } ?? true
+        guard heartbeatDue || changed > 0 || events > 0 || unread != lastDiagnosticUnread else { return }
+        lastDiagnosticAt = now
+        lastDiagnosticUnread = unread
+        let line = "[Textem] snapshot rows=\(rows) unread=\(unread) changed=\(changed) "
+            + "events=\(events) active=\(NSApp.isActive ? "yes" : "no") "
+            + "muted=\(Preferences.notificationsMuted ? "yes" : "no")"
+        NSLog("%@", line)
+    }
+
     private func handleSnapshot(_ count: Int, rows: [ConversationSnapshot]) {
         NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
         let events = activityTracker.update(rows)
+        logSnapshotDiagnostics(rows: rows.count, unread: count,
+                               changed: activityTracker.changedContentCount,
+                               events: events.count)
         if !NSApp.isActive, !Preferences.notificationsMuted {
             for event in events {
                 NotificationManager.shared.notifyNewMessage(

@@ -18,6 +18,12 @@ struct ConversationActivityTracker {
 
     private var previous: [String: State]?
 
+    // Rows whose content changed (or that are new) in the last update, whether
+    // read or unread. Diagnostic only: a message that arrives in a thread the
+    // page already shows as read changes content but emits no event, which is
+    // exactly the case this count exposes.
+    private(set) var changedContentCount = 0
+
     mutating func update(_ rows: [ConversationSnapshot]) -> [ConversationSnapshot] {
         var current: [String: State] = [:]
         var uniqueRows: [ConversationSnapshot] = []
@@ -30,7 +36,13 @@ struct ConversationActivityTracker {
 
         // The first DOM report establishes a baseline. Existing unread threads
         // are not newly received messages and must not notify at app launch.
-        guard let previous, !previous.isEmpty else { return [] }
+        guard let previous, !previous.isEmpty else {
+            changedContentCount = 0
+            return []
+        }
+        changedContentCount = uniqueRows.filter { row in
+            previous[row.id]?.fingerprint != row.fingerprint
+        }.count
 
         return uniqueRows.filter { row in
             guard row.isUnread else { return false }
