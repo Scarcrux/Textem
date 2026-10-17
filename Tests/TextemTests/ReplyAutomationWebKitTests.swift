@@ -28,29 +28,57 @@ final class ReplyAutomationWebKitTests: XCTestCase {
       <mws-conversation-list-item><a data-e2e-conversation="" href="/web/conversations/B">Bravo</a></mws-conversation-list-item>
     </nav>
     <main id="thread"></main>
+    <button id="unrelated" data-e2e-send-button>Unrelated action</button>
     <script>
     window.__fixture = { navigateOnClick: true, renderComposer: true, acceptText: true,
-                         clearOnSend: true, hijackRouteOnInput: null };
+                         clearOnSend: true, hijackRouteOnInput: null,
+                         measurementFirst: false, modernSendMarker: false,
+                         hiddenSendFirst: false, sendDisabled: false,
+                         ambiguousSend: false, omitSend: false, richEditor: false };
     window.__sent = []; window.__clicks = [];
+    document.getElementById('unrelated').addEventListener('click', function() {
+      __sent.push({ thread:'outside' });
+    });
     function currentConv() { var m = location.pathname.match(/conversations\\/([^/]+)/); return m ? m[1] : null; }
     function renderThread() {
       var t = document.getElementById('thread'); t.innerHTML = '';
       var id = currentConv();
       if (!id || !__fixture.renderComposer) return;
       var c = document.createElement('mws-message-compose');
-      var box = document.createElement('textarea'); box.setAttribute('data-e2e-message-input-box', '');
-      var send = document.createElement('button'); send.setAttribute('data-e2e-send-button', '');
+      var box = document.createElement(__fixture.richEditor ? 'div' : 'textarea');
+      if (__fixture.richEditor) box.setAttribute('contenteditable', 'true');
+      else box.setAttribute('data-e2e-message-input-box', '');
+      function composerText() { return 'value' in box ? box.value : (box.textContent || ''); }
+      function clearComposer() { if ('value' in box) box.value = ''; else box.textContent = ''; }
+      var send = document.createElement('button');
+      send.setAttribute(__fixture.modernSendMarker ? 'data-e2e-send-text-button' : 'data-e2e-send-button', '');
       send.disabled = true; send.textContent = 'Send';
       box.addEventListener('input', function () {
-        if (!__fixture.acceptText) box.value = '';
+        if (!__fixture.acceptText) clearComposer();
         if (__fixture.hijackRouteOnInput) history.pushState({}, '', '/web/conversations/' + __fixture.hijackRouteOnInput);
-        send.disabled = box.value.length === 0;
+        send.disabled = __fixture.sendDisabled || composerText().length === 0;
       });
       send.addEventListener('click', function () {
-        __sent.push({ thread: id, route: currentConv(), text: box.value });
-        if (__fixture.clearOnSend) box.value = '';
+        __sent.push({ thread: id, route: currentConv(), text: composerText() });
+        if (__fixture.clearOnSend) clearComposer();
       });
-      c.appendChild(box); c.appendChild(send); t.appendChild(c);
+      if (__fixture.measurementFirst) {
+        var measurement = document.createElement('textarea');
+        measurement.setAttribute('data-e2e-message-input-box', '');
+        measurement.hidden = true;
+        c.appendChild(measurement);
+      }
+      c.appendChild(box);
+      if (__fixture.hiddenSendFirst) {
+        var hiddenSend = send.cloneNode(true);
+        var hiddenContainer = document.createElement('div');
+        hiddenContainer.style.display = 'none'; hiddenSend.disabled = false;
+        hiddenSend.addEventListener('click', function() { __sent.push({thread:'hidden'}); });
+        hiddenContainer.appendChild(hiddenSend); c.appendChild(hiddenContainer);
+      }
+      if (!__fixture.omitSend) c.appendChild(send);
+      if (__fixture.ambiguousSend) c.appendChild(send.cloneNode(true));
+      t.appendChild(c);
     }
     document.querySelectorAll('a[data-e2e-conversation]').forEach(function (a) {
       a.addEventListener('click', function (e) {
@@ -137,7 +165,8 @@ final class ReplyAutomationWebKitTests: XCTestCase {
 
         let state = evaluate(webView, """
             JSON.stringify({ sent: __sent, clicks: __clicks,
-              values: Array.from(document.querySelectorAll('textarea')).map(function (t) { return t.value; }) })
+              values: Array.from(document.querySelectorAll('textarea, [contenteditable="true"]'))
+                .map(function (t) { return 'value' in t ? t.value : (t.textContent || ''); }) })
             """)
         let json = try XCTUnwrap((state.result as? String)?.data(using: .utf8))
         let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
@@ -169,6 +198,36 @@ final class ReplyAutomationWebKitTests: XCTestCase {
         XCTAssertEqual(o.result["ok"] as? Bool, true)
         XCTAssertEqual(o.clicks, [])
         XCTAssertEqual(o.sent.first?["thread"] as? String, "A")
+    }
+
+    func testObservedComposerSkipsMeasurementFieldAndHiddenSendButton() throws {
+        let o = try runReply(target: "A", fixture:
+            "{measurementFirst:true, modernSendMarker:true, hiddenSendFirst:true, richEditor:true}")
+        XCTAssertEqual(o.result["ok"] as? Bool, true)
+        XCTAssertEqual(o.sent.count, 1)
+        XCTAssertEqual(o.sent.first?["thread"] as? String, "A")
+        XCTAssertEqual(o.sent.first?["text"] as? String, "On my way")
+        XCTAssertEqual(o.composerValues, ["", ""], "hidden sizing field must remain untouched")
+    }
+
+    func testDisabledModernSendDoesNotClickHiddenOrUnrelatedButtons() throws {
+        let o = try runReply(target: "A", fixture:
+            "{measurementFirst:true, modernSendMarker:true, hiddenSendFirst:true, sendDisabled:true, richEditor:true}")
+        XCTAssertEqual(o.result["reason"] as? String, "send-button-unavailable")
+        XCTAssertTrue(o.sent.isEmpty)
+        XCTAssertEqual(o.composerValues, ["", "On my way"])
+    }
+
+    func testMissingScopedSendDoesNotUseUnrelatedPageButton() throws {
+        let o = try runReply(target: "A", fixture: "{omitSend:true}")
+        XCTAssertEqual(o.result["reason"] as? String, "send-button-unavailable")
+        XCTAssertTrue(o.sent.isEmpty)
+    }
+
+    func testAmbiguousVisibleSendButtonsFailClosed() throws {
+        let o = try runReply(target: "A", fixture: "{ambiguousSend:true}")
+        XCTAssertEqual(o.result["reason"] as? String, "send-button-ambiguous")
+        XCTAssertTrue(o.sent.isEmpty)
     }
 
     func testUnknownConversationFailsWithoutTouchingThePage() throws {

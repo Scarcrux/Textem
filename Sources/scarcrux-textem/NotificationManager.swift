@@ -84,6 +84,25 @@ final class NotificationManager: NSObject {
         add(content, kind: "test")
     }
 
+    // Developer diagnostic: open an existing notified thread for a metadata
+    // shape check. This does not type, submit, or replay the failed reply.
+    func inspectLatestNotifiedThread() {
+        Task { @MainActor in
+            let delivered = await UNUserNotificationCenter.current().deliveredNotifications()
+            guard let notification = delivered
+                .filter({ $0.request.content.categoryIdentifier == Self.messageCategoryID })
+                .max(by: { $0.date < $1.date }) else {
+                NotificationDiagnostics.record("reply_inspection_no_notification")
+                return
+            }
+            let info = notification.request.content.userInfo
+            guard let account = (info[Self.accountKey] as? String).flatMap(UUID.init(uuidString:)),
+                  let conversation = info[Self.conversationKey] as? String else { return }
+            NotificationDiagnostics.record("reply_inspection_open")
+            onOpen?(account, conversation)
+        }
+    }
+
     func notifyInfo(_ body: String) {
         let content = UNMutableNotificationContent()
         content.title = "Textem"

@@ -54,6 +54,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         NotificationManager.shared.requestAuthorization()
+        if ProcessInfo.processInfo.environment["TEXTEM_REPLY_INSPECT"] == "1" {
+            NotificationManager.shared.inspectLatestNotifiedThread()
+        }
         if ProcessInfo.processInfo.environment["TEXTEM_NOTIFICATION_PROBE"] == "1" {
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))

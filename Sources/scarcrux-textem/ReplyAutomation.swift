@@ -54,6 +54,18 @@ enum ReplyAutomation {
           function valueOf(box) {
             return ('value' in box) ? box.value : (box.textContent || '');
           }
+          function visible(element) {
+            if (!element || element.hidden || !element.isConnected ||
+                !element.getClientRects().length) return false;
+            var style = getComputedStyle(element);
+            return style.display !== 'none' && style.visibility !== 'hidden' &&
+              style.visibility !== 'collapse';
+          }
+          function available(element) {
+            return visible(element) && !element.disabled &&
+              element.getAttribute('aria-disabled') !== 'true' &&
+              !element.closest('[inert], [aria-hidden="true"]');
+          }
 
           var links = document.querySelectorAll('mws-conversation-list-item a[href]');
           var link = null;
@@ -71,8 +83,11 @@ enum ReplyAutomation {
               setTimeout(waitForTarget, 100); return;
             }
 
-            var box = document.querySelector(
-              'textarea[data-e2e-message-input-box], mws-message-compose textarea, mws-message-compose [contenteditable="true"]');
+            var boxes = Array.from(document.querySelectorAll(
+              'textarea[data-e2e-message-input-box], mws-message-compose textarea, mws-message-compose [contenteditable="true"]'))
+              .filter(function(candidate) { return available(candidate) && !candidate.readOnly; });
+            if (boxes.length > 1) { fail('composer-ambiguous'); return; }
+            var box = boxes.length === 1 ? boxes[0] : null;
             if (!box) {
               if (Date.now() - started > \(timeouts.selectMilliseconds)) { fail('composer-not-found'); return; }
               setTimeout(waitForTarget, 100); return;
@@ -95,14 +110,18 @@ enum ReplyAutomation {
             var sendStarted = Date.now();
             (function waitForSend() {
               if (route(location.href) !== targetRoute) { fail('conversation-changed'); return; }
+              if (!available(box)) { fail('composer-changed'); return; }
               if (valueOf(box) !== reply) {
                 if (Date.now() - sendStarted > \(timeouts.sendMilliseconds)) { fail('composer-rejected-text'); return; }
                 setTimeout(waitForSend, 100); return;
               }
               var compose = box.closest('mws-message-compose');
-              var send = compose ? compose.querySelector('[data-e2e-send-button], button[aria-label="Send"]') : null;
-              if (!send) send = document.querySelector('[data-e2e-send-button]');
-              if (!send || send.disabled) {
+              var buttons = compose ? Array.from(compose.querySelectorAll(
+                'button[data-e2e-send-text-button], button[data-e2e-send-button], button[aria-label="Send"]'))
+                .filter(visible) : [];
+              if (buttons.length > 1) { fail('send-button-ambiguous'); return; }
+              var send = buttons.length === 1 ? buttons[0] : null;
+              if (!send || !available(send)) {
                 if (Date.now() - sendStarted > \(timeouts.sendMilliseconds)) { fail('send-button-unavailable'); return; }
                 setTimeout(waitForSend, 100); return;
               }

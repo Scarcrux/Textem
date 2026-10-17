@@ -723,6 +723,17 @@ final class WebViewController: NSViewController {
         activeReply = nil
         replyTimeoutTask?.cancel()
         replyTimeoutTask = nil
+        let reasonCodes = [
+            "conversation-not-found": 1, "conversation-not-selected": 2,
+            "composer-not-found": 3, "composer-unsupported": 4,
+            "composer-rejected-text": 5, "conversation-changed": 6,
+            "send-button-unavailable": 7, "submission-unconfirmed": 8,
+            "timed-out": 9, "encoding-failed": 10, "composer-ambiguous": 11,
+            "composer-changed": 12, "send-button-ambiguous": 13
+        ]
+        NotificationDiagnostics.record(
+            ok ? "reply_confirmed" : (statusUnknown ? "reply_unknown" : "reply_not_sent"),
+            values: ["reason": reasonCodes[reason ?? ""] ?? 0])
         if !ok {
             let detail = reason ?? "unknown"
             NSLog("[Textem] inline reply failed: %@", detail)
@@ -928,6 +939,31 @@ final class WebViewController: NSViewController {
               }
               var box = document.querySelector('textarea[data-e2e-message-input-box], mws-message-compose textarea, textarea, [contenteditable="true"]');
               var send = document.querySelector('[data-e2e-send-button], button[aria-label*="Send" i]');
+              var composerAncestors = [];
+              var ancestor = box;
+              for (var depth=0; ancestor && depth<6; depth++, ancestor=ancestor.parentElement) {
+                composerAncestors.push({tag:ancestor.tagName, attrs:attrs(ancestor)});
+              }
+              var composerButtons = [];
+              var scope = box ? (box.closest('mws-message-compose') || box.parentElement.parentElement.parentElement) : null;
+              var composerInputs = Array.from(document.querySelectorAll(
+                'textarea[data-e2e-message-input-box], mws-message-compose textarea, mws-message-compose [contenteditable="true"]'))
+                .map(function(input) {
+                  return {tag:input.tagName, hidden:input.hidden, rects:input.getClientRects().length,
+                    disabled:!!input.disabled, composeRoot:!!input.closest('mws-message-compose')};
+                });
+              if (scope) {
+                scope.querySelectorAll('button, [role="button"], input[type="submit"]').forEach(function(button) {
+                  composerButtons.push({
+                    tag:button.tagName, attrs:attrs(button),
+                    classes:Array.from(button.classList),
+                    sendLabel:/^send\\b/i.test(button.getAttribute('aria-label') || ''),
+                    disabled:!!button.disabled,
+                    rects:button.getClientRects().length, hidden:button.hidden,
+                    sendMarker:button.hasAttribute('data-e2e-send-button')
+                  });
+                });
+              }
               var selected = document.querySelectorAll(
                 'mws-conversation-list-item a[aria-selected="true"], ' +
                 'mws-conversation-list-item [aria-selected="true"][href]');
@@ -954,6 +990,8 @@ final class WebViewController: NSViewController {
                 routeMatchesConversation: a ? /^\\/web\\/conversations\\/[^/]+\\/?$/.test(new URL(a.href).pathname) : false,
                 composer: box ? box.tagName + ':' + attrs(box).join(',') : null,
                 sendBtn: send ? send.tagName + ':' + attrs(send).join(',') : null,
+                composerAncestors:composerAncestors, composerButtons:composerButtons,
+                composerInputs:composerInputs,
                 selectedLinks: selected.length,
                 selectedNameChars: selectedName ? (selectedName.textContent || '').trim().length : 0,
                 markerConversationChars: markerConversationChars,
@@ -967,6 +1005,7 @@ final class WebViewController: NSViewController {
             let path = ProcessInfo.processInfo.environment["TEXTEM_SELFCHECK_PATH"]
                 ?? "/tmp/textem-selfcheck.log"
             try? text.write(toFile: path, atomically: true, encoding: .utf8)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
         }
     }
 
