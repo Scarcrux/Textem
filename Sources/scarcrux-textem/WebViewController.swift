@@ -114,6 +114,7 @@ final class WebViewController: NSViewController {
     }
     private var replyQueue: [PendingReply] = []
     private var activeReply: PendingReply?
+    private var nativeSendReplyID: UUID?
     private var replyTimeoutTask: Task<Void, Never>?
     private var pendingOpenConversationID: String?
     private var pendingOpenAttempts = 0
@@ -693,6 +694,7 @@ final class WebViewController: NSViewController {
         guard bridgeReady, activeReply == nil, !replyQueue.isEmpty else { return }
         let reply = replyQueue.removeFirst()
         activeReply = reply
+        nativeSendReplyID = nil
         // The script is built by ReplyAutomation so the exact text injected here
         // is the one exercised against a fixture page in the WebKit tests.
         guard let js = ReplyAutomation.script(
@@ -717,6 +719,39 @@ final class WebViewController: NSViewController {
         }
     }
 
+    private func sendReplyUsingNativeInput(_ reply: PendingReply) {
+        guard activeReply?.id == reply.id, nativeSendReplyID != reply.id,
+              let idJSON = Self.jsonString(reply.id.uuidString) else { return }
+        nativeSendReplyID = reply.id
+        let script = """
+        (function() {
+          return typeof window.__textemReplySendTarget === 'function'
+            ? window.__textemReplySendTarget(\(idJSON)) : null;
+        })()
+        """
+        webView.evaluateJavaScript(script) { [weak self] result, error in
+            Task { @MainActor in
+                guard let self, self.activeReply?.id == reply.id else { return }
+                guard error == nil, let target = result as? [String: Any],
+                      let route = target["route"] as? String, let url = URL(string: route),
+                      url.scheme == "https", url.host == "messages.google.com",
+                      let expectedID = url.pathComponents.last,
+                      expectedID.removingPercentEncoding == reply.conversationID,
+                      self.webView.url?.absoluteString == route else {
+                    self.finishReply(reply, ok: false, statusUnknown: false,
+                                     reason: "native-target-changed")
+                    return
+                }
+                let sent = NativeWebClick.send(in: self.webView, target: target)
+                NotificationDiagnostics.record(sent ? "reply_native_dispatched" : "reply_native_unavailable")
+                if !sent {
+                    self.finishReply(reply, ok: false, statusUnknown: false,
+                                     reason: "native-input-unavailable")
+                }
+            }
+        }
+    }
+
     private func finishReply(_ reply: PendingReply, ok: Bool,
                              statusUnknown: Bool, reason: String?) {
         guard activeReply?.id == reply.id else { return }
@@ -729,7 +764,8 @@ final class WebViewController: NSViewController {
             "composer-rejected-text": 5, "conversation-changed": 6,
             "send-button-unavailable": 7, "submission-unconfirmed": 8,
             "timed-out": 9, "encoding-failed": 10, "composer-ambiguous": 11,
-            "composer-changed": 12, "send-button-ambiguous": 13
+            "composer-changed": 12, "send-button-ambiguous": 13,
+            "native-target-changed": 14, "native-input-unavailable": 15
         ]
         NotificationDiagnostics.record(
             ok ? "reply_confirmed" : (statusUnknown ? "reply_unknown" : "reply_not_sent"),
@@ -950,7 +986,10 @@ final class WebViewController: NSViewController {
                 'textarea[data-e2e-message-input-box], mws-message-compose textarea, mws-message-compose [contenteditable="true"]'))
                 .map(function(input) {
                   return {tag:input.tagName, hidden:input.hidden, rects:input.getClientRects().length,
-                    disabled:!!input.disabled, composeRoot:!!input.closest('mws-message-compose')};
+                    disabled:!!input.disabled, composeRoot:!!input.closest('mws-message-compose'),
+                    textChars:('value' in input ? input.value : (input.textContent || '')).length,
+                    meaningfulChars:('value' in input ? input.value : (input.textContent || ''))
+                      .replace(/[\\s\\u200b\\ufeff]/g, '').length};
                 });
               if (scope) {
                 scope.querySelectorAll('button, [role="button"], input[type="submit"]').forEach(function(button) {
@@ -1166,12 +1205,29 @@ extension WebViewController: WKScriptMessageHandler {
             guard let rawID = body["requestId"] as? String,
                   let id = UUID(uuidString: rawID),
                   let reply = activeReply, reply.id == id else { return }
+            if let raw = body["diagnostics"] as? [String: Any] {
+                let allowed = ["routeMatches", "originalConnected", "originalTextChars",
+                    "originalMeaningfulChars", "freshEditors", "freshTextChars",
+                    "freshMeaningfulChars", "originalStillReply", "freshStillReply"]
+                var counters: [String: Int] = [:]
+                for key in allowed {
+                    if let value = raw[key] as? Int, (-1...1_000_000).contains(value) {
+                        counters[key] = value
+                    }
+                }
+                NotificationDiagnostics.record("reply_confirmation", values: counters)
+            }
             finishReply(
                 reply,
                 ok: (body["ok"] as? Bool) ?? false,
                 statusUnknown: (body["unknown"] as? Bool) ?? false,
                 reason: body["reason"] as? String
             )
+        case "replySend":
+            guard let rawID = body["requestId"] as? String,
+                  let id = UUID(uuidString: rawID),
+                  let reply = activeReply, reply.id == id else { return }
+            sendReplyUsingNativeInput(reply)
         default:
             return
         }

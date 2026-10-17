@@ -34,8 +34,9 @@ final class ReplyAutomationWebKitTests: XCTestCase {
                          clearOnSend: true, hijackRouteOnInput: null,
                          measurementFirst: false, modernSendMarker: false,
                          hiddenSendFirst: false, sendDisabled: false,
-                         ambiguousSend: false, omitSend: false, richEditor: false };
-    window.__sent = []; window.__clicks = [];
+                         ambiguousSend: false, omitSend: false, richEditor: false,
+                         requireTrustedSend: true };
+    window.__sent = []; window.__clicks = []; window.__sendTrust = [];
     document.getElementById('unrelated').addEventListener('click', function() {
       __sent.push({ thread:'outside' });
     });
@@ -58,7 +59,9 @@ final class ReplyAutomationWebKitTests: XCTestCase {
         if (__fixture.hijackRouteOnInput) history.pushState({}, '', '/web/conversations/' + __fixture.hijackRouteOnInput);
         send.disabled = __fixture.sendDisabled || composerText().length === 0;
       });
-      send.addEventListener('click', function () {
+      send.addEventListener('click', function (event) {
+        __sendTrust.push(event.isTrusted);
+        if (__fixture.requireTrustedSend && !event.isTrusted) return;
         __sent.push({ thread: id, route: currentConv(), text: composerText() });
         if (__fixture.clearOnSend) clearComposer();
       });
@@ -98,10 +101,36 @@ final class ReplyAutomationWebKitTests: XCTestCase {
     @MainActor private final class ResultCollector: NSObject, WKScriptMessageHandler {
         var results: [[String: Any]] = []
         var expectation: XCTestExpectation?
+        weak var webView: WKWebView?
+        var useNativeInput = true
+        var nativeDispatched = false
+        var nativeRequestID = "req-1"
+        var invalidateRouteAtNativeSend = false
         func userContentController(_ userContentController: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
-            guard let body = message.body as? [String: Any],
-                  body["type"] as? String == "replyResult" else { return }
+            guard let body = message.body as? [String: Any] else { return }
+            if body["type"] as? String == "replySend", let webView {
+                let id = ReplyAutomation.jsonString(nativeRequestID)!
+                let invalidate = invalidateRouteAtNativeSend
+                    ? "history.pushState({}, '', '/web/conversations/Z');" : ""
+                webView.evaluateJavaScript("\(invalidate) window.__textemReplySendTarget(\(id))") {
+                    [weak self, weak webView] result, _ in
+                    guard let self, let webView, let target = result as? [String: Any] else { return }
+                    if self.useNativeInput {
+                        self.nativeDispatched = NativeWebClick.send(in: webView, target: target)
+                    } else {
+                        // Negative control: this was our old production action.
+                        webView.evaluateJavaScript("""
+                        (function() {
+                          var t = window.__textemReplySendTarget('req-1');
+                          if (t) document.elementFromPoint(t.x, t.y).closest('button').click();
+                        })()
+                        """, completionHandler: nil)
+                    }
+                }
+                return
+            }
+            guard body["type"] as? String == "replyResult" else { return }
             results.append(body)
             expectation?.fulfill()
         }
@@ -122,6 +151,8 @@ final class ReplyAutomationWebKitTests: XCTestCase {
         var sent: [[String: Any]]
         var clicks: [String]
         var composerValues: [String]
+        var sendTrust: [Bool]
+        var nativeDispatched: Bool
     }
 
     private func evaluate(_ webView: WKWebView, _ source: String) -> Box {
@@ -135,11 +166,31 @@ final class ReplyAutomationWebKitTests: XCTestCase {
     }
 
     private func runReply(target: String, text: String = "On my way",
-                          startOpen: String = "B", fixture: String = "{}") throws -> Outcome {
+                          startOpen: String = "B", fixture: String = "{}",
+                          nativeInput: Bool = true, zoom: Double = 1,
+                          nativeRequestID: String = "req-1",
+                          invalidateRouteAtNativeSend: Bool = false) throws -> Outcome {
         let collector = ResultCollector()
         let config = WKWebViewConfiguration()
         config.userContentController.add(collector, name: WebBridge.handlerName)
         let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
+        webView.pageZoom = zoom
+        collector.webView = webView
+        collector.useNativeInput = nativeInput
+        collector.nativeRequestID = nativeRequestID
+        collector.invalidateRouteAtNativeSend = invalidateRouteAtNativeSend
+        let window = NSWindow(
+            contentRect: NSRect(x: 20, y: 20, width: 800, height: 600),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.title = "Textem reply fixture"
+        window.contentView = webView
+        // An occluded WebKit page can throttle its JS timers beyond the
+        // harness deadline (observed in the missing-composer negative case).
+        // Keep only this fixture visible without activating the test app.
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil); window.close() }
 
         let loaded = expectation(description: "fixture loaded")
         let waiter = LoadWaiter(loaded)
@@ -164,7 +215,7 @@ final class ReplyAutomationWebKitTests: XCTestCase {
         wait(for: [settle], timeout: 0.4)
 
         let state = evaluate(webView, """
-            JSON.stringify({ sent: __sent, clicks: __clicks,
+            JSON.stringify({ sent: __sent, clicks: __clicks, sendTrust:__sendTrust,
               values: Array.from(document.querySelectorAll('textarea, [contenteditable="true"]'))
                 .map(function (t) { return 'value' in t ? t.value : (t.textContent || ''); }) })
             """)
@@ -177,13 +228,16 @@ final class ReplyAutomationWebKitTests: XCTestCase {
             evaluationError: evaluation.error,
             sent: decoded["sent"] as? [[String: Any]] ?? [],
             clicks: decoded["clicks"] as? [String] ?? [],
-            composerValues: decoded["values"] as? [String] ?? [])
+            composerValues: decoded["values"] as? [String] ?? [],
+            sendTrust: decoded["sendTrust"] as? [Bool] ?? [],
+            nativeDispatched: collector.nativeDispatched)
     }
 
     // MARK: Tests
 
     func testRepliesIntoTheNotifiedThreadNotTheOpenOne() throws {
         let o = try runReply(target: "A", startOpen: "B")
+        XCTAssertTrue(o.nativeDispatched)
         XCTAssertEqual(o.result["ok"] as? Bool, true)
         XCTAssertEqual(o.result["requestId"] as? String, "req-1")
         XCTAssertEqual(o.clicks, ["A"])
@@ -191,6 +245,47 @@ final class ReplyAutomationWebKitTests: XCTestCase {
         XCTAssertEqual(o.sent.first?["thread"] as? String, "A", "typed into the wrong thread's composer")
         XCTAssertEqual(o.sent.first?["text"] as? String, "On my way")
         XCTAssertEqual(o.resultCount, 1)
+        XCTAssertEqual(o.sendTrust, [true])
+    }
+
+    func testSyntheticClickIsRejectedByObservedTrustGate() throws {
+        let o = try runReply(target: "A", fixture:
+            "{measurementFirst:true, modernSendMarker:true, hiddenSendFirst:true, richEditor:true}",
+            nativeInput: false)
+        XCTAssertEqual(o.sendTrust, [false])
+        XCTAssertTrue(o.sent.isEmpty)
+        XCTAssertEqual(o.result["reason"] as? String, "submission-unconfirmed")
+    }
+
+    func testNativeSendUsesViewportCoordinatesAtZoom() throws {
+        let o = try runReply(target: "A", fixture:
+            "{measurementFirst:true, modernSendMarker:true, hiddenSendFirst:true, richEditor:true}",
+            zoom: 1.5)
+        XCTAssertEqual(o.result["ok"] as? Bool, true)
+        XCTAssertEqual(o.sendTrust, [true])
+        XCTAssertEqual(o.sent.first?["thread"] as? String, "A")
+    }
+
+    func testNativeSendRejectsInvalidGeometryAndDetachedView() {
+        let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+        XCTAssertFalse(NativeWebClick.send(in: web, target: [
+            "x": 50, "y": 50, "viewportWidth": 100, "viewportHeight": 100]))
+        XCTAssertFalse(NativeWebClick.send(in: web, target: [
+            "x": -1, "y": 50, "viewportWidth": 100, "viewportHeight": 100]))
+    }
+
+    func testNativeSendRejectsMismatchedRequestNonce() throws {
+        let o = try runReply(target: "A", nativeRequestID: "other-request")
+        XCTAssertFalse(o.nativeDispatched)
+        XCTAssertTrue(o.sent.isEmpty)
+        XCTAssertTrue(o.sendTrust.isEmpty)
+    }
+
+    func testNativeSendRevalidatesRouteBeforeGettingClickTarget() throws {
+        let o = try runReply(target: "A", invalidateRouteAtNativeSend: true)
+        XCTAssertFalse(o.nativeDispatched)
+        XCTAssertTrue(o.sent.isEmpty)
+        XCTAssertTrue(o.sendTrust.isEmpty)
     }
 
     func testAlreadyOpenThreadIsNotReclicked() throws {
@@ -270,6 +365,13 @@ final class ReplyAutomationWebKitTests: XCTestCase {
         XCTAssertEqual(o.result["unknown"] as? Bool, true, "Send was pressed; must not claim 'not sent'")
         XCTAssertEqual(o.result["reason"] as? String, "submission-unconfirmed")
         XCTAssertEqual(o.sent.count, 1)
+        let counters = try XCTUnwrap(o.result["diagnostics"] as? [String: Any])
+        XCTAssertEqual(counters["originalConnected"] as? Int, 1)
+        XCTAssertEqual(counters["originalStillReply"] as? Int, 1)
+        XCTAssertEqual(counters["freshStillReply"] as? Int, 1)
+        XCTAssertEqual(counters["routeMatches"] as? Int, 1)
+        XCTAssertTrue(counters.values.allSatisfy { $0 is NSNumber },
+                      "confirmation diagnostics must not contain message text or IDs")
     }
 
     func testReplyTextIsInjectedVerbatim() throws {

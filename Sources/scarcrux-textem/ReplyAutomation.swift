@@ -43,7 +43,7 @@ enum ReplyAutomation {
         (function(requestId, reply, convId) {
           \(ConversationDOM.helpers)
           function post(o) {
-            o.type = 'replyResult'; o.requestId = requestId;
+            o.type = o.type || 'replyResult'; o.requestId = requestId;
             try { window.webkit.messageHandlers[\(handlerJSON)].postMessage(o); } catch(e) {}
           }
           function fail(reason) { post({ ok: false, unknown: false, reason: reason }); }
@@ -125,13 +125,40 @@ enum ReplyAutomation {
                 if (Date.now() - sendStarted > \(timeouts.sendMilliseconds)) { fail('send-button-unavailable'); return; }
                 setTimeout(waitForSend, 100); return;
               }
-              send.click();
+              window.__textemReplySendTarget = function(id) {
+                if (id !== requestId || route(location.href) !== targetRoute ||
+                    !available(box) || valueOf(box) !== reply || !available(send) ||
+                    box.closest('mws-message-compose') !== send.closest('mws-message-compose')) return null;
+                var rect = send.getBoundingClientRect();
+                var x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+                var hit = document.elementFromPoint(x, y);
+                if (!hit || (hit !== send && !send.contains(hit))) return null;
+                return {x:x, y:y, viewportWidth:innerWidth, viewportHeight:innerHeight,
+                  route:targetRoute};
+              };
+              post({type:'replySend'});
 
               var confirmStarted = Date.now();
               (function confirmSubmission() {
                 if (valueOf(box) === '') { post({ ok: true }); return; }
                 if (Date.now() - confirmStarted > \(timeouts.confirmMilliseconds)) {
-                  post({ ok: false, unknown: true, reason: 'submission-unconfirmed' });
+                  var fresh = Array.from(document.querySelectorAll(
+                    'textarea[data-e2e-message-input-box], mws-message-compose textarea, mws-message-compose [contenteditable="true"]'))
+                    .filter(function(candidate) { return available(candidate) && !candidate.readOnly; });
+                  var freshValue = fresh.length === 1 ? valueOf(fresh[0]) : '';
+                  post({ ok: false, unknown: true, reason: 'submission-unconfirmed',
+                    diagnostics: {
+                      routeMatches:route(location.href) === targetRoute ? 1 : 0,
+                      originalConnected:box.isConnected ? 1 : 0,
+                      originalTextChars:valueOf(box).length,
+                      originalMeaningfulChars:valueOf(box).replace(/[\\s\\u200b\\ufeff]/g, '').length,
+                      freshEditors:fresh.length,
+                      freshTextChars:fresh.length === 1 ? freshValue.length : -1,
+                      freshMeaningfulChars:fresh.length === 1
+                        ? freshValue.replace(/[\\s\\u200b\\ufeff]/g, '').length : -1,
+                      originalStillReply:valueOf(box) === reply ? 1 : 0,
+                      freshStillReply:fresh.length === 1 && freshValue === reply ? 1 : 0
+                    } });
                   return;
                 }
                 setTimeout(confirmSubmission, 100);
