@@ -54,6 +54,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         NotificationManager.shared.requestAuthorization()
+        if ProcessInfo.processInfo.environment["TEXTEM_NOTIFICATION_PROBE"] == "1" {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                NotificationManager.shared.sendTestNotification()
+            }
+        }
 
         // System-wide show/hide hotkey (⌥⌘M).
         let hotkey = GlobalHotkey { [weak self] in
@@ -74,6 +80,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSignInHelp(_ sender: Any?) {
         showOnboarding()
+    }
+
+    @objc func sendTestNotification(_ sender: Any?) {
+        NotificationManager.shared.sendTestNotification()
     }
 
     private func showOnboarding() {

@@ -21,6 +21,7 @@ enum MainMenu {
         let copyCode = appMenu.addItem(withTitle: "Copy Latest Code", action: #selector(WebViewController.copyLatestCode(_:)), keyEquivalent: "c")
         copyCode.keyEquivalentModifierMask = [.command, .shift]
         appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
+        appMenu.addItem(withTitle: "Send Test Notification", action: #selector(AppDelegate.sendTestNotification(_:)), keyEquivalent: "")
         appMenu.addItem(withTitle: "Phone-only Message Preview…", action: #selector(AppDelegate.showLinkPreviews(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
 

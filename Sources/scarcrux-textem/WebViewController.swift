@@ -97,6 +97,8 @@ final class WebViewController: NSViewController {
     private var activityTracker = ConversationActivityTracker()
     private var lastDiagnosticAt: Date?
     private var lastDiagnosticUnread: Int?
+    private var lastDiagnosticRows: Int?
+    private var lastDiagnosticDOMRows: Int?
     private var bridgeReady = false
     // Find-in-page overlay (⌘F).
     private var findBar: FindBar!
@@ -274,24 +276,34 @@ final class WebViewController: NSViewController {
     // Logs counts and flags only — never names, snippets, or conversation IDs.
     // Writes on change, plus a heartbeat every 5 minutes to prove the bridge
     // is alive while Textem is in the background.
-    private func logSnapshotDiagnostics(rows: Int, unread: Int, changed: Int, events: Int) {
+    private func logSnapshotDiagnostics(rows: Int, unread: Int, changed: Int, events: Int,
+                                        domRows: Int) {
         let now = Date()
         let heartbeatDue = lastDiagnosticAt.map { now.timeIntervalSince($0) >= 300 } ?? true
-        guard heartbeatDue || changed > 0 || events > 0 || unread != lastDiagnosticUnread else { return }
+        guard heartbeatDue || changed > 0 || events > 0 || unread != lastDiagnosticUnread
+                || rows != lastDiagnosticRows || domRows != lastDiagnosticDOMRows else { return }
         lastDiagnosticAt = now
         lastDiagnosticUnread = unread
+        lastDiagnosticRows = rows
+        lastDiagnosticDOMRows = domRows
         let line = "[Textem] snapshot rows=\(rows) unread=\(unread) changed=\(changed) "
             + "events=\(events) active=\(NSApp.isActive ? "yes" : "no") "
             + "muted=\(Preferences.notificationsMuted ? "yes" : "no")"
         NSLog("%@", line)
+        NotificationDiagnostics.record("snapshot", values: [
+            "rows": rows, "domRows": domRows, "unread": unread,
+            "changed": changed, "events": events,
+            "active": NSApp.isActive ? 1 : 0,
+            "muted": Preferences.notificationsMuted ? 1 : 0
+        ])
     }
 
-    private func handleSnapshot(_ count: Int, rows: [ConversationSnapshot]) {
+    private func handleSnapshot(_ count: Int, rows: [ConversationSnapshot], domRows: Int) {
         NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
         let events = activityTracker.update(rows)
         logSnapshotDiagnostics(rows: rows.count, unread: count,
                                changed: activityTracker.changedContentCount,
-                               events: events.count)
+                               events: events.count, domRows: domRows)
         if !NSApp.isActive, !Preferences.notificationsMuted {
             for event in events {
                 NotificationManager.shared.notifyNewMessage(
@@ -651,9 +663,10 @@ final class WebViewController: NSViewController {
         pendingOpenConversationID = nil
         let js = """
         (function(convId) {
-          var links = document.querySelectorAll('a[data-e2e-conversation]');
+          \(ConversationDOM.helpers)
+          var links = document.querySelectorAll('mws-conversation-list-item a[href]');
           for (var i = 0; i < links.length; i++) {
-            if (links[i].getAttribute('data-e2e-conversation') === convId) {
+            if (textemConversationID(links[i]) === convId) {
               links[i].click();
               return true;
             }
@@ -937,6 +950,8 @@ final class WebViewController: NSViewController {
                 linkAttrs: a ? attrs(a) : null,
                 hrefShape: href ? href.replace(/[A-Za-z0-9_-]{8,}/g,'<id>') : null,
                 dataAttrs: dataAttrs,
+                conversationMarkerChars: a ? (a.getAttribute('data-e2e-conversation') || '').length : 0,
+                routeMatchesConversation: a ? /^\\/web\\/conversations\\/[^/]+\\/?$/.test(new URL(a.href).pathname) : false,
                 composer: box ? box.tagName + ':' + attrs(box).join(',') : null,
                 sendBtn: send ? send.tagName + ':' + attrs(send).join(',') : null,
                 selectedLinks: selected.length,
@@ -1101,7 +1116,7 @@ extension WebViewController: WKScriptMessageHandler {
                     isUnread: (row["unread"] as? Bool) ?? false
                 )
             }
-            handleSnapshot(count, rows: rows)
+            handleSnapshot(count, rows: rows, domRows: (body["domRows"] as? Int) ?? rows.count)
         case "phoneOnlyState":
             handlePhoneOnlyState(
                 visible: (body["visible"] as? Bool) ?? false,

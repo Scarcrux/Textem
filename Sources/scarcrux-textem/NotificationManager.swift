@@ -44,6 +44,12 @@ final class NotificationManager: NSObject {
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound, .badge]
         ) { granted, error in
+            Task { @MainActor in
+                NotificationDiagnostics.record("authorization", values: [
+                    "granted": granted ? 1 : 0, "error": (error as NSError?)?.code ?? 0
+                ])
+                self.logSettings()
+            }
             if let error {
                 NSLog("[Textem] notification authorization failed: %@", error.localizedDescription)
             } else if !granted {
@@ -52,11 +58,37 @@ final class NotificationManager: NSObject {
         }
     }
 
+    private func logSettings() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            let values = [
+                "authorization": settings.authorizationStatus.rawValue,
+                "alerts": settings.alertSetting.rawValue,
+                "style": settings.alertStyle.rawValue,
+                "sound": settings.soundSetting.rawValue,
+                "notificationCenter": settings.notificationCenterSetting.rawValue
+            ]
+            Task { @MainActor in
+                NotificationDiagnostics.record("settings", values: values)
+            }
+        }
+    }
+
+    // Uses the same add/completion path as real messages, independent of DOM
+    // changes. No reply action, so a probe cannot send to a real conversation.
+    func sendTestNotification() {
+        logSettings()
+        let content = UNMutableNotificationContent()
+        content.title = "Textem notification test"
+        content.body = "Textem can request notifications from macOS."
+        content.sound = .default
+        add(content, kind: "test")
+    }
+
     func notifyInfo(_ body: String) {
         let content = UNMutableNotificationContent()
         content.title = "Textem"
         content.body = body
-        add(content)
+        add(content, kind: "info")
     }
 
     func notifyNewMessage(sender: String, snippet: String,
@@ -77,13 +109,27 @@ final class NotificationManager: NSObject {
             content.title = sender.isEmpty ? "New message" : sender
             content.body = snippet.isEmpty ? "New message" : snippet
         }
-        add(content)
+        add(content, kind: "message")
     }
 
-    private func add(_ content: UNMutableNotificationContent) {
+    private func add(_ content: UNMutableNotificationContent, kind: String) {
         let request = UNNotificationRequest(
             identifier: UUID().uuidString, content: content, trigger: nil)
+        let requestID = request.identifier
+        NotificationDiagnostics.record("request_" + kind)
         UNUserNotificationCenter.current().add(request) { error in
+            Task { @MainActor in
+                NotificationDiagnostics.record(
+                    error == nil ? "accepted_" + kind : "rejected_" + kind,
+                    values: ["error": (error as NSError?)?.code ?? 0])
+                if kind == "test", error == nil {
+                    try? await Task.sleep(for: .seconds(3))
+                    let delivered = await UNUserNotificationCenter.current().deliveredNotifications()
+                    NotificationDiagnostics.record("delivered_test", values: [
+                        "found": delivered.contains { $0.request.identifier == requestID } ? 1 : 0
+                    ])
+                }
+            }
             if let error {
                 NSLog("[Textem] notification delivery failed: %@", error.localizedDescription)
             }
@@ -107,6 +153,7 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler:
             @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        Task { @MainActor in NotificationDiagnostics.record("foreground_presentation") }
         completionHandler([.banner, .sound])
     }
 

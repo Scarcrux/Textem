@@ -123,6 +123,23 @@ exact or unique label match. Ambiguous matches and cross-account cookie/session
 mismatches fail closed. Direct helper use is read-only and does not run as a
 permanent background service.
 
+## Missing notification banners
+
+Choose **Textem → Send Test Notification** to test macOS delivery independently
+of incoming messages. Textem keeps bounded, owner-only diagnostics at
+`~/Library/Logs/Textem/notifications.jsonl`.
+They contain counts, fixed event labels and settings, without message content,
+names, conversation IDs or credentials.
+
+A snapshot's `events` count records detected unread message changes;
+`active=1` or `muted=1` explains app-side suppression. `domRows` counts
+all conversation elements, while `rows` counts those with usable thread IDs.
+`request_message` confirms submission, and `accepted_message` confirms
+macOS accepted the request. Acceptance does not prove a visible banner:
+notification style, Focus and other system presentation rules still apply.
+Settings use Apple's enum values: authorization 2 means authorized; alerts 2
+means enabled; style 0 means none, 1 banner, and 2 alert.
+
 ## License
 
 [MIT](LICENSE) © 2026 Scarcrux

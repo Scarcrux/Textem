@@ -13,6 +13,7 @@ enum WebBridge {
       if (window.opener) return;
 
       var HANDLER = 'textem';
+      \(ConversationDOM.helpers)
       function post(obj) {
         try { window.webkit.messageHandlers[HANDLER].postMessage(obj); } catch (e) {}
       }
@@ -54,8 +55,8 @@ enum WebBridge {
         var rows = [];
         for (var i = 0; i < items.length; i++) {
           var el = items[i];
-          var idLink = el.querySelector('a[data-e2e-conversation]');
-          var id = idLink ? (idLink.getAttribute('data-e2e-conversation') || '') : '';
+          var idLink = el.querySelector('a[href]');
+          var id = textemConversationID(idLink);
           // Rows without a stable id cannot safely support notification actions.
           if (!id) continue;
 
@@ -94,12 +95,11 @@ enum WebBridge {
         // an expansion only when it resolves to one stored conversation.
         var conversation = phoneOnlyConversation();
         var visible = !!selected && !!conversation;
-        var conversationID = selected
-          ? (selected.getAttribute('data-e2e-conversation') || '') : '';
+        var conversationID = textemConversationID(selected);
         if (!conversationID && selected) {
           var row = selected.closest('mws-conversation-list-item');
-          var route = row ? row.querySelector('a[data-e2e-conversation]') : null;
-          conversationID = route ? (route.getAttribute('data-e2e-conversation') || '') : '';
+          var route = row ? row.querySelector('a[href]') : null;
+          conversationID = textemConversationID(route);
         }
         var serialized = JSON.stringify({
           visible: visible, conversation: conversation, conversationID: conversationID
@@ -119,7 +119,8 @@ enum WebBridge {
           lastSerialized = serialized;
           var unread = 0;
           for (var i = 0; i < rows.length; i++) if (rows[i].unread) unread++;
-          post({ type: 'snapshot', count: unread, rows: rows });
+          post({ type: 'snapshot', count: unread, rows: rows,
+            domRows: document.querySelectorAll('mws-conversation-list-item').length });
         }
         reportPhoneOnly(force);
       }

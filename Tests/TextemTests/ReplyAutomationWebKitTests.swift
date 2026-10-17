@@ -24,8 +24,8 @@ final class ReplyAutomationWebKitTests: XCTestCase {
     private static let fixtureHTML = """
     <!doctype html><html><body>
     <nav>
-      <mws-conversation-list-item><a data-e2e-conversation="A" href="/web/conversations/A">Alpha</a></mws-conversation-list-item>
-      <mws-conversation-list-item><a data-e2e-conversation="B" href="/web/conversations/B">Bravo</a></mws-conversation-list-item>
+      <mws-conversation-list-item><a data-e2e-conversation="" href="/web/conversations/A">Alpha</a></mws-conversation-list-item>
+      <mws-conversation-list-item><a data-e2e-conversation="" href="/web/conversations/B">Bravo</a></mws-conversation-list-item>
     </nav>
     <main id="thread"></main>
     <script>
@@ -55,7 +55,7 @@ final class ReplyAutomationWebKitTests: XCTestCase {
     document.querySelectorAll('a[data-e2e-conversation]').forEach(function (a) {
       a.addEventListener('click', function (e) {
         e.preventDefault();
-        __clicks.push(a.getAttribute('data-e2e-conversation'));
+        __clicks.push(new URL(a.href).pathname.split('/').pop());
         if (!__fixture.navigateOnClick) return;
         history.pushState({}, '', a.getAttribute('href'));
         renderThread();

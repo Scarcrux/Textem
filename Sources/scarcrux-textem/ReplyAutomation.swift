@@ -41,6 +41,7 @@ enum ReplyAutomation {
         // immediately could type into the previously open thread.
         return """
         (function(requestId, reply, convId) {
+          \(ConversationDOM.helpers)
           function post(o) {
             o.type = 'replyResult'; o.requestId = requestId;
             try { window.webkit.messageHandlers[\(handlerJSON)].postMessage(o); } catch(e) {}
@@ -54,10 +55,10 @@ enum ReplyAutomation {
             return ('value' in box) ? box.value : (box.textContent || '');
           }
 
-          var links = document.querySelectorAll('a[data-e2e-conversation]');
+          var links = document.querySelectorAll('mws-conversation-list-item a[href]');
           var link = null;
           for (var i = 0; i < links.length; i++) {
-            if (links[i].getAttribute('data-e2e-conversation') === convId) { link = links[i]; break; }
+            if (textemConversationID(links[i]) === convId) { link = links[i]; break; }
           }
           if (!link || !link.href) { fail('conversation-not-found'); return; }
           var targetRoute = route(link.href);
