@@ -9,9 +9,14 @@ import android.net.Uri;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Public providers only. There are deliberately no mutation, file-database or network APIs. */
 final class ProviderSource implements ProbeEngine.Source {
+    private static final AtomicInteger queryAttempts = new AtomicInteger();
+    private static final AtomicInteger mediaAttempts = new AtomicInteger();
+    static int queryAttempts() { return queryAttempts.get(); }
+    static int mediaAttempts() { return mediaAttempts.get(); }
     private final Context context;
     ProviderSource(Context context) { this.context = context.getApplicationContext(); }
 
@@ -19,6 +24,7 @@ final class ProviderSource implements ProbeEngine.Source {
         if (context.checkSelfPermission(Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED)
             throw new SecurityException();
         Query query = spec(table, id);
+        queryAttempts.incrementAndGet();
         return context.getContentResolver().query(query.uri, query.columns, query.selection, query.args, query.order);
     }
 
@@ -51,6 +57,7 @@ final class ProviderSource implements ProbeEngine.Source {
     }
 
     @Override public byte[] image(long partId) throws IOException {
+        mediaAttempts.incrementAndGet();
         try (InputStream stream = context.getContentResolver().openInputStream(
                 Uri.parse("content://mms/part/" + partId))) {
             if (stream == null) return null;

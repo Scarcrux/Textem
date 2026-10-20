@@ -27,11 +27,13 @@ public final class ProbeActivity extends Activity {
     private LinearLayout content;
     private TextView status;
     private String safeSummary;
+    private boolean fixtureHistory;
     private int generation;
     private volatile CountDownLatch workIdle = new CountDownLatch(0);
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        fixtureHistory = getIntent().getBooleanExtra("fixture_history", false);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         ScrollView scroll = new ScrollView(this);
         content = new LinearLayout(this);
@@ -49,7 +51,7 @@ public final class ProbeActivity extends Activity {
             return insets;
         });
         setContentView(scroll);
-        home();
+        home(false);
     }
 
     private void base(String title) {
@@ -72,21 +74,24 @@ public final class ProbeActivity extends Activity {
         return button;
     }
 
-    private void home() {
+    private void home() { home(true); }
+    private void home(boolean clearDiagnostics) {
         generation++;
         safeSummary = null;
-        base("Textem · Read-only phone probe");
-        label("No Internet access. No sending, mark-read, deletion, Google pairing, or default-SMS changes. Nothing is saved by this app.", 16);
+        if (clearDiagnostics) ProbeDiagnostics.clear(this);
+        base(fixtureHistory ? "SYNTHETIC history · no phone data" : "Textem · Read-only phone probe");
+        label("No Internet access. No sending, mark-read, deletion, Google pairing, or default-SMS changes. Only content-free diagnostic counters are saved locally for this paired Mac; Clear removes them.", 16);
         label("SMS permission is broad: Android may expose SMS/MMS content across your phone. This probe shows at most 50 recent thread snippets for you to choose from, then samples only the thread you tap. Content stays on this screen/in memory; screenshots are blocked.", 16);
         status.setText(hasPermission() ? "SMS permission granted; no reads until you choose history."
             : "BLOCKED: SMS permission not granted. This does not mean your messages are absent.");
         button("Choose a history thread", "history", () -> {
-            if (!hasPermission()) requestPermissions(new String[] {Manifest.permission.READ_SMS}, 10);
+            if (!fixtureHistory && !hasPermission()) requestPermissions(new String[] {Manifest.permission.READ_SMS}, 10);
             else loadIndex();
         });
         button("Run synthetic controls (no phone reads)", "controls", this::synthetic);
     }
     private boolean hasPermission() { return checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED; }
+    private ProbeEngine.Source source() { return fixtureHistory ? new FixtureSource() : new ProviderSource(this); }
 
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
@@ -107,7 +112,7 @@ public final class ProbeActivity extends Activity {
     private void loadIndex() {
         int token = ++generation;
         background(() -> {
-            ProbeEngine.Index index = ProbeEngine.index(new ProviderSource(this));
+            ProbeEngine.Index index = ProbeEngine.index(source());
             runOnUiThread(() -> {
                 if (isDestroyed() || generation != token) return;
                 base("Choose one thread · phone only");
@@ -125,12 +130,16 @@ public final class ProbeActivity extends Activity {
     private void scan(long id) {
         int token = ++generation;
         background(() -> {
-            ProbeEngine.Report report = ProbeEngine.scan(new ProviderSource(this), id);
+            ProbeEngine.Report report = ProbeEngine.scan(source(), id);
             runOnUiThread(() -> {
                 if (isDestroyed() || generation != token) return;
-                base("Selected-thread sample · private");
+                base(fixtureHistory ? "Selected SYNTHETIC sample · no phone data" : "Selected-thread sample · private");
                 safeSummary = report.summary();
+                boolean recorded = ProbeDiagnostics.record(this, fixtureHistory
+                    ? ProbeDiagnostics.Kind.SYNTHETIC : ProbeDiagnostics.Kind.SELECTED_HISTORY, report);
                 status.setText(safeSummary);
+                label(recorded ? "Content-free counters are ready for automatic Mac readback. Message content stays on this phone."
+                    : "Diagnostic readback could not be saved; no content was exported.", 16);
                 label("Image counts are readable provider attachments, not proof of the phone's link-preview graphic. Links below are plain text and are never opened or fetched. Compare this sample with Google Messages yourself.", 16);
                 for (ProbeEngine.Message message : report.messages)
                     label(message.text.isEmpty() ? "[No text exposed in this row]" : message.text, 16);
@@ -154,6 +163,7 @@ public final class ProbeActivity extends Activity {
             runOnUiThread(() -> {
                 if (isDestroyed() || generation != token) return;
                 base("Synthetic controls · NOT phone data");
+                ProbeDiagnostics.record(this, ProbeDiagnostics.Kind.SYNTHETIC, positive);
                 status.setText((pass ? "PASS" : "FAIL") + ": positive text/link/image, empty, and permission-denied controls.\n"
                     + "Synthetic source queries: " + good.queries + "; image reads: " + good.imageReads
                     + "\n" + positive.summary()
