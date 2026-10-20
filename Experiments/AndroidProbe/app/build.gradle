@@ -1,0 +1,20 @@
+plugins { id 'com.android.application' }
+layout.buildDirectory = rootProject.file('.build.nosync/app')
+
+android {
+    namespace 'dev.textem.probe'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'dev.textem.probe'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1-probe'
+        testInstrumentationRunner 'dev.textem.probe.ProbeInstrumentation'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint { abortOnError true }
+}
