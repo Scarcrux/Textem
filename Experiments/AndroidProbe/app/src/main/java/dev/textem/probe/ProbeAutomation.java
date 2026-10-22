@@ -21,11 +21,11 @@ public class ProbeAutomation extends Instrumentation {
     private String current = "startup";
     @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
     protected boolean requireDeniedPermission() { return false; }
-    private void check(boolean condition) {
+    void check(boolean condition) {
         checks++;
         if (!condition) throw new AssertionError(current);
     }
-    private void phase(String name) {
+    void phase(String name) {
         current = name;
         Bundle progress = new Bundle(); progress.putString("phase", name);
         sendStatus(1, progress);
@@ -247,6 +247,7 @@ public class ProbeAutomation extends Instrumentation {
                 check(!ProbeDiagnostics.exists(getTargetContext()));
                 fixtureActivity.finish();
             });
+            ShareProbeChecks.run(this);
             phase("no private provider calls and no permission changes during automation");
             check(ProviderSource.queryAttempts() == privateQueriesBefore);
             check(ProviderSource.mediaAttempts() == privateMediaBefore);

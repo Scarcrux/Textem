@@ -156,3 +156,71 @@ No participant/date/preview/search fields were added to diagnostic readback.
 
 No historical RCS/business content has been proven accessible until this actual
 device sample succeeds. Nothing here promises full cards or automatic syncing.
+
+## Exact-graphic Share probe (v0.4)
+
+The owner-selected a retailer provider sample had 20 text messages/20 links and no
+MMS/image parts within the row cap. Google documents automatic previews as a
+separate lookup, not necessarily a received attachment. Inspection of installed
+Messages found a private rich-card image provider supporting temporary URI grants;
+that does **not** establish that its Share UI exports automatic-preview graphics.
+
+The APK now includes a separate **Textem Share Probe** sharesheet target for
+`SEND`/`SEND_MULTIPLE` images, plain text and HTML text. If Google Messages offers
+Share for an approved graphic, choose this target, then **Inspect shared item**.
+Do not use Forward/send as a substitute. No Share action is an informative
+negative outcome; there is no silent history/cache enumeration fallback.
+
+- Nothing is opened before Inspect. Only up to 8 unique URI candidates are
+  considered, with at most 3 image opens and 6 MiB per image (+1 sentinel byte).
+  The decoder samples to at most 256px and rejects excessive source dimensions.
+- The live path requires `content://`, an allowlisted Google Messages media
+  authority, a private grant-capable provider owned by Google Messages, a read
+  grant flag, and an actual explicit URI read grant. Existing SMS permission is
+  **not** accepted instead. No new broad permission/provider/service is added;
+  a package-visibility declaration permits only Messages provider-owner checks.
+- Other providers, `file://`, network/SMS/MMS URIs and missing grants are blocked
+  without opening. The fixed reason (`URI_POLICY`, `READ_GRANT_MISSING`,
+  `PROVIDER_POLICY` or `READ_DENIED`) explains the boundary without exposing a URI.
+  A policy block is not evidence that the sender shared no image.
+- Text/links are counted but never displayed, copied, opened or saved. Image
+  bytes are decoded only to verify readability, then discarded; no image is
+  displayed, hashed, saved, transferred or uploaded. No HTML is rendered.
+- The secure receiver is excluded from recents, does not preserve the incoming
+  Intent as view state, and finishes when left. A 10-second UI deadline cancels
+  its active descriptor/read; a single in-flight worker prevents accumulating
+  reads, and generation checks reject late results from older Activities. A
+  timeout is not success and its counters may omit an unfinished read.
+- A fresh share clears only the previous share diagnostic, not the history
+  report. Clear removes the share report. Returning to another app after Inspect
+  keeps the fixed counters available to the paired Mac. No URI grant is persisted.
+
+```sh
+python3 -B probe.py --serial PHONE_CONNECTION share-report
+```
+
+This reads **only** app-private `files/share-summary.json`, at most4KiB, mode0600.
+Its 17 exact fields contain schema/kind/time, fixed state/block reason, bounded
+counts and booleans; no text, URI, address, filename, source identity or image hash.
+The existing 18-field history schema/file remain separate. Host checks reject
+synthetic share reports, unknown/private fields, stale data, bad types, impossible
+counts and false image-success states. `IMAGE_READABLE` means a decodable granted
+shared image, **not** proof that it is the exact visible card, original-quality
+asset, complete history, or useful Mac transfer. `TEXT_OR_LINK_ONLY`, `BLOCKED`,
+`UNREADABLE`, `TIMEOUT` and empty/unsupported/malformed inputs remain distinct.
+
+The automated self-test adds real-engine positive/negative byte controls and the
+installed share Activity's waiting/Inspect/result/Clear flow, including a deliberately
+blocked synthetic read to exercise its deadline. Fixture extras always replace
+the entire input with synthetic data, and their report kind is rejected as live
+evidence. The real explicit-grant denial guard is also exercised without opening
+Google data. This is **not** a claim that positive Google-to-probe URI-grant
+delivery has been tested until the owner performs the approved Share sample.
+Self-test clears diagnostics; run it before selecting/sharing a real sample.
+
+Verified v0.4 on the owner test phone: **154 automated assertions**, no real
+image/provider reads and unchanged SMS grant;18 host tests,61 Mac tests, build,
+signature and clean lint. Positive Google share delivery is still pending.
+Providers may ignore cancellation; the receiver then blocks additional reads
+instead of accumulating workers. Close/relaunch the probe if its worker remains
+stuck. New SMS-denied emulator execution was not repeated for this version.

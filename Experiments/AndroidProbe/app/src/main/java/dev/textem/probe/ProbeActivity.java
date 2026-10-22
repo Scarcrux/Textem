@@ -97,6 +97,8 @@ public final class ProbeActivity extends Activity {
             else loadIndex();
         });
         button("Run synthetic controls (no phone reads)", "controls", this::synthetic);
+        button("How to test shared graphics", "share-help", () ->
+            startActivity(new android.content.Intent(this, ShareProbeActivity.class)));
     }
     private boolean hasPermission() { return checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED; }
     private ProbeEngine.Source source() {

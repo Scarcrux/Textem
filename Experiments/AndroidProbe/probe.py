@@ -17,6 +17,14 @@ BOUNDS = {
 KEYS = set(BOUNDS) | {"schema", "kind", "recorded_at_ms", "sms", "mms", "limited",
                       "message_content_exported", "provider_sample_complete"}
 STATES = {"OK", "BLOCKED", "UNAVAILABLE", "ERROR"}
+SHARE_BOUNDS = {"uris": 8, "attempted_images": 3, "readable_images": 3,
+                "blocked_uris": 8, "unreadable_images": 3, "oversized_images": 3,
+                "skipped_uris": 8, "links": 10_000}
+SHARE_KEYS = set(SHARE_BOUNDS) | {"schema", "kind", "recorded_at_ms", "state",
+                                 "block_reason", "text_present", "limited", "message_content_exported", "full_card_proven"}
+SHARE_STATES = {"IMAGE_READABLE", "PARTIAL_IMAGE", "TEXT_OR_LINK_ONLY", "EMPTY", "BLOCKED",
+                "UNREADABLE", "UNSUPPORTED", "MALFORMED", "TIMEOUT", "ERROR"}
+BLOCK_REASONS = {"NONE", "URI_POLICY", "READ_GRANT_MISSING", "PROVIDER_POLICY", "READ_DENIED", "MULTIPLE"}
 
 
 class InvalidReport(Exception):
@@ -62,7 +70,7 @@ def validate_report(raw, now_ms=None):
         if outcomes > report["image_parts"] or sum(report[k] for k in ("readable_images", "unreadable_images", "oversized_images")) > 3:
             raise InvalidReport()
         return report
-    except (ValueError, TypeError, KeyError, UnicodeError):
+    except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
         raise InvalidReport() from None
 
 
@@ -76,6 +84,58 @@ def validate_checks(raw):
             "permission_branch": branch[1], "private_provider_reads": False}
 
 
+def validate_share(raw, now_ms=None):
+    if not raw or len(raw) > 4096:
+        raise InvalidReport()
+    try:
+        report = json.loads(raw, object_pairs_hook=_unique)
+        if not isinstance(report, dict) or set(report) != SHARE_KEYS:
+            raise InvalidReport()
+        if type(report["schema"]) is not int or report["schema"] != 1 or report["kind"] != "SHARED_CONTENT":
+            raise InvalidReport()
+        if report["state"] not in SHARE_STATES or report["block_reason"] not in BLOCK_REASONS:
+            raise InvalidReport()
+        for key in ("text_present", "limited", "message_content_exported", "full_card_proven"):
+            if type(report[key]) is not bool:
+                raise InvalidReport()
+        if report["message_content_exported"] or report["full_card_proven"]:
+            raise InvalidReport()
+        for key, maximum in SHARE_BOUNDS.items():
+            if type(report[key]) is not int or not 0 <= report[key] <= maximum:
+                raise InvalidReport()
+        stamp = report["recorded_at_ms"]
+        now = int(time.time() * 1000) if now_ms is None else now_ms
+        if type(stamp) is not int or not now - 1_800_000 <= stamp <= now + 300_000:
+            raise InvalidReport()
+        images = report["readable_images"]
+        outcomes = images + report["unreadable_images"] + report["oversized_images"]
+        failures = report["blocked_uris"] + report["skipped_uris"] + outcomes - images
+        if (outcomes > report["attempted_images"] or report["attempted_images"] > report["uris"]
+                or outcomes + report["blocked_uris"] + report["skipped_uris"] > report["uris"]
+                or (report["links"] and not report["text_present"])):
+            raise InvalidReport()
+        if (report["blocked_uris"] == 0) != (report["block_reason"] == "NONE"):
+            raise InvalidReport()
+        valid_state = {
+            "IMAGE_READABLE": images > 0 and failures == 0,
+            "PARTIAL_IMAGE": images > 0 and failures > 0,
+            "TEXT_OR_LINK_ONLY": report["uris"] == 0 and report["text_present"],
+            "EMPTY": report["uris"] == 0 and not report["text_present"],
+            "BLOCKED": images == 0 and report["blocked_uris"] > 0,
+            "UNREADABLE": images == 0 and report["blocked_uris"] == 0
+                and report["unreadable_images"] + report["oversized_images"] > 0,
+            "UNSUPPORTED": report["attempted_images"] == 0 and images == 0,
+            "MALFORMED": report["attempted_images"] == 0 and images == 0,
+            "ERROR": report["attempted_images"] == 0 and images == 0,
+            "TIMEOUT": True,
+        }
+        if not valid_state[report["state"]]:
+            raise InvalidReport()
+        return report
+    except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
+        raise InvalidReport() from None
+
+
 def verdict(report):
     if report["sms"] != "OK" or report["mms"] != "OK" or report["part_failures"]:
         return "PARTIAL_OR_BLOCKED"
@@ -87,7 +147,7 @@ def verdict(report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True, help="Explicit previously approved adb device")
-    parser.add_argument("mode", choices=["self-test", "report"])
+    parser.add_argument("mode", choices=["self-test", "report", "share-report"])
     args = parser.parse_args()
     sdk = os.environ.get("ANDROID_HOME")
     adb = os.path.join(sdk, "platform-tools", "adb") if sdk else shutil.which("adb")
@@ -123,12 +183,17 @@ def main():
                 return 1
             raw = run("shell", "am", "instrument", "-w", "-r", "dev.textem.probe/.ProbeAutomation")
             result = validate_checks(raw.decode("utf-8"))
-        else:
+        elif args.mode == "report":
             # Only this known app-private metadata file, never directories or clipboard/UI.
             raw = run("exec-out", "run-as", "dev.textem.probe", "/system/bin/head",
                       "-c", "4097", "files/probe-summary.json", timeout=15)
             result = validate_report(raw)
             result = {"verdict": verdict(result), "report": result}
+        else:
+            raw = run("exec-out", "run-as", "dev.textem.probe", "/system/bin/head",
+                      "-c", "4097", "files/share-summary.json", timeout=15)
+            result = validate_share(raw)
+            result = {"verdict": result["state"], "report": result}
         print(json.dumps(result, sort_keys=True))
         return 0
     except (InvalidReport, UnicodeError):

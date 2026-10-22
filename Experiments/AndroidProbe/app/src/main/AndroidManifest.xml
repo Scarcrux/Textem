@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <queries><package android:name="com.google.android.apps.messaging" /></queries>
     <application android:label="Textem Read-only Probe"
         android:icon="@android:drawable/ic_menu_view"
         android:allowBackup="false" android:usesCleartextTraffic="false"
@@ -11,6 +12,17 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".ShareProbeActivity" android:label="Textem Share Probe"
+            android:exported="true" android:excludeFromRecents="true" android:noHistory="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/html" />
             </intent-filter>
         </activity>
     </application>

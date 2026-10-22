@@ -5,7 +5,7 @@ import io
 import subprocess
 import time
 from unittest.mock import patch
-from probe import BOUNDS, InvalidReport, main, validate_checks, validate_report, verdict
+from probe import BOUNDS, SHARE_BOUNDS, InvalidReport, main, validate_checks, validate_report, validate_share, verdict
 
 
 class ReadbackTests(unittest.TestCase):
@@ -131,6 +131,67 @@ class ReadbackTests(unittest.TestCase):
             self.assertEqual(main(), 1)
         self.assertIn("not fully booted", stderr.getvalue())
         self.assertEqual(transport.call_count, 2)
+
+
+class ShareReadbackTests(unittest.TestCase):
+    def sample(self):
+        result = {key: 0 for key in SHARE_BOUNDS}
+        result.update(schema=1, kind="SHARED_CONTENT", recorded_at_ms=1_000_000,
+                      state="IMAGE_READABLE", block_reason="NONE", text_present=False, limited=False,
+                      message_content_exported=False, full_card_proven=False,
+                      uris=1, attempted_images=1, readable_images=1)
+        return result
+
+    def parse(self, report):
+        return validate_share(json.dumps(report).encode(), now_ms=1_000_000)
+
+    def test_real_image_differs_from_text_and_blocked(self):
+        self.assertEqual(self.parse(self.sample())["state"], "IMAGE_READABLE")
+        text = self.sample(); text.update(state="TEXT_OR_LINK_ONLY", text_present=True,
+                                         uris=0, attempted_images=0, readable_images=0, links=1)
+        self.assertEqual(self.parse(text)["state"], "TEXT_OR_LINK_ONLY")
+        blocked = self.sample(); blocked.update(state="BLOCKED", attempted_images=0,
+                                                readable_images=0, blocked_uris=1, block_reason="READ_GRANT_MISSING")
+        self.assertEqual(self.parse(blocked)["state"], "BLOCKED")
+
+    def test_share_rejects_private_fields_synthetic_and_unsupported_states(self):
+        for key, value in [("uri", "PRIVATE_SENTINEL"), ("body", "PRIVATE_SENTINEL"),
+                           ("kind", "SYNTHETIC_SHARE"), ("state", "PRIVATE_SENTINEL"),
+                           ("full_card_proven", True), ("message_content_exported", True),
+                           ("state", []), ("schema", True), ("text_present", 0)]:
+            sample = self.sample(); sample[key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(InvalidReport): self.parse(sample)
+
+    def test_share_rejects_impossible_counts_and_false_image_verdicts(self):
+        for changes in [dict(uris=0), dict(attempted_images=0), dict(readable_images=0),
+                        dict(links=1), dict(blocked_uris=1), dict(state="TEXT_OR_LINK_ONLY"),
+                        dict(readable_images=4), dict(uris=True), dict(state="EMPTY"),
+                        dict(state="PARTIAL_IMAGE"), dict(recorded_at_ms=1_400_000),
+                        dict(recorded_at_ms=-1_000_000)]:
+            sample = self.sample(); sample.update(changes)
+            with self.subTest(changes=changes), self.assertRaises(InvalidReport): self.parse(sample)
+
+    def test_share_rejects_bad_input_and_missing_keys(self):
+        for raw in [b"", b"[]", b"null", b"x" * 4097, b"\xff", b'{"schema":1,"schema":1}',
+                    b"[" * 1500 + b"]" * 1500]:
+            with self.assertRaises(InvalidReport): validate_share(raw, now_ms=1_000_000)
+        sample = self.sample(); del sample["state"]
+        with self.assertRaises(InvalidReport): self.parse(sample)
+
+    def test_share_cli_uses_only_its_fixed_file_and_never_echoes_content(self):
+        for private in [False, True]:
+            sample = self.sample(); sample["recorded_at_ms"] = int(time.time() * 1000)
+            if private: sample["uri"] = "PRIVATE_SENTINEL"
+            responses = [subprocess.CompletedProcess([], 0, b"device\n", b""),
+                         subprocess.CompletedProcess([], 0, json.dumps(sample).encode(), b"")]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with patch.dict("os.environ", {"ANDROID_HOME": "/fixture-sdk"}), \
+                    patch("sys.argv", ["probe.py", "--serial", "fixture-device", "share-report"]), \
+                    patch("subprocess.run", side_effect=responses) as transport, \
+                    contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                self.assertEqual(main(), 1 if private else 0)
+            self.assertNotIn("PRIVATE_SENTINEL", stdout.getvalue() + stderr.getvalue())
+            self.assertEqual(transport.call_args_list[-1].args[0][-1], "files/share-summary.json")
 
 
 if __name__ == "__main__":
