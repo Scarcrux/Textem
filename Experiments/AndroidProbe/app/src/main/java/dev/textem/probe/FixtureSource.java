@@ -11,6 +11,9 @@ class FixtureSource implements ProbeEngine.Source {
     long lastThread;
     boolean empty, denied, unavailable, brokenImage, oversizedImage, deniedImage, queryError;
     int smsCount = 1, imageCount = 1, threadCount = 1;
+    int addressQueries;
+    String recipientIds = "11", address = "Synthetic example business";
+    boolean missingAddress, emptyAddress, brokenAddress, distinctThreads;
     ProbeEngine.Table deniedTable;
     String body = "Synthetic hello https://example.invalid/offer";
 
@@ -21,15 +24,25 @@ class FixtureSource implements ProbeEngine.Source {
         if (unavailable) return null;
         switch (table) {
             case THREADS: {
-                MatrixCursor c = new MatrixCursor(new String[] {"_id", "snippet"});
+                MatrixCursor c = new MatrixCursor(new String[] {"_id", "snippet", "recipient_ids", "date"});
                 if (!empty) for (int i = 0; i < threadCount; i++)
-                    c.addRow(new Object[] {7 + i, "Synthetic example business"});
+                    c.addRow(new Object[] {7 + i, i == 0 ? "Synthetic example preview" : "Synthetic second offer",
+                        recipientIds, 1_700_000_000_000L + i});
+                return c;
+            }
+            case ADDRESS: {
+                addressQueries++;
+                if (brokenAddress) throw new IllegalStateException();
+                if (missingAddress) return null;
+                MatrixCursor c = new MatrixCursor(new String[] {"address"});
+                if (!emptyAddress) c.addRow(new Object[] {address});
                 return c;
             }
             case SMS: {
                 lastThread = id;
                 MatrixCursor c = new MatrixCursor(new String[] {"_id", "body", "date"});
-                if (!empty) for (int i = 0; i < smsCount; i++) c.addRow(new Object[] {100 + i, body, 1000 + i});
+                if (!empty) for (int i = 0; i < smsCount; i++) c.addRow(new Object[] {100 + i,
+                    body + (distinctThreads && id == 8 ? " SECOND_THREAD_SENTINEL" : ""), 1000 + i});
                 return c;
             }
             case MMS: {

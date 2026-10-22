@@ -10,9 +10,12 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.TextView;
+import android.widget.EditText;
+import android.widget.LinearLayout;
 import java.util.Arrays;
 
 /** ADB-invoked fixture/UI tests: never query message providers if SMS is granted. */
+@android.annotation.SuppressLint("SetTextI18n") // Deliberate synthetic filter inputs, not translatable UI.
 public class ProbeAutomation extends Instrumentation {
     private int checks;
     private String current = "startup";
@@ -90,6 +93,7 @@ public class ProbeAutomation extends Instrumentation {
             check(capped.imageParts == 31 && capped.skippedImages == 28 && many.imageReads == 3);
             ProbeEngine.Index index = ProbeEngine.index(many);
             check(index.threads.size() == 50 && index.limited);
+            check(many.addressQueries == 50);
             boolean rejected = false;
             try { ProbeEngine.scan(good, -1); } catch (IllegalArgumentException expected) { rejected = true; }
             check(rejected);
@@ -101,6 +105,47 @@ public class ProbeAutomation extends Instrumentation {
                 check("date DESC".equals(query.order));
             }
             check(ProviderSource.spec(ProbeEngine.Table.PARTS, 123).uri.toString().equals("content://mms/123/part"));
+            ProviderSource.Query threadQuery = ProviderSource.spec(ProbeEngine.Table.THREADS, 0);
+            check(Arrays.asList(threadQuery.columns).containsAll(Arrays.asList("recipient_ids", "date")));
+            ProviderSource.Query addressQuery = ProviderSource.spec(ProbeEngine.Table.ADDRESS, 11);
+            check(addressQuery.uri.toString().equals("content://mms-sms/canonical-address/11")
+                && Arrays.equals(addressQuery.columns, new String[] {"address"}));
+            rejected = false;
+            try { ProviderSource.spec(ProbeEngine.Table.ADDRESS, -1); }
+            catch (IllegalArgumentException expected) { rejected = true; }
+            check(rejected);
+
+            phase("participant labels, optional-metadata failures, caps and local filtering");
+            FixtureSource labelled = new FixtureSource(); labelled.address = "Caf\u00e9 offers";
+            ProbeEngine.ThreadEntry entry = ProbeEngine.index(labelled).threads.get(0);
+            check(entry.participants.equals("Caf\u00e9 offers") && entry.time == 1_700_000_000_000L);
+            check(entry.preview.equals("Synthetic example preview") && entry.matches("CAFE"));
+            int indexedQueries = labelled.queries;
+            check(entry.matches("EXAMPLE PREVIEW") && !entry.matches("no-such-synthetic-match"));
+            check(labelled.queries == indexedQueries);
+            for (int failure = 0; failure < 6; failure++) {
+                FixtureSource fallback = new FixtureSource();
+                if (failure == 0) fallback.missingAddress = true;
+                if (failure == 1) fallback.emptyAddress = true;
+                if (failure == 2) fallback.deniedTable = ProbeEngine.Table.ADDRESS;
+                if (failure == 3) fallback.recipientIds = "-1 ../22 0 9999999999999999999";
+                if (failure == 4) fallback.recipientIds = "";
+                if (failure == 5) fallback.brokenAddress = true;
+                ProbeEngine.Index fallbackIndex = ProbeEngine.index(fallback);
+                check(fallbackIndex.state == ProbeEngine.State.OK && fallbackIndex.threads.size() == 1
+                    && fallbackIndex.threads.get(0).participants.equals("Participants unavailable"));
+                if (failure == 3 || failure == 4) check(fallback.addressQueries == 0);
+            }
+            FixtureSource group = new FixtureSource();
+            group.recipientIds = "11 12 13 14 15 16 17 18 19 20";
+            char[] longAddress = new char[ProbeEngine.ADDRESS_LIMIT + 100]; Arrays.fill(longAddress, 'x');
+            group.address = new String(longAddress);
+            ProbeEngine.ThreadEntry groupEntry = ProbeEngine.index(group).threads.get(0);
+            check(group.addressQueries == ProbeEngine.PARTICIPANT_LIMIT);
+            check(groupEntry.participants.startsWith(new String(longAddress, 0, ProbeEngine.ADDRESS_LIMIT)
+                + " \u00b7 more/unavailable"));
+            FixtureSource partial = new FixtureSource(); partial.recipientIds = "11 invalid";
+            check(ProbeEngine.index(partial).threads.get(0).participants.contains("more/unavailable"));
 
             phase("summary excludes payload, source identifiers and addresses");
             FixtureSource secret = new FixtureSource();
@@ -174,8 +219,21 @@ public class ProbeAutomation extends Instrumentation {
             check(fixtureActivity.awaitIdle());
             runOnMainSync(() -> {
                 View root = fixtureActivity.findViewById(android.R.id.content);
-                check(((TextView) root.findViewWithTag("status")).getText().toString().contains("listed: 1"));
-                root.findViewWithTag("thread-0").performClick();
+                check(((TextView) root.findViewWithTag("status")).getText().toString().contains("listed: 2"));
+                String row = ((TextView) root.findViewWithTag("thread-0")).getText().toString();
+                check(row.startsWith("Synthetic example business\nLast message:")
+                    && row.contains("Synthetic example preview") && !row.contains("Thread 1"));
+                EditText filter = root.findViewWithTag("filter");
+                check(!filter.isSaveEnabled() && filter.getImportantForAutofill()
+                    == View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+                filter.setText("S\u00ddNTH\u00c9TIC");
+                check(((LinearLayout) root.findViewWithTag("threads")).getChildCount() == 2);
+                filter.setText("NO-SUCH-FIXTURE-MATCH");
+                check(root.findViewWithTag("thread-0") == null && root.findViewWithTag("thread-1") == null);
+                check(((TextView) root.findViewWithTag("status")).getText().toString().contains("No matching loaded threads"));
+                filter.setText("SECOND OFFER");
+                check(root.findViewWithTag("thread-0") == null && root.findViewWithTag("thread-1") != null);
+                root.findViewWithTag("thread-1").performClick();
             });
             check(fixtureActivity.awaitIdle());
             org.json.JSONObject fixtureMetadata = ProbeDiagnostics.read(getTargetContext());
@@ -184,6 +242,7 @@ public class ProbeAutomation extends Instrumentation {
             runOnMainSync(() -> {
                 View root = fixtureActivity.findViewById(android.R.id.content);
                 check(((TextView) root.findViewWithTag("status")).getText().toString().contains("Messages with text: 2"));
+                check(((TextView) root.findViewWithTag("message-0")).getText().toString().contains("SECOND_THREAD_SENTINEL"));
                 root.findViewWithTag("home").performClick();
                 check(!ProbeDiagnostics.exists(getTargetContext()));
                 fixtureActivity.finish();

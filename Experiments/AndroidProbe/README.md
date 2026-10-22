@@ -19,6 +19,15 @@ blocked permission, missing thread, or empty cursor into a claim that RCS is abs
 - Only `READ_SMS` is requested, after tapping **Choose a history thread**.
   That permission is broad: the OS can expose SMS/MMS across the phone. The probe
   indexes at most 50 recent thread snippets and reads the one you explicitly tap.
+  Version 0.3 labels rows with bounded participant addresses/short codes, the last
+  message date and a 200-character preview instead of an unhelpful row number.
+  A local filter matches the loaded addresses/previews (case/accents ignored);
+  it never searches older/unselected message bodies or increases the thread cap.
+  Participants come from the SMS/MMS provider's [canonical-address route](https://android.googlesource.com/platform/packages/providers/TelephonyProvider/+/master/src/com/android/providers/telephony/MmsSmsProvider.java),
+  at most 8 IDs per thread and 128 characters per address. Missing/blocked label
+  lookups remain explicitly unavailable; they do not hide the thread. These
+  are **not** Google business/contact names; no Contacts permission or lookup is
+  added. Try a short code, number, brand word or recognizable phrase in a preview.
 - No Internet permission, networking, notification access, Google credentials,
   Google pairing, default-SMS role, root, Accessibility, sending, mark-read,
   deletion, or provider writes. No analytics or third-party runtime libraries.
@@ -117,6 +126,14 @@ allowed real conversation once. There is no repeated manual report copying or
 visual confirmation needed to collect text/link/image counters. Exact fidelity
 against a private Google Messages thread remains a separate ground-truth question,
 not something fixture success can establish.
+
+Version 0.3's granted-handset runner has 83 assertions, including actual labelled
+rows, accent-insensitive and no-match filtering, optional-label failure/cap
+controls and correct original-thread selection after filtering. With permission
+denied, the extra provider guard checks also run. Filtering text is not saved as
+view state, autofill is excluded, and the input requests no keyboard suggestions
+or personalized learning (the keyboard ultimately controls its own behavior).
+No participant/date/preview/search fields were added to diagnostic readback.
 
 ## First handset sample (owner-coordinated, not automatic)
 

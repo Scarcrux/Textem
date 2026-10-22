@@ -6,13 +6,16 @@ import android.graphics.Bitmap;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.text.Normalizer;
 import java.util.regex.Pattern;
 
 /** The same bounded, read-only pipeline serves real providers and synthetic controls. */
 final class ProbeEngine {
     static final int ROW_LIMIT = 20, THREAD_LIMIT = 50, PART_LIMIT = 32;
     static final int IMAGE_LIMIT = 3, BYTE_LIMIT = 6 * 1024 * 1024, TEXT_LIMIT = 20_000;
-    enum Table { THREADS, SMS, MMS, PARTS }
+    static final int PARTICIPANT_LIMIT = 8, ADDRESS_LIMIT = 128, PREVIEW_LIMIT = 200;
+    enum Table { THREADS, ADDRESS, SMS, MMS, PARTS }
     enum State { OK, BLOCKED, UNAVAILABLE, ERROR }
     interface Source {
         Cursor query(Table table, long id);
@@ -20,8 +23,14 @@ final class ProbeEngine {
     }
     static final class ThreadEntry {
         final long id;
-        final String preview;
-        ThreadEntry(long id, String preview) { this.id = id; this.preview = preview; }
+        final String preview, participants;
+        final long time;
+        ThreadEntry(long id, String preview, String participants, long time) {
+            this.id = id; this.preview = preview; this.participants = participants; this.time = time;
+        }
+        boolean matches(String query) {
+            return searchKey(participants + " " + preview).contains(searchKey(query));
+        }
     }
     static final class Index {
         State state = State.OK;
@@ -63,6 +72,41 @@ final class ProbeEngine {
         return bounded(c.isNull(i) ? "" : c.getString(i));
     }
     static long number(Cursor c, String column) { return c.getLong(c.getColumnIndexOrThrow(column)); }
+    private static String optionalText(Cursor c, String column) {
+        return c.getColumnIndex(column) < 0 ? "" : text(c, column);
+    }
+    private static String displayText(String value, int limit) {
+        // Provider values are plain display text, not controls or multi-line headings.
+        String clean = bounded(value).replaceAll("[\\p{Cc}\\p{Cf}]", " ").trim();
+        return clean.substring(0, Math.min(limit, clean.length()));
+    }
+    private static String searchKey(String value) {
+        return Normalizer.normalize(bounded(value), Normalizer.Form.NFD)
+            .replaceAll("\\p{M}+", "").toLowerCase(Locale.ROOT).trim();
+    }
+    private static String participants(Source source, String ids) {
+        String raw = ids.trim();
+        if (raw.isEmpty()) return "Participants unavailable";
+        String[] tokens = raw.split("\\s+", PARTICIPANT_LIMIT + 1);
+        List<String> addresses = new ArrayList<>();
+        boolean incomplete = tokens.length > PARTICIPANT_LIMIT;
+        for (int i = 0; i < Math.min(tokens.length, PARTICIPANT_LIMIT); i++) {
+            String address = "";
+            try {
+                // Reject signs, paths, overflow and zero before querying the provider.
+                if (!tokens[i].matches("[0-9]{1,19}")) throw new IllegalArgumentException();
+                long id = Long.parseLong(tokens[i]);
+                if (id <= 0) throw new IllegalArgumentException();
+                try (Cursor c = source.query(Table.ADDRESS, id)) {
+                    if (c != null && c.moveToFirst()) address = displayText(text(c, "address"), ADDRESS_LIMIT);
+                }
+            } catch (RuntimeException ignored) { /* Optional labels must not hide a valid thread. */ }
+            if (address.isEmpty()) incomplete = true;
+            else if (!addresses.contains(address)) addresses.add(address);
+        }
+        if (addresses.isEmpty()) return "Participants unavailable";
+        return String.join(", ", addresses) + (incomplete ? " · more/unavailable participants" : "");
+    }
 
     static Index index(Source source) {
         Index result = new Index();
@@ -72,8 +116,10 @@ final class ProbeEngine {
                 if (result.threads.size() == THREAD_LIMIT) { result.limited = true; break; }
                 long id = number(c, "_id");
                 if (id <= 0) throw new IllegalStateException();
-                String value = text(c, "snippet");
-                result.threads.add(new ThreadEntry(id, value.substring(0, Math.min(80, value.length()))));
+                String preview = displayText(text(c, "snippet"), PREVIEW_LIMIT);
+                String people = participants(source, optionalText(c, "recipient_ids"));
+                long time = c.getColumnIndex("date") < 0 ? 0 : number(c, "date");
+                result.threads.add(new ThreadEntry(id, preview, people, time));
             }
         } catch (SecurityException e) { result.state = State.BLOCKED;
         } catch (RuntimeException e) { result.state = State.ERROR; }

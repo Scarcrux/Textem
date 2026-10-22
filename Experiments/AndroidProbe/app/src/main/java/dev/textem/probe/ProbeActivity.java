@@ -15,6 +15,14 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.EditText;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.text.InputType;
+import android.view.View;
+import android.view.inputmethod.EditorInfo;
+import java.text.DateFormat;
+import java.util.Date;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -68,7 +76,7 @@ public final class ProbeActivity extends Activity {
     }
     private Button button(String title, String tag, Runnable action) {
         Button button = new Button(this);
-        button.setText(title); button.setTag(tag);
+        button.setText(title); button.setTag(tag); button.setAllCaps(false);
         button.setOnClickListener(view -> action.run());
         content.addView(button);
         return button;
@@ -81,7 +89,7 @@ public final class ProbeActivity extends Activity {
         if (clearDiagnostics) ProbeDiagnostics.clear(this);
         base(fixtureHistory ? "SYNTHETIC history · no phone data" : "Textem · Read-only phone probe");
         label("No Internet access. No sending, mark-read, deletion, Google pairing, or default-SMS changes. Only content-free diagnostic counters are saved locally for this paired Mac; Clear removes them.", 16);
-        label("SMS permission is broad: Android may expose SMS/MMS content across your phone. This probe shows at most 50 recent thread snippets for you to choose from, then samples only the thread you tap. Content stays on this screen/in memory; screenshots are blocked.", 16);
+        label("SMS permission is broad: Android may expose SMS/MMS content across your phone. This probe shows at most 50 recent threads with participant addresses, dates and snippets for you to choose from, then samples only the thread you tap. No Contacts access or business-name lookup. Content stays on this screen/in memory; screenshots are blocked.", 16);
         status.setText(hasPermission() ? "SMS permission granted; no reads until you choose history."
             : "BLOCKED: SMS permission not granted. This does not mean your messages are absent.");
         button("Choose a history thread", "history", () -> {
@@ -91,7 +99,12 @@ public final class ProbeActivity extends Activity {
         button("Run synthetic controls (no phone reads)", "controls", this::synthetic);
     }
     private boolean hasPermission() { return checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED; }
-    private ProbeEngine.Source source() { return fixtureHistory ? new FixtureSource() : new ProviderSource(this); }
+    private ProbeEngine.Source source() {
+        if (!fixtureHistory) return new ProviderSource(this);
+        FixtureSource fixture = new FixtureSource();
+        fixture.threadCount = 2; fixture.distinctThreads = true;
+        return fixture;
+    }
 
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
@@ -116,16 +129,50 @@ public final class ProbeActivity extends Activity {
             runOnUiThread(() -> {
                 if (isDestroyed() || generation != token) return;
                 base("Choose one thread · phone only");
-                status.setText("Provider: " + index.state + "; listed: " + index.threads.size()
-                    + (index.limited ? " (50-thread cap reached)" : "")
-                    + "\nMissing threads here do not prove RCS absence.");
-                for (int i = 0; i < index.threads.size(); i++) {
-                    ProbeEngine.ThreadEntry entry = index.threads.get(i);
-                    button("Thread " + (i + 1) + " · " + entry.preview, "thread-" + i, () -> scan(entry.id));
-                }
+                label("Participants are provider addresses/short codes, not verified business or contact names. Filter checks only these loaded labels and previews; it does not search older messages.", 16);
+                EditText filter = new EditText(this);
+                filter.setTag("filter"); filter.setHint("Filter by address or preview text");
+                filter.setSingleLine(true); filter.setSaveEnabled(false);
+                filter.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+                filter.setImeOptions(EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+                filter.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+                content.addView(filter);
+                LinearLayout rows = new LinearLayout(this);
+                rows.setOrientation(LinearLayout.VERTICAL); rows.setTag("threads");
+                content.addView(rows);
+                filter.addTextChangedListener(new TextWatcher() {
+                    public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+                    public void onTextChanged(CharSequence s, int start, int before, int count) {
+                        showThreads(index, rows, s.toString());
+                    }
+                    public void afterTextChanged(Editable s) { }
+                });
+                showThreads(index, rows, "");
                 button("Clear and return", "home", this::home);
             });
         });
+    }
+    private void showThreads(ProbeEngine.Index index, LinearLayout rows, String query) {
+        rows.removeAllViews();
+        for (int i = 0; i < index.threads.size(); i++) {
+            ProbeEngine.ThreadEntry entry = index.threads.get(i);
+            if (!entry.matches(query)) continue;
+            String date = entry.time > 0 ? DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                .format(new Date(entry.time)) : "Date unavailable";
+            Button row = new Button(this);
+            row.setText(entry.participants + "\nLast message: " + date + "\n"
+                + (entry.preview.isEmpty() ? "[No preview exposed]" : entry.preview));
+            row.setAllCaps(false); row.setGravity(android.view.Gravity.START | android.view.Gravity.CENTER_VERTICAL);
+            row.setTag("thread-" + i);
+            // Keep the original entry, never select by the filtered display position.
+            row.setOnClickListener(view -> scan(entry.id));
+            rows.addView(row);
+        }
+        status.setText("Provider: " + index.state + "; listed: " + index.threads.size()
+            + "; showing: " + rows.getChildCount()
+            + (index.limited ? " (50-thread cap reached)" : "")
+            + (rows.getChildCount() == 0 ? "\nNo matching loaded threads. Clear the filter to see all." : "")
+            + "\nMissing threads here do not prove RCS absence.");
     }
     private void scan(long id) {
         int token = ++generation;
@@ -141,8 +188,11 @@ public final class ProbeActivity extends Activity {
                 label(recorded ? "Content-free counters are ready for automatic Mac readback. Message content stays on this phone."
                     : "Diagnostic readback could not be saved; no content was exported.", 16);
                 label("Image counts are readable provider attachments, not proof of the phone's link-preview graphic. Links below are plain text and are never opened or fetched. Compare this sample with Google Messages yourself.", 16);
-                for (ProbeEngine.Message message : report.messages)
-                    label(message.text.isEmpty() ? "[No text exposed in this row]" : message.text, 16);
+                for (int i = 0; i < report.messages.size(); i++) {
+                    ProbeEngine.Message message = report.messages.get(i);
+                    label(message.text.isEmpty() ? "[No text exposed in this row]" : message.text, 16)
+                        .setTag("message-" + i);
+                }
                 button("Copy content-free summary", "copy", this::copySummary);
                 button("Clear and return", "home", this::home);
             });

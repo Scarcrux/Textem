@@ -42,7 +42,11 @@ final class ProviderSource implements ProbeEngine.Source {
         switch (table) {
             case THREADS:
                 return new Query("content://mms-sms/conversations?simple=true",
-                    new String[] {"_id", "snippet"}, null, null, "date DESC");
+                    new String[] {"_id", "snippet", "recipient_ids", "date"}, null, null, "date DESC");
+            case ADDRESS:
+                // AOSP MmsSmsProvider's singular numeric-ID route; never enumerate addresses.
+                return new Query("content://mms-sms/canonical-address/" + id,
+                    new String[] {"address"}, null, null, null);
             case SMS:
                 return new Query("content://sms", new String[] {"_id", "body", "date"},
                     "thread_id = ?", new String[] {Long.toString(id)}, "date DESC");
