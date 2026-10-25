@@ -74,12 +74,13 @@ public final class ShareProbeActivity extends Activity {
         }
         setIntent(new Intent()); // Don't preserve the raw share payload as Activity state.
         label(synthetic ? "SYNTHETIC share · no phone reads" : "Textem Share Probe", 24);
-        label("Only diagnostic counts leave this screen. No image, text, address, URI or filename is displayed, saved, copied or exported. No website is opened.", 16);
+        label("Only diagnostic counts and fixed source categories leave this screen. No image, text, address, URI, filename or source name is displayed, saved, copied or exported. No website is opened.", 16);
         status = label(incoming ? "Waiting for your Inspect tap. No shared image has been opened."
             : "In Google Messages, use Share on one approved graphic if that action is available, then choose Textem Share Probe. If Share supplies only text/a link, this probe will report that negative result.", 16);
         status.setTag("share-status");
         if (incoming) {
             label("Inspect attempts at most 3 explicitly granted private Google Messages image URIs, 6 MiB each. Other sources are blocked. The sender is not authenticated by the share dialog. A readable shared image does not establish that it matches the visible preview card.", 16);
+            label("Inspect also checks provider metadata and URI-grant status for simple content addresses, even when the image allowlist blocks them. This does not open that provider or change permissions.", 16);
             button("Inspect shared item", "inspect-share", this::inspect);
         }
         button("Clear share result and close", "clear-share", () -> {
@@ -132,7 +133,7 @@ public final class ShareProbeActivity extends Activity {
         boolean recorded = ShareDiagnostics.record(this, synthetic, r);
         status.setText(r.summary() + (r.state == ShareProbeEngine.State.TIMEOUT
             ? "\nInspection timed out; counters can omit an unfinished read. No success is claimed." : "")
-            + (recorded ? "\nContent-free share counters are ready for Mac readback."
+            + (recorded ? "\nContent-free share diagnostics are ready for Mac readback."
                 : "\nNo valid share diagnostic could be saved."));
         input = null;
     }

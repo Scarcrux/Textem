@@ -200,7 +200,7 @@ python3 -B probe.py --serial PHONE_CONNECTION share-report
 ```
 
 This reads **only** app-private `files/share-summary.json`, at most4KiB, mode0600.
-Its 17 exact fields contain schema/kind/time, fixed state/block reason, bounded
+Version 0.4's 17 exact fields contain schema/kind/time, fixed state/block reason, bounded
 counts and booleans; no text, URI, address, filename, source identity or image hash.
 The existing 18-field history schema/file remain separate. Host checks reject
 synthetic share reports, unknown/private fields, stale data, bad types, impossible
@@ -224,3 +224,46 @@ signature and clean lint. Positive Google share delivery is still pending.
 Providers may ignore cancellation; the receiver then blocks additional reads
 instead of accumulating workers. Close/relaunch the probe if its worker remains
 stuck. New SMS-denied emulator execution was not repeated for this version.
+
+### Safe source diagnostics (v0.5)
+
+The owner reported `BLOCKED / URI_POLICY` after a real Share. This proves an early
+probe-policy rejection, not absent graphics or an Android permission denial.
+Version 0.5 adds an instrument without widening any image-read rule:
+
+- **URI rule** distinguishes allowed, non-content scheme, unknown authority,
+  user/profile prefix, port, fragment and length limit. Multiple unlike inputs
+  are explicitly `MULTIPLE`, not attributed to a single source.
+- **Provider owner** is only `GOOGLE_MESSAGES`, `OTHER_APP`, `UNRESOLVED`,
+  `UNAVAILABLE`, `NOT_CHECKED` or `MULTIPLE`. Dynamic provider/package names,
+  paths, query strings, fragments, filenames and hashes are never retained.
+- **Provider access** classifies private/grant-capable, exported, private without
+  URI grants, or unresolved/unavailable/not-checked/multiple. This is metadata,
+  not an authorization to read.
+- **Explicit read grant** and the incoming **share read flag** are reported
+  separately. These are point-in-time diagnostics; the original live read path
+  still rechecks actual permissions immediately before opening.
+
+Only after Inspect, bounded simple `content://` authorities can be looked up
+using [PackageManager provider metadata](https://developer.android.com/reference/android/content/pm/PackageManager#resolveContentProvider(java.lang.String,%20int))
+and [explicit URI-grant checks](https://developer.android.com/reference/android/content/Context#checkUriPermission(android.net.Uri,%20int,%20int,%20int)).
+No provider is queried/opened for those diagnostic lookups. Invalid URI shapes
+and non-content schemes skip metadata entirely. No new permission or package
+visibility is added. `UNRESOLVED` can reflect Android package-visibility limits;
+it is not proof that the provider does not exist. Metadata exceptions become
+fixed `UNAVAILABLE` categories without replacing the original read verdict.
+
+Share schema **2** has exactly **22 keys** (the existing 17 plus five fixed
+diagnostic fields). The host still strictly accepts schema1's 17 keys, without
+inventing absent source diagnostics. Both versions reject dynamic fields,
+synthetic reports and impossible states. The history schema remains unchanged.
+Timeout diagnostics can be `NOT_CHECKED` because an unfinished worker is not
+allowed to publish a late or partial success. After updating, a **fresh Share →
+Inspect** is required; old counters cannot reveal the previously rejected source.
+
+Verified v0.5 on a dedicated API35 emulator: **246 denied-SMS assertions** and
+**243 granted-SMS assertions**, including scripted installed source-diagnostic UI,
+zero real content reads, unchanged original read boundaries, private schema2 and
+Clear. **30 host tests**, **61 Mac tests**, APK build/signature and clean lint pass.
+Handset installation, the real blocked source's categories, and exact-graphic
+recovery are **pending**, not inferred from synthetic/emulator checks.

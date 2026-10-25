@@ -5,7 +5,7 @@ import io
 import subprocess
 import time
 from unittest.mock import patch
-from probe import BOUNDS, SHARE_BOUNDS, InvalidReport, main, validate_checks, validate_report, validate_share, verdict
+from probe import BOUNDS, SHARE_BOUNDS, SOURCE_ENUMS, InvalidReport, main, validate_checks, validate_report, validate_share, verdict
 
 
 class ReadbackTests(unittest.TestCase):
@@ -192,6 +192,83 @@ class ShareReadbackTests(unittest.TestCase):
                 self.assertEqual(main(), 1 if private else 0)
             self.assertNotIn("PRIVATE_SENTINEL", stdout.getvalue() + stderr.getvalue())
             self.assertEqual(transport.call_args_list[-1].args[0][-1], "files/share-summary.json")
+
+
+class SourceReadbackTests(ShareReadbackTests):
+    def sample(self):
+        result = super().sample()
+        result.update(schema=2, uri_policy_detail="ALLOWED", provider_owner="GOOGLE_MESSAGES",
+                      provider_access="PRIVATE_GRANT_CAPABLE", explicit_read_grant="GRANTED", share_read_flag=True)
+        return result
+
+    def test_real_image_differs_from_text_and_blocked(self):
+        self.assertEqual(self.parse(self.sample())["state"], "IMAGE_READABLE")
+        text = self.sample(); text.update(state="TEXT_OR_LINK_ONLY", text_present=True,
+                                         uris=0, attempted_images=0, readable_images=0, links=1)
+        text.update({key: "NOT_CHECKED" for key in SOURCE_ENUMS})
+        self.assertEqual(self.parse(text)["state"], "TEXT_OR_LINK_ONLY")
+        blocked = self.sample(); blocked.update(state="BLOCKED", attempted_images=0, readable_images=0,
+            blocked_uris=1, block_reason="URI_POLICY", uri_policy_detail="AUTHORITY_NOT_ALLOWED")
+        self.assertEqual(self.parse(blocked)["provider_owner"], "GOOGLE_MESSAGES")
+
+    def test_source_categories_reject_arbitrary_strings_and_private_fields(self):
+        for key in SOURCE_ENUMS:
+            for value in ["PRIVATE_SOURCE_SENTINEL", "com.google.android.apps.messaging", "content://private.invalid/1", [], None, True]:
+                report = self.sample(); report[key] = value
+                with self.subTest(key=key, value=value), self.assertRaises(InvalidReport): self.parse(report)
+        for key in ["authority", "package_name", "path", "filename", "source_hash"]:
+            report = self.sample(); report[key] = "PRIVATE_SOURCE_SENTINEL"
+            with self.assertRaises(InvalidReport): self.parse(report)
+
+    def test_source_v2_requires_exact_schema_and_boolean(self):
+        for changes in [dict(share_read_flag=1), dict(schema=3), dict(schema=1)]:
+            report = self.sample(); report.update(changes)
+            with self.assertRaises(InvalidReport): self.parse(report)
+        for key in (*SOURCE_ENUMS, "share_read_flag"):
+            report = self.sample(); del report[key]
+            with self.assertRaises(InvalidReport): self.parse(report)
+
+    def test_source_rejects_inconsistent_categories(self):
+        for changes in [dict(uris=0, attempted_images=0, readable_images=0, state="EMPTY"),
+                        dict(provider_owner="MULTIPLE"), dict(uri_policy_detail="NOT_CHECKED"),
+                        dict(provider_access="UNRESOLVED"), dict(provider_owner="UNAVAILABLE"),
+                        dict(uri_policy_detail="NON_CONTENT"),
+                        dict(provider_owner="NOT_CHECKED", provider_access="NOT_CHECKED"),
+                        dict(share_read_flag=False), dict(explicit_read_grant="NOT_CHECKED")]:
+            report = self.sample(); report.update(changes)
+            with self.subTest(changes=changes), self.assertRaises(InvalidReport): self.parse(report)
+
+    def test_source_unknown_is_not_absent_image_or_permission_denial(self):
+        for owner, access in [("GOOGLE_MESSAGES", "PRIVATE_GRANT_CAPABLE"), ("OTHER_APP", "EXPORTED"),
+                              ("UNRESOLVED", "UNRESOLVED"), ("UNAVAILABLE", "UNAVAILABLE")]:
+            report = self.sample(); report.update(state="BLOCKED", block_reason="URI_POLICY", blocked_uris=1,
+                attempted_images=0, readable_images=0, uri_policy_detail="AUTHORITY_NOT_ALLOWED",
+                provider_owner=owner, provider_access=access)
+            self.assertEqual(self.parse(report)["state"], "BLOCKED")
+        report = self.sample(); report.update(state="BLOCKED", block_reason="URI_POLICY", blocked_uris=1,
+                                              attempted_images=0, readable_images=0)
+        with self.assertRaises(InvalidReport): self.parse(report)
+
+    def test_source_timeout_can_explicitly_omit_unfinished_diagnostics(self):
+        report = self.sample(); report.update(state="TIMEOUT", attempted_images=0, readable_images=0)
+        report.update({key: "NOT_CHECKED" for key in SOURCE_ENUMS})
+        self.assertEqual(self.parse(report)["uri_policy_detail"], "NOT_CHECKED")
+
+    def test_legacy_readback_does_not_invent_source_categories(self):
+        legacy = ShareReadbackTests().sample()
+        self.assertNotIn("provider_owner", self.parse(legacy))
+
+    def test_source_cli_suppresses_private_category_values(self):
+        report = self.sample(); report.update(recorded_at_ms=int(time.time() * 1000), provider_owner="PRIVATE_SOURCE_SENTINEL")
+        responses = [subprocess.CompletedProcess([], 0, b"device\n", b""),
+                     subprocess.CompletedProcess([], 0, json.dumps(report).encode(), b"")]
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with patch.dict("os.environ", {"ANDROID_HOME": "/fixture-sdk"}), \
+                patch("sys.argv", ["probe.py", "--serial", "fixture-device", "share-report"]), \
+                patch("subprocess.run", side_effect=responses), \
+                contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            self.assertEqual(main(), 1)
+        self.assertNotIn("PRIVATE_SOURCE_SENTINEL", stdout.getvalue() + stderr.getvalue())
 
 
 if __name__ == "__main__":

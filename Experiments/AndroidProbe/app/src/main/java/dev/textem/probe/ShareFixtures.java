@@ -10,9 +10,10 @@ import java.io.InterruptedIOException;
 /** Never consults a provider. External fixture flags cannot bypass the live source policy. */
 final class ShareFixtures implements ShareProbeEngine.Source {
     static final java.util.concurrent.atomic.AtomicInteger allOpens = new java.util.concurrent.atomic.AtomicInteger();
+    static final java.util.concurrent.atomic.AtomicInteger allDescriptions = new java.util.concurrent.atomic.AtomicInteger();
     static volatile java.util.concurrent.CountDownLatch waitStarted, waitClosed;
     final String mode;
-    int opens, closes, bytesRead;
+    int opens, closes, bytesRead, descriptions;
     ShareFixtures(String mode) {
         this.mode = mode;
         if ("wait".equals(mode)) {
@@ -26,8 +27,20 @@ final class ShareFixtures implements ShareProbeEngine.Source {
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         if ("text".equals(mode)) intent.setType("text/plain")
             .putExtra(Intent.EXTRA_TEXT, "PRIVATE_SHARE_SENTINEL https://example.invalid/PRIVATE_PATH");
-        else intent.putExtra(Intent.EXTRA_STREAM, uri(1));
+        else intent.putExtra(Intent.EXTRA_STREAM, "unknown".equals(mode)
+            ? Uri.parse("content://unknown.invalid/PRIVATE_PATH?PRIVATE_QUERY") : uri(1));
         return intent;
+    }
+    @Override public ShareSourceDiagnostics.Metadata describe(Uri uri) {
+        descriptions++;
+        allDescriptions.incrementAndGet();
+        if ("metadata-error".equals(mode)) throw new SecurityException("PRIVATE_ERROR_SENTINEL");
+        if ("unresolved".equals(mode)) return ShareSourceDiagnostics.classify(null, ShareSourceDiagnostics.Grant.DENIED);
+        android.content.pm.ProviderInfo info = new android.content.pm.ProviderInfo();
+        info.packageName = "untrusted".equals(mode) ? "private.example" : "com.google.android.apps.messaging";
+        info.exported = false; info.grantUriPermissions = true;
+        return ShareSourceDiagnostics.classify(info, "denied".equals(mode)
+            ? ShareSourceDiagnostics.Grant.DENIED : ShareSourceDiagnostics.Grant.GRANTED);
     }
     @Override public boolean explicitGrant(Uri uri) { return !"denied".equals(mode); }
     @Override public boolean privateMessagesProvider(Uri uri) { return !"untrusted".equals(mode); }

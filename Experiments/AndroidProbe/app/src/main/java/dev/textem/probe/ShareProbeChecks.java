@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit;
 
 /** Synthetic scanner + installed receiver checks; never open real shared data. */
 final class ShareProbeChecks {
-    private static ShareProbeActivity launch(ProbeAutomation i, String mode) throws Exception {
+    static ShareProbeActivity launch(ProbeAutomation i, String mode) throws Exception {
         java.util.concurrent.ExecutorService launcher = Executors.newSingleThreadExecutor();
         try {
             Intent intent = new Intent(i.getTargetContext(), ShareProbeActivity.class)
@@ -105,7 +105,7 @@ final class ShareProbeChecks {
         i.check(ShareDiagnostics.record(i.getTargetContext(), true, positive));
         org.json.JSONObject metadata = ShareDiagnostics.read(i.getTargetContext());
         i.check(metadata.length() == ShareDiagnostics.KEY_COUNT && metadata.getString("kind").equals("SYNTHETIC_SHARE"));
-        i.check(!metadata.toString().contains("PRIVATE") && !metadata.toString().contains("content://"));
+        i.check(!metadata.toString().contains("PRIVATE_PATH") && !metadata.toString().contains("content://"));
         i.check((android.system.Os.stat(new java.io.File(i.getTargetContext().getFilesDir(),
             "share-summary.json").getPath()).st_mode & 0777) == 0600);
         ShareProbeEngine.Report invalid = new ShareProbeEngine.Report(); invalid.readableImages = 1;
@@ -173,6 +173,7 @@ final class ShareProbeChecks {
         i.check(pm.queryIntentActivities(shareIntent, 0).size() == 1);
         i.check(pm.queryIntentActivities(shareIntent.setType("text/plain"), 0).size() == 1);
         i.check(pm.queryIntentActivities(shareIntent.setType("video/mp4"), 0).isEmpty());
+        ShareSourceChecks.run(i);
         ProbeDiagnostics.clear(i.getTargetContext()); ShareDiagnostics.clear(i.getTargetContext());
         i.check(SharedImageSource.opens() == actualOpens);
     }

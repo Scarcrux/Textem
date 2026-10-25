@@ -36,6 +36,7 @@ final class ShareProbeEngine {
         UNREADABLE, UNSUPPORTED, MALFORMED, TIMEOUT, ERROR }
     enum BlockReason { NONE, URI_POLICY, READ_GRANT_MISSING, PROVIDER_POLICY, READ_DENIED, MULTIPLE }
     interface Source {
+        ShareSourceDiagnostics.Metadata describe(Uri uri);
         boolean explicitGrant(Uri uri);
         boolean privateMessagesProvider(Uri uri);
         InputStream open(Uri uri) throws IOException;
@@ -48,8 +49,9 @@ final class ShareProbeEngine {
     static final class Report {
         State state = State.EMPTY;
         BlockReason blockReason = BlockReason.NONE;
+        final ShareSourceDiagnostics source = new ShareSourceDiagnostics();
         int uris, attemptedImages, readableImages, blockedUris, unreadableImages, oversizedImages, skippedUris, links;
-        boolean textPresent, limited;
+        boolean textPresent, limited, shareReadFlag;
         String summary() {
             return "Share result: " + state + "\nURI candidates: " + uris
                 + "; opened: " + attemptedImages + "; decodable images: " + readableImages
@@ -57,6 +59,7 @@ final class ShareProbeEngine {
                 + "; oversized: " + oversizedImages + "; skipped: " + skippedUris
                 + "\nText supplied: " + textPresent + "; web links: " + links
                 + "; bounds reached: " + limited
+                + source.summary(shareReadFlag)
                 + "\nA decodable shared image is not proof of the exact visible card or a full history.";
         }
     }
@@ -123,6 +126,7 @@ final class ShareProbeEngine {
         Report r = new Report();
         r.uris = input.uris.size(); r.links = input.links;
         r.textPresent = input.textPresent; r.limited = input.limited;
+        r.shareReadFlag = input.readFlag;
         return r;
     }
     static Report inspect(Input input, Source source) {
@@ -133,6 +137,8 @@ final class ShareProbeEngine {
             boolean attempted = false;
             try {
                 if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException();
+                // Metadata-only diagnostics cannot grant access or replace any original read guard.
+                r.source.inspect(uri, source);
                 if (!knownMediaUri(uri)) { blocked(r, BlockReason.URI_POLICY); continue; }
                 if (!input.readFlag || !source.explicitGrant(uri)) { blocked(r, BlockReason.READ_GRANT_MISSING); continue; }
                 if (!source.privateMessagesProvider(uri)) { blocked(r, BlockReason.PROVIDER_POLICY); continue; }

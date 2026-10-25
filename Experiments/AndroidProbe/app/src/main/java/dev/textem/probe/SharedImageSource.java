@@ -21,6 +21,25 @@ final class SharedImageSource implements ShareProbeEngine.Source {
     private final CancellationSignal cancellation = new CancellationSignal();
     private AssetFileDescriptor active;
     SharedImageSource(Context context) { this.context = context.getApplicationContext(); }
+    @Override public ShareSourceDiagnostics.Metadata describe(Uri uri) {
+        // Independent of the image allowlist: inspect metadata, never query/open an unknown provider.
+        if (!ShareSourceDiagnostics.metadataEligible(uri)) return new ShareSourceDiagnostics.Metadata(
+            ShareSourceDiagnostics.Owner.NOT_CHECKED, ShareSourceDiagnostics.Access.NOT_CHECKED,
+            ShareSourceDiagnostics.Grant.NOT_CHECKED);
+        ShareSourceDiagnostics.Grant grant;
+        try {
+            grant = context.checkUriPermission(uri, Process.myPid(), Process.myUid(),
+                Intent.FLAG_GRANT_READ_URI_PERMISSION) == PackageManager.PERMISSION_GRANTED
+                ? ShareSourceDiagnostics.Grant.GRANTED : ShareSourceDiagnostics.Grant.DENIED;
+        } catch (RuntimeException unavailable) { grant = ShareSourceDiagnostics.Grant.UNAVAILABLE; }
+        try {
+            return ShareSourceDiagnostics.classify(
+                context.getPackageManager().resolveContentProvider(uri.getAuthority(), 0), grant);
+        } catch (RuntimeException unavailable) {
+            return new ShareSourceDiagnostics.Metadata(ShareSourceDiagnostics.Owner.UNAVAILABLE,
+                ShareSourceDiagnostics.Access.UNAVAILABLE, grant);
+        }
+    }
     @Override public boolean explicitGrant(Uri uri) {
         return ShareProbeEngine.knownMediaUri(uri) && context.checkUriPermission(uri, Process.myPid(), Process.myUid(),
             Intent.FLAG_GRANT_READ_URI_PERMISSION) == PackageManager.PERMISSION_GRANTED;

@@ -13,7 +13,7 @@ import org.json.JSONObject;
 
 /** Separate from history diagnostics. No source/content fields can reach this writer. */
 final class ShareDiagnostics {
-    static final int KEY_COUNT = 17;
+    static final int KEY_COUNT = 22;
     private static AtomicFile file(Context context) {
         return new AtomicFile(new File(context.getFilesDir(), "share-summary.json"));
     }
@@ -21,6 +21,12 @@ final class ShareDiagnostics {
     static boolean exists(Context context) { return file(context).getBaseFile().isFile(); }
     static boolean valid(ShareProbeEngine.Report r) {
         if (r == null || r.state == null || r.blockReason == null || r.uris < 0 || r.uris > 8 || r.links < 0 || r.links > 10_000) return false;
+        if (!r.source.valid(r.uris)) return false;
+        if (r.readableImages > 0 && (!r.shareReadFlag || (r.source.policy != ShareSourceDiagnostics.Policy.ALLOWED
+                && r.source.policy != ShareSourceDiagnostics.Policy.MULTIPLE))) return false;
+        if (r.blockReason == ShareProbeEngine.BlockReason.URI_POLICY
+                && (r.source.policy == ShareSourceDiagnostics.Policy.ALLOWED
+                    || r.source.policy == ShareSourceDiagnostics.Policy.NOT_CHECKED)) return false;
         if ((r.blockedUris == 0) != (r.blockReason == ShareProbeEngine.BlockReason.NONE)) return false;
         if (r.attemptedImages < 0 || r.attemptedImages > 3 || r.attemptedImages > r.uris) return false;
         if (r.readableImages < 0 || r.unreadableImages < 0 || r.oversizedImages < 0
@@ -48,9 +54,14 @@ final class ShareDiagnostics {
         AtomicFile target = file(context); FileOutputStream stream = null;
         try {
             JSONObject json = new JSONObject();
-            json.put("schema", 1); json.put("kind", synthetic ? "SYNTHETIC_SHARE" : "SHARED_CONTENT");
+            json.put("schema", 2); json.put("kind", synthetic ? "SYNTHETIC_SHARE" : "SHARED_CONTENT");
             json.put("recorded_at_ms", System.currentTimeMillis()); json.put("state", r.state.name());
             json.put("block_reason", r.blockReason.name());
+            json.put("uri_policy_detail", r.source.policy.name());
+            json.put("provider_owner", r.source.owner.name());
+            json.put("provider_access", r.source.access.name());
+            json.put("explicit_read_grant", r.source.grant.name());
+            json.put("share_read_flag", r.shareReadFlag);
             json.put("uris", r.uris); json.put("attempted_images", r.attemptedImages);
             json.put("readable_images", r.readableImages); json.put("blocked_uris", r.blockedUris);
             json.put("unreadable_images", r.unreadableImages); json.put("oversized_images", r.oversizedImages);

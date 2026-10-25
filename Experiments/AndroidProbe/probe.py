@@ -25,6 +25,41 @@ SHARE_KEYS = set(SHARE_BOUNDS) | {"schema", "kind", "recorded_at_ms", "state",
 SHARE_STATES = {"IMAGE_READABLE", "PARTIAL_IMAGE", "TEXT_OR_LINK_ONLY", "EMPTY", "BLOCKED",
                 "UNREADABLE", "UNSUPPORTED", "MALFORMED", "TIMEOUT", "ERROR"}
 BLOCK_REASONS = {"NONE", "URI_POLICY", "READ_GRANT_MISSING", "PROVIDER_POLICY", "READ_DENIED", "MULTIPLE"}
+SOURCE_ENUMS = {
+    "uri_policy_detail": {"NOT_CHECKED", "ALLOWED", "NON_CONTENT", "AUTHORITY_NOT_ALLOWED",
+                          "USER_INFO_PRESENT", "PORT_PRESENT", "FRAGMENT_PRESENT", "LENGTH_LIMIT", "MULTIPLE"},
+    "provider_owner": {"NOT_CHECKED", "GOOGLE_MESSAGES", "OTHER_APP", "UNRESOLVED", "UNAVAILABLE", "MULTIPLE"},
+    "provider_access": {"NOT_CHECKED", "PRIVATE_GRANT_CAPABLE", "EXPORTED", "PRIVATE_NO_GRANTS",
+                        "UNRESOLVED", "UNAVAILABLE", "MULTIPLE"},
+    "explicit_read_grant": {"NOT_CHECKED", "GRANTED", "DENIED", "UNAVAILABLE", "MULTIPLE"},
+}
+SHARE_V2_KEYS = SHARE_KEYS | set(SOURCE_ENUMS) | {"share_read_flag"}
+
+
+def validate_source(report):
+    for key, choices in SOURCE_ENUMS.items():
+        if type(report[key]) is not str or report[key] not in choices:
+            raise InvalidReport()
+    if type(report["share_read_flag"]) is not bool:
+        raise InvalidReport()
+    policy, owner, access, grant = (report[key] for key in SOURCE_ENUMS)
+    values = (policy, owner, access, grant)
+    if ((report["uris"] == 0 and any(v != "NOT_CHECKED" for v in values))
+            or (report["uris"] < 2 and "MULTIPLE" in values)
+            or (policy == "NOT_CHECKED" and any(v != "NOT_CHECKED" for v in values[1:]))):
+        raise InvalidReport()
+    for paired in ("NOT_CHECKED", "UNRESOLVED", "UNAVAILABLE"):
+        if (owner == paired) != (access == paired):
+            raise InvalidReport()
+    if ((owner == "NOT_CHECKED" and grant != "NOT_CHECKED")
+            or (owner != "NOT_CHECKED" and grant == "NOT_CHECKED")
+            or (policy == "ALLOWED" and owner == "NOT_CHECKED")
+            or (policy not in {"NOT_CHECKED", "ALLOWED", "AUTHORITY_NOT_ALLOWED", "MULTIPLE"}
+                and owner != "NOT_CHECKED")
+            or (report["block_reason"] == "URI_POLICY" and policy in {"ALLOWED", "NOT_CHECKED"})):
+        raise InvalidReport()
+    if report["readable_images"] and (not report["share_read_flag"] or policy not in {"ALLOWED", "MULTIPLE"}):
+        raise InvalidReport()
 
 
 class InvalidReport(Exception):
@@ -89,9 +124,12 @@ def validate_share(raw, now_ms=None):
         raise InvalidReport()
     try:
         report = json.loads(raw, object_pairs_hook=_unique)
-        if not isinstance(report, dict) or set(report) != SHARE_KEYS:
+        if not isinstance(report, dict) or type(report.get("schema")) is not int:
             raise InvalidReport()
-        if type(report["schema"]) is not int or report["schema"] != 1 or report["kind"] != "SHARED_CONTENT":
+        schema = report["schema"]
+        if schema not in (1, 2) or set(report) != (SHARE_KEYS if schema == 1 else SHARE_V2_KEYS):
+            raise InvalidReport()
+        if report["kind"] != "SHARED_CONTENT":
             raise InvalidReport()
         if report["state"] not in SHARE_STATES or report["block_reason"] not in BLOCK_REASONS:
             raise InvalidReport()
@@ -131,6 +169,8 @@ def validate_share(raw, now_ms=None):
         }
         if not valid_state[report["state"]]:
             raise InvalidReport()
+        if schema == 2:
+            validate_source(report)
         return report
     except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
         raise InvalidReport() from None
