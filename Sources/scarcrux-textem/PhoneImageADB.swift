@@ -115,6 +115,21 @@ final class PhoneImageADBClient: @unchecked Sendable {
             return supported && !serial.isEmpty && !serial.hasPrefix("emulator-") && serial.utf8.count <= 256 ? serial : nil
         }
     }
+    /// AOSP advertises the encrypted listener as this exact service, distinct from legacy adb.
+    /// Some vendor builds do not expose service.adb.tls.port to the shell.
+    static func tlsService(_ data: Data, endpoint: String) -> String? {
+        guard validEndpoint(endpoint), data.count <= 32768,
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        let names = text.split(separator: "\n").compactMap { line -> String? in
+            let fields = String(line).components(separatedBy: "\t").map { $0.trimmingCharacters(in: .whitespaces) }
+            guard fields.count == 3, fields[1] == "_adb-tls-connect._tcp", fields[2] == endpoint,
+                  !fields[0].isEmpty, fields[0].utf8.count <= 200,
+                  fields[0].unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }),
+                  !fields[0].contains("._adb-tls-connect._tcp") else { return nil }
+            return fields[0] + "._adb-tls-connect._tcp"
+        }
+        return names.count == 1 ? names[0] : nil
+    }
     func fetch(endpoint: String) async throws -> (PhoneImageManifest, Data) {
         let executable = try Self.executable(), port = try server(executable)
         // Give the owned foreground server time to bind without spawning a second background daemon.
@@ -130,7 +145,7 @@ final class PhoneImageADBClient: @unchecked Sendable {
             let devices = Self.authorizedDevices(try PhoneImageCommand.run(executable, base + ["devices", "-l"], maximum: 32768))
             guard devices.count == 1 else { throw PhoneImageError.noDevice }; serial = devices[0]
         }
-        let device = base + ["-s", serial]
+        var device = base + ["-s", serial]
         func connected() -> Bool {
             guard let data = try? PhoneImageCommand.run(executable, device + ["get-state"]) else { return false }
             return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) == "device"
@@ -142,9 +157,15 @@ final class PhoneImageADBClient: @unchecked Sendable {
         guard connected() else { throw PhoneImageError.noDevice }
         if Self.validEndpoint(serial) {
             // adbd publishes this property for its TLS listener, not the legacy plaintext tcpip port.
-            let tls = try PhoneImageCommand.run(executable, device + ["shell", "getprop", "service.adb.tls.port"])
-            guard String(data: tls, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                == String(serial.split(separator: ":").last ?? "") else { throw PhoneImageError.tlsRequired }
+            let tls = try? PhoneImageCommand.run(executable, device + ["shell", "getprop", "service.adb.tls.port"])
+            if tls.flatMap({ String(data: $0, encoding: .utf8) })?.trimmingCharacters(in: .whitespacesAndNewlines)
+                != String(serial.split(separator: ":").last ?? "") {
+                let services = try PhoneImageCommand.run(executable, base + ["mdns", "services"], maximum: 32768)
+                guard let name = Self.tlsService(services, endpoint: serial) else { throw PhoneImageError.tlsRequired }
+                device = base + ["-s", name]
+                // The named mDNS transport must actually be authorized, not merely advertised.
+                guard connected() else { throw PhoneImageError.tlsRequired }
+            }
         }
         func read(_ filename: String, maximum: Int) throws -> Data {
             try PhoneImageCommand.run(executable, device + ["exec-out", "run-as", "dev.textem.probe", "/system/bin/head",

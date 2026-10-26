@@ -125,6 +125,18 @@ struct PhoneImageTests {
             try PhoneImageCommand.run(URL(fileURLWithPath: "/bin/sleep"), ["2"], timeout: 0.05)
         }
     }
+    @Test func exactTLSAdvertisementDiscriminates() {
+        let endpoint = "192.168.2.3:44444"
+        let record = "adb-example (2)\t_adb-tls-connect._tcp\t\(endpoint)\n"
+        #expect(PhoneImageADBClient.tlsService(Data(record.utf8), endpoint: endpoint)
+            == "adb-example (2)._adb-tls-connect._tcp")
+        for invalid in [record.replacingOccurrences(of: "_adb-tls-connect", with: "_adb"),
+                        record.replacingOccurrences(of: "_adb-tls-connect", with: "_adb-tls-pairing"),
+                        record.replacingOccurrences(of: endpoint, with: "192.168.2.3:44445"),
+                        record.replacingOccurrences(of: "_adb-tls-connect._tcp", with: "_adb-tls-connect._tcp.evil"),
+                        record + record, "malformed", record.replacingOccurrences(of: "adb-example (2)", with: "")]
+        { #expect(PhoneImageADBClient.tlsService(Data(invalid.utf8), endpoint: endpoint) == nil) }
+    }
     @Test func actualClientViewRendersImportedGraphic() throws {
         let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
         let (manifest, png) = try fixture()

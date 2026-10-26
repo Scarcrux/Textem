@@ -331,3 +331,13 @@ platform-tools and an authorized USB or TLS Wireless debugging phone. Enter the
 current connection IP:port, not the pairing-code port. It imports only the fixed
 app-private files, validates PNG/manifest/hash, bounds time/output/storage, and
 does not associate images with an account or conversation by guessing.
+
+Verified live v0.7 on the owner test phone: app-only update preserved SMS access;
+287 synthetic assertions passed without actual provider reads. A fresh approved
+Google Messages media-viewer share of the a pet-supplies business graphic saved a real
+1050×700 PNG (571608 bytes). The signed Mac client imported it through the
+production transport/store and rendered the actual cat/orange-bag graphic;
+digest/size/dimensions and 0700/0600 Mac permissions were checked. A vendor-hidden
+TLS port property initially caused a false refusal; the Mac now requires an
+exact TLS-connect mDNS record and its authorized named transport in that case.
+No new permission, message send, ad-link click or full-history claim.

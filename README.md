@@ -140,6 +140,8 @@ debugging screen, not the temporary pairing-code screen. The port can change.
 An empty address requires exactly one authorized USB/TLS-discovered phone.
 Textem runs its own loopback-only adb server and does not stop other adb sessions
 or change Google Messages pairing. Legacy plaintext `adb tcpip` is refused.
+If a vendor hides the TLS port property, Textem requires an exact matching
+TLS-connect mDNS advertisement and uses its authorized named transport instead.
 
 The image is re-encoded as a metadata-free PNG, at most 2048 pixels per side and
 6 MiB. The Mac checks its manifest, digest and decoder before saving it privately
@@ -152,8 +154,9 @@ imported within 24 hours (share/save again if expired).
 This is explicit, individual-image recovery: no background/history sync, cloud
 upload, guessed conversation association, full interactive cards, or guarantee
 that every business preview exposes a shareable image. Synthetic controls are
-refused by the shipping importer. Real Google image readability was verified in
-v0.6; v0.7 live phone-to-Mac transfer still requires handset verification.
+refused by the shipping importer. A real Google Messages promotional graphic was
+shared through companion v0.7, imported and visually verified in the Mac panel
+on the owner's test phone. This validates that sample, not every business preview.
 
 ## Missing notification banners
 
