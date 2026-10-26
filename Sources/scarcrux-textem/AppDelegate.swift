@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if LinkPreviewStore.isEnabled {
             showLinkPreviews(nil)
         }
+        if ProcessInfo.processInfo.environment["TEXTEM_PHONE_IMAGE_CHECK"] == "1" { showPhoneImages(nil) }
 
         // Native notifications: click focuses the window; inline reply routes
         // to the active account's web view.
@@ -249,6 +250,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             presentInfo(error.localizedDescription)
         }
     }
+
+    @objc func showPhoneImages(_ sender: Any?) {
+        windowController?.webViewController.showPhoneImages()
+        showMainWindow()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) { PhoneImageADBClient.shared.stop() }
 
     private func showMainWindow() {
         guard let controller = windowController else { return }

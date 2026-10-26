@@ -1,7 +1,8 @@
 # Textem read-only Android probe
 
 Separate local experiment, **not** an Android messaging replacement or a new
-Google Messages paired computer. The shipping Mac app is unchanged.
+Google Messages paired computer. The Mac's Shared Phone Images panel can import
+one explicitly saved graphic from companion v0.7 onward.
 
 ## Why this exists
 
@@ -31,8 +32,9 @@ blocked permission, missing thread, or empty cursor into a claim that RCS is abs
 - No Internet permission, networking, notification access, Google credentials,
   Google pairing, default-SMS role, root, Accessibility, sending, mark-read,
   deletion, or provider writes. No analytics or third-party runtime libraries.
-- Message data appears only in the phone UI and process memory. It is not saved
-  or logged by the app. Screenshots are blocked; backup and device transfer are
+- History and Inspect data appear only in the phone UI and process memory; image
+  content is not saved unless **Save image for Mac** is explicitly selected
+  (see below). Content is never logged. Screenshots are blocked; backup and device transfer are
   disabled. Version 0.2 saves only a fixed-key numeric/enum diagnostic snapshot
   in app-private `files/probe-summary.json`, so the paired Mac can retrieve
   counters automatically. It contains no message text, URLs, addresses or IDs.
@@ -42,8 +44,8 @@ blocked permission, missing thread, or empty cursor into a claim that RCS is abs
   32 parts per MMS, 3 image reads, 6 MiB/image, and 20,000 characters/message.
   The UI reports reached caps. A full cursor/source failure remains distinguishable
   from successful empty results. These are sample limits, not completeness claims.
-- Images are decoded as bounded thumbnails to test actual readability, then
-  discarded. A readable MMS attachment is **not** proof of a link-preview graphic
+- History/Inspect images are decoded as bounded thumbnails to test actual
+  readability, then discarded. A readable MMS attachment is **not** proof of a link-preview graphic
   or of Google's interactive-card schema. No destination URLs are fetched.
 - SMS permission is [hard restricted](https://developer.android.com/reference/android/Manifest.permission#READ_SMS):
   the installer must allowlist it as well as the user granting it. If blocked,
@@ -298,3 +300,34 @@ phone-history image recovery, Mac image transfer, or full interactive cards.
 Temporary screen-timeout extension was restored; inspection screenshots were
 removed and no phone message/image was deleted. Source bytes remain discarded
 after the bounded decoder test, as before.
+
+### Explicit local Mac image handoff (v0.7)
+
+On a fresh Google Messages media-viewer share, choose **Textem Share Probe →
+Save image for Mac**, rather than Inspect. Save reuses the existing exact Google
+provider/explicit-grant guards and requires exactly one readable image. It
+decodes and re-encodes a PNG no larger than 2048 pixels per side and 6 MiB;
+original bytes/EXIF, URI, filename, message text and links are not exported.
+This is a bounded representation, not original-byte identity or full-card recovery.
+
+One active pending export is stored privately as `files/mac-image.json` and one
+of two fixed PNG slots. The inactive slot is written first, then the manifest is
+atomically replaced. Invalid input leaves the previous pair intact. At most two
+PNG slots are retained. The fixed 10-key manifest contains only schema/kind,
+random UUID, save time, fixed filename, MIME, dimensions, size and SHA-256.
+Synthetic exports are isolated under cache and tagged `SYNTHETIC_IMAGE`; they
+cannot replace a real pending image and the Mac refuses them.
+
+**Remove saved Mac image** deletes the pending manifest and both slots, not the
+original Google message. Clear diagnostics/close does not delete that export.
+The export persists until replaced/removed or app data is cleared; Mac import
+requires it to be no older than 24 hours. The separate Mac library persists until
+its own **Remove Mac copy** action. No Internet permission, listener, background
+sync or new Android component is added. Content transfer is explicit over the
+owner-authorized developer connection; do not publish collected image artifacts.
+
+The Mac panel is **Textem → Shared Phone Images…**. It requires local
+platform-tools and an authorized USB or TLS Wireless debugging phone. Enter the
+current connection IP:port, not the pairing-code port. It imports only the fixed
+app-private files, validates PNG/manifest/hash, bounds time/output/storage, and
+does not associate images with an account or conversation by guessing.

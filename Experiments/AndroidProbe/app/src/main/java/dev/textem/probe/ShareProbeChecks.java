@@ -206,6 +206,7 @@ final class ShareProbeChecks {
         i.check(pm.queryIntentActivities(shareIntent.setType("text/plain"), 0).size() == 1);
         i.check(pm.queryIntentActivities(shareIntent.setType("video/mp4"), 0).isEmpty());
         ShareSourceChecks.run(i);
+        ShareImageExportChecks.run(i);
         ProbeDiagnostics.clear(i.getTargetContext()); ShareDiagnostics.clear(i.getTargetContext());
         i.check(SharedImageSource.opens() == actualOpens);
     }

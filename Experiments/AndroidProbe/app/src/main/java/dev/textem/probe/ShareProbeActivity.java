@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** Separate explicit-consent share target; no received content is displayed or returned. */
+/** Explicit-consent share target: diagnostic Inspect and separate local PNG Save action. */
 @SuppressLint("SetTextI18n")
 public final class ShareProbeActivity extends Activity {
     private static final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -74,7 +74,7 @@ public final class ShareProbeActivity extends Activity {
         }
         setIntent(new Intent()); // Don't preserve the raw share payload as Activity state.
         label(synthetic ? "SYNTHETIC share · no phone reads" : "Textem Share Probe", 24);
-        label("Only diagnostic counts and fixed source categories leave this screen. No image, text, address, URI, filename or source name is displayed, saved, copied or exported. No website is opened.", 16);
+        label("Inspect keeps only diagnostic counts. Save image for Mac prepares one private PNG (up to 2048px) for your paired Mac to import. No message text, links, source addresses or filenames are exported. No website is opened.", 16);
         status = label(incoming ? "Waiting for your Inspect tap. No shared image has been opened."
             : "In Google Messages, use Share on one approved graphic if that action is available, then choose Textem Share Probe. If Share supplies only text/a link, this probe will report that negative result.", 16);
         status.setTag("share-status");
@@ -82,7 +82,12 @@ public final class ShareProbeActivity extends Activity {
             label("Inspect attempts at most 3 explicitly granted private Google Messages image URIs, 6 MiB each. Other sources are blocked. The sender is not authenticated by the share dialog. A readable shared image does not establish that it matches the visible preview card.", 16);
             label("Inspect also checks provider metadata and URI-grant status for simple content addresses, even when the image allowlist blocks them. This does not open that provider or change permissions.", 16);
             button("Inspect shared item", "inspect-share", this::inspect);
+            button("Save image for Mac", "save-mac-image", this::saveForMac);
         }
+        button("Remove saved Mac image", "remove-mac-image", () -> {
+            if (busy.get()) return;
+            ShareImageExport.clear(this, synthetic); status.setText("Saved Mac image removed. Messages and diagnostic results are unchanged.");
+        });
         button("Clear share result and close", "clear-share", () -> {
             invalidate(); ShareDiagnostics.clear(this); finish();
         });
@@ -96,6 +101,38 @@ public final class ShareProbeActivity extends Activity {
         view.setOnClickListener(v -> action.run()); content.addView(view);
     }
     private boolean current() { return epoch.get() == token && !isDestroyed() && !isFinishing() && !complete; }
+    private void saveForMac() {
+        if (!current() || input == null || !busy.compareAndSet(false, true)) return;
+        content.findViewWithTag("inspect-share").setEnabled(false);
+        content.findViewWithTag("save-mac-image").setEnabled(false);
+        status.setText("Preparing one explicitly granted image for Mac import…");
+        idle = new CountDownLatch(1); CountDownLatch selectedIdle = idle;
+        int selectedToken = token; ShareProbeEngine.Input selected = input;
+        SharedImageSource selectedLive = synthetic ? null : new SharedImageSource(this); live = selectedLive;
+        ShareProbeEngine.Source source = synthetic ? new ShareFixtures(fixtureMode) : selectedLive;
+        job = worker.submit(() -> {
+            boolean saved;
+            try { saved = ShareImageExport.save(this, selected, source, synthetic, () -> epoch.get() == selectedToken); }
+            finally { if (selectedLive != null) selectedLive.cancel(); busy.set(false); }
+            boolean success = saved;
+            runOnUiThread(() -> {
+                if (token == selectedToken && current()) {
+                    complete = true; input = null;
+                    status.setText(success ? (synthetic ? "SYNTHETIC PNG saved; the Mac rejects test exports."
+                        : "Image saved for Mac. In Textem, open Shared Phone Images and click Import from phone. The private PNG stays until replaced or removed.")
+                        : "No new image saved. One readable, granted Google Messages image is required. Any previous saved image is kept.");
+                }
+                selectedIdle.countDown();
+            });
+        });
+        handler.postDelayed(() -> {
+            if (token != selectedToken || !current()) return;
+            epoch.compareAndSet(selectedToken, selectedToken + 1);
+            if (selectedLive != null) selectedLive.cancel(); if (job != null) job.cancel(true);
+            complete = true; input = null; status.setText("Image preparation timed out. No success is claimed; retry with a fresh Share.");
+            selectedIdle.countDown();
+        }, 10_000);
+    }
     private void inspect() {
         if (!current()) return;
         if (!busy.compareAndSet(false, true)) {
@@ -103,6 +140,7 @@ public final class ShareProbeActivity extends Activity {
             return;
         }
         content.findViewWithTag("inspect-share").setEnabled(false);
+        content.findViewWithTag("save-mac-image").setEnabled(false);
         status.setText("Inspecting only the supplied item locally…");
         idle = new CountDownLatch(1);
         CountDownLatch selectedIdle = idle;

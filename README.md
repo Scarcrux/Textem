@@ -35,6 +35,8 @@ Early but usable. See [`commandem.toml`](commandem.toml) for the live roadmap
 - An owner-local **phone-only preview library** for previously recovered text and
   links; automatic native refresh is disabled while its separate Google relay
   cannot coexist safely with the main web inbox
+- A local **Shared Phone Images** panel for graphics explicitly shared to the
+  experimental Android companion (requires Android platform-tools and pairing)
 - External links open in your default browser; untrusted redirects are blocked
 
 **Distribution status** — the repository and alpha release are currently
@@ -122,6 +124,36 @@ store. Textem matches the stable web route first and otherwise accepts only an
 exact or unique label match. Ambiguous matches and cross-account cookie/session
 mismatches fail closed. Direct helper use is read-only and does not run as a
 permanent background service.
+
+### Explicitly shared phone graphics
+
+The experimental Android companion can save one graphic from Google Messages'
+media viewer: **Share → Textem Share Probe → Save image for Mac**. Use a fresh
+share and choose Save directly; **Inspect** remains diagnostics-only. On the Mac,
+choose **Textem → Shared Phone Images… → Import from phone**. Install companion
+v0.7 or newer using the [probe build instructions](Experiments/AndroidProbe/README.md).
+
+This developer prototype requires locally installed Android platform-tools and
+an authorized USB or Android **Wireless debugging** connection. For wireless,
+enter the current private IPv4 **IP address & port** from the main Wireless
+debugging screen, not the temporary pairing-code screen. The port can change.
+An empty address requires exactly one authorized USB/TLS-discovered phone.
+Textem runs its own loopback-only adb server and does not stop other adb sessions
+or change Google Messages pairing. Legacy plaintext `adb tcpip` is refused.
+
+The image is re-encoded as a metadata-free PNG, at most 2048 pixels per side and
+6 MiB. The Mac checks its manifest, digest and decoder before saving it privately
+under `~/Library/Application Support/Textem/PhoneImages` (25 images/100 MiB max).
+Duplicates are not imported twice. **Remove Mac copy** affects only that library;
+the phone's **Remove saved Mac image** clears its pending export, not the original
+message. The latest phone export remains until replaced or removed and must be
+imported within 24 hours (share/save again if expired).
+
+This is explicit, individual-image recovery: no background/history sync, cloud
+upload, guessed conversation association, full interactive cards, or guarantee
+that every business preview exposes a shareable image. Synthetic controls are
+refused by the shipping importer. Real Google image readability was verified in
+v0.6; v0.7 live phone-to-Mac transfer still requires handset verification.
 
 ## Missing notification banners
 

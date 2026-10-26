@@ -57,7 +57,19 @@ final class ShareFixtures implements ShareProbeEngine.Source {
             @Override public void close() { waitClosed.countDown(); }
         };
         if ("timeout".equals(mode)) throw new InterruptedIOException();
-        byte[] bytes = "oversized".equals(mode) ? new byte[ShareProbeEngine.BYTE_LIMIT + 1]
+        byte[] bytes;
+        if ("wide-export".equals(mode) || "png-too-large".equals(mode)) {
+            int width = "wide-export".equals(mode) ? 4097 : 2048, height = "wide-export".equals(mode) ? 3 : 2048;
+            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888);
+            if ("png-too-large".equals(mode)) {
+                int[] pixels = new int[width * height]; java.util.Random random = new java.util.Random(7);
+                for (int n = 0; n < pixels.length; n++) pixels[n] = 0xff000000 | random.nextInt(0x1000000);
+                bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
+            } else bitmap.eraseColor(android.graphics.Color.BLUE);
+            java.io.ByteArrayOutputStream encoded = new java.io.ByteArrayOutputStream();
+            bitmap.compress("png-too-large".equals(mode) ? android.graphics.Bitmap.CompressFormat.JPEG
+                : android.graphics.Bitmap.CompressFormat.PNG, 80, encoded); bitmap.recycle(); bytes = encoded.toByteArray();
+        } else bytes = "oversized".equals(mode) ? new byte[ShareProbeEngine.BYTE_LIMIT + 1]
             : "corrupt".equals(mode) ? new byte[] {0, 1, 2}
             : "empty".equals(mode) ? new byte[0] : new FixtureSource().image(1);
         return new ByteArrayInputStream(bytes) {

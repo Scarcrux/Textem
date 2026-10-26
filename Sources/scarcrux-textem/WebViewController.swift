@@ -122,6 +122,8 @@ final class WebViewController: NSViewController {
     private var loadRetryTask: Task<Void, Never>?
     private var didExportLibGMCookies = false
     private var linkPreviewHost: NSView?
+    private var showingPhoneImages = false
+    private var phoneImagesModel: PhoneImagesModel?
     private var displayedLinkPreviewDocument: LinkPreviewDocument?
     private var dismissedPhoneOnlyConversation: String?
     private struct RecoverySelection {
@@ -324,6 +326,7 @@ final class WebViewController: NSViewController {
     private func handlePhoneOnlyState(
         visible: Bool, conversation: String, conversationID: String
     ) {
+        if showingPhoneImages { return }
         if ProcessInfo.processInfo.environment["TEXTEM_PHONE_FALLBACK_SNAPSHOT"] == "1" {
             return
         }
@@ -530,6 +533,29 @@ final class WebViewController: NSViewController {
         displayedLinkPreviewDocument = nil
     }
 
+    func showPhoneImages() {
+        let model = phoneImagesModel ?? PhoneImagesModel()
+        phoneImagesModel = model; model.reload()
+        let host = NSHostingView(rootView: PhoneImagesView(model: model, onClose: { [weak self] in
+            self?.hideLinkPreviewFallback()
+        }))
+        installLinkPreviewHost(host); showingPhoneImages = true
+        // Owner-invoked local verification only: normal launches never transfer automatically.
+        if ProcessInfo.processInfo.environment["TEXTEM_PHONE_IMAGE_CHECK"] == "1" {
+            if let endpoint = ProcessInfo.processInfo.environment["TEXTEM_PHONE_IMAGE_ENDPOINT"] { model.endpoint = endpoint }
+            Task { @MainActor [weak host] in
+                await model.importFromPhone()
+                try? await Task.sleep(for: .seconds(1))
+                guard let host, let path = ProcessInfo.processInfo.environment["TEXTEM_PHONE_IMAGE_SNAPSHOT"],
+                      let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                if let png = bitmap.representation(using: .png, properties: [:]) {
+                    FileManager.default.createFile(atPath: path, contents: png, attributes: [.posixPermissions: 0o600])
+                }
+            }
+        }
+    }
+
     private func installLinkPreviewHost(_ host: NSView) {
         hideLinkPreviewFallback()
         host.translatesAutoresizingMaskIntoConstraints = false
@@ -548,6 +574,7 @@ final class WebViewController: NSViewController {
     }
 
     private func hideLinkPreviewFallback() {
+        showingPhoneImages = false
         linkPreviewHost?.removeFromSuperview()
         linkPreviewHost = nil
         displayedLinkPreviewDocument = nil
