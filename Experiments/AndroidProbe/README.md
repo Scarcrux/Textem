@@ -267,3 +267,34 @@ zero real content reads, unchanged original read boundaries, private schema2 and
 Clear. **30 host tests**, **61 Mac tests**, APK build/signature and clean lint pass.
 Handset installation, the real blocked source's categories, and exact-graphic
 recovery are **pending**, not inferred from synthetic/emulator checks.
+
+### Observed Google ProxyProvider correction (v0.6)
+
+Direct owner-authorized UI inspection found a promotional graphic in the open
+a pet-supplies business thread. Opening its media viewer exposes a real Share button; the system
+chooser reports one image. A v0.5 real share was blocked before any open even
+though its fixed diagnostics reported Google ownership, a private grant-capable
+provider, an explicit read grant and the Intent read flag. The Android grant
+record targeting this probe identifies the missing static authority as
+`com.google.android.apps.messaging.shared.datamodel.ProxyProvider`.
+
+Version 0.6 adds **only that exact authority**. A provider-name prefix is not
+trusted, and all existing ownership/private-provider/actual-URI-grant checks and
+read/decode bounds remain. No permission, component, package-visibility, schema,
+transport, default messaging app or send capability is added. Synthetic controls
+cover the new PNG route, lookalike authority, wrong provider policy, missing
+flag/grant and the real production ungranted-URI guard with SMS already granted.
+The relevant UI is **media viewer → Share → Textem Share Probe → Inspect**, not
+Forward, a recipient picker, the history scan, or a screenshot shared as evidence.
+
+Verified v0.6 on the owner test phone: **252 synthetic assertions** pass with
+SMS granted and zero real content reads;30 host/61 Mac tests, build, signature
+and clean lint pass. A new denied-SMS emulator run was not repeated. Then a fresh
+real Google media-viewer share of the same a pet-supplies business graphic reports
+**IMAGE_READABLE: one URI, one opened/decodable image, zero blocked/unreadable/
+oversized/skipped items**, with a private Google provider and an explicit grant.
+This fixes the observed v0.5 false policy block. It does **not** implement automatic
+phone-history image recovery, Mac image transfer, or full interactive cards.
+Temporary screen-timeout extension was restored; inspection screenshots were
+removed and no phone message/image was deleted. Source bytes remain discarded
+after the bounded decoder test, as before.

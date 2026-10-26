@@ -77,6 +77,38 @@ final class ShareProbeChecks {
         finally { real.cancel(); }
         i.check(blocked && SharedImageSource.opens() == actualOpens);
 
+        i.phase("observed ProxyProvider exact authority keeps grant and provider guards");
+        Uri proxyUri = Uri.parse("content://" + ShareProbeEngine.PROXY_AUTHORITY + "/synthetic-ungranted");
+        Intent proxy = ShareFixtures.intent("image").putExtra(Intent.EXTRA_STREAM, proxyUri);
+        ShareFixtures proxyGood = new ShareFixtures("image");
+        ShareProbeEngine.Report proxyImage = ShareProbeEngine.inspect(ShareProbeEngine.parse(proxy), proxyGood);
+        i.check(ShareProbeEngine.knownMediaUri(proxyUri) && proxyImage.state == ShareProbeEngine.State.IMAGE_READABLE
+            && proxyImage.readableImages == 1 && proxyGood.opens == 1 && proxyGood.closes == 1);
+        i.check(ShareDiagnostics.valid(proxyImage) && proxyImage.source.policy == ShareSourceDiagnostics.Policy.ALLOWED);
+        for (String mode : new String[] {"denied", "untrusted"}) {
+            ShareFixtures refused = new ShareFixtures(mode);
+            ShareProbeEngine.Report refusal = ShareProbeEngine.inspect(ShareProbeEngine.parse(proxy), refused);
+            i.check(refusal.state == ShareProbeEngine.State.BLOCKED && refused.opens == 0
+                && refusal.blockReason == (mode.equals("denied") ? ShareProbeEngine.BlockReason.READ_GRANT_MISSING
+                    : ShareProbeEngine.BlockReason.PROVIDER_POLICY));
+        }
+        ShareFixtures proxyNoFlag = new ShareFixtures("image");
+        i.check(ShareProbeEngine.inspect(ShareProbeEngine.parse(new Intent(proxy).setFlags(0)), proxyNoFlag).blockReason
+            == ShareProbeEngine.BlockReason.READ_GRANT_MISSING && proxyNoFlag.opens == 0);
+        Intent proxyLookalike = new Intent(proxy).putExtra(Intent.EXTRA_STREAM,
+            Uri.parse("content://" + ShareProbeEngine.PROXY_AUTHORITY + ".untrusted.invalid/synthetic"));
+        ShareFixtures proxyOther = new ShareFixtures("image");
+        i.check(ShareProbeEngine.inspect(ShareProbeEngine.parse(proxyLookalike), proxyOther).blockReason
+            == ShareProbeEngine.BlockReason.URI_POLICY && proxyOther.opens == 0);
+        SharedImageSource proxyLive = new SharedImageSource(i.getTargetContext());
+        i.check(!proxyLive.explicitGrant(proxyUri));
+        i.check(ShareProbeEngine.inspect(ShareProbeEngine.parse(proxy), proxyLive).blockReason
+            == ShareProbeEngine.BlockReason.READ_GRANT_MISSING);
+        boolean proxyDenied = false;
+        try { proxyLive.open(proxyUri); } catch (SecurityException expected) { proxyDenied = true; }
+        finally { proxyLive.cancel(); }
+        i.check(proxyDenied && SharedImageSource.opens() == actualOpens);
+
         i.phase("share parser bounds, duplicates, malformed extras and unsupported actions");
         Intent duplicate = ShareFixtures.intent("image");
         duplicate.setClipData(ClipData.newRawUri("PRIVATE_FILENAME_SENTINEL", ShareFixtures.uri(1)));

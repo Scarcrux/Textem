@@ -24,7 +24,9 @@ final class ShareProbeEngine {
     static final int TEXT_LIMIT = 20_000, LINK_LIMIT = 10_000;
     static final String MEDIA_AUTHORITY =
         "com.google.android.apps.messaging.shared.datamodel.richcard.RichCardMediaFileProvider";
-    private static final Set<String> AUTHORITIES = new HashSet<>(Arrays.asList(MEDIA_AUTHORITY,
+    // Observed actual Google media-viewer Share: private Messages-owned provider + explicit URI grant.
+    static final String PROXY_AUTHORITY = "com.google.android.apps.messaging.shared.datamodel.ProxyProvider";
+    private static final Set<String> AUTHORITIES = new HashSet<>(Arrays.asList(MEDIA_AUTHORITY, PROXY_AUTHORITY,
         "com.google.android.apps.messaging.shared.datamodel.provider.MmsFileProvider",
         "com.google.android.apps.messaging.shared.datamodel.BugleContentProviderInternal",
         "com.google.android.apps.messaging.shared.datamodel.provider.InternalMediaScratchFileProvider",
