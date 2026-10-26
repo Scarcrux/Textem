@@ -359,8 +359,8 @@ final class WebViewController: NSViewController {
             showConversationImages(context); return
         }
         if dismissedPhoneOnlyConversation != normalized,
-           let document = try? LinkPreviewStore.load(
-                matching: conversation, webConversationID: conversationID) {
+           let context = currentImageConversation,
+           let document = try? LinkPreviewStore.loadAutomatically(for: context) {
             showLinkPreviewFallback(document)
         } else if dismissedPhoneOnlyConversation != normalized {
             hideLinkPreviewFallback()
@@ -487,14 +487,13 @@ final class WebViewController: NSViewController {
             return
         }
         if succeeded,
-           let document = try? LinkPreviewStore.load(
-                matching: selection.conversation,
-                webConversationID: selection.conversationID) {
+           let context = currentImageConversation, context.route == selection.conversationID,
+           let document = try? LinkPreviewStore.loadAutomatically(for: context) {
             showLinkPreviewFallback(document)
         } else {
             showPhoneOnlyRecovery(selection, status: PhoneOnlyCaptureStatus(
                 schema: 1, state: "error", emoji: nil,
-                errorCode: finalStatus?.errorCode ?? fallbackErrorCode))
+                errorCode: succeeded ? "unscoped-preview-use-library" : finalStatus?.errorCode ?? fallbackErrorCode))
         }
     }
 

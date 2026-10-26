@@ -189,6 +189,14 @@ for its access boundary and remaining live-delivery/identity gates.
 
 #### Local notification preview sample
 
+Previously recovered legacy exports remain available in **Phone-only Message
+Preview…**, explicitly labeled as a library rather than the selected web thread.
+They are not automatically attached by a matching business name. Automatic
+preview display requires an explicit local Textem account binding and the exact
+confirmed route; old exports have no such binding and are not silently migrated.
+An explicit route mismatch never falls back to a title. Existing account-scoped
+shared-image links are unaffected.
+
 The optional developer companion v0.9 can separately save its latest Google
 Messages notification preview after **Enable local content samples** is selected.
 Android notification access alone does not enable content storage. On the Mac,
