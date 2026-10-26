@@ -140,8 +140,10 @@ debugging screen, not the temporary pairing-code screen. The port can change.
 An empty address requires exactly one authorized USB/TLS-discovered phone.
 Textem runs its own loopback-only adb server and does not stop other adb sessions
 or change Google Messages pairing. Legacy plaintext `adb tcpip` is refused.
-If a vendor hides the TLS port property, Textem requires an exact matching
-TLS-connect mDNS advertisement and uses its authorized named transport instead.
+If a vendor hides the TLS port property, Textem checks an exact matching
+authorized TLS-connect service. If discovery is unavailable, it checks the
+explicit endpoint's bounded start-TLS protocol reply before transferring through
+adb; a mere open port or legacy plaintext listener is not accepted.
 
 The image is re-encoded as a metadata-free PNG, at most 2048 pixels per side and
 6 MiB. The Mac checks its manifest, digest and decoder before saving it privately

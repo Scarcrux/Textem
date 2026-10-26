@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import ImageIO
 import SwiftUI
@@ -136,6 +137,50 @@ struct PhoneImageTests {
                         record.replacingOccurrences(of: "_adb-tls-connect._tcp", with: "_adb-tls-connect._tcp.evil"),
                         record + record, "malformed", record.replacingOccurrences(of: "adb-example (2)", with: "")]
         { #expect(PhoneImageADBClient.tlsService(Data(invalid.utf8), endpoint: endpoint) == nil) }
+    }
+    @Test func delayedTLSDiscoveryIsBounded() async throws {
+        final class Lookup: @unchecked Sendable {
+            let lock = NSLock(); var calls = 0
+            func next(appears: Bool) -> Data {
+                lock.withLock {
+                    calls += 1
+                    return Data((appears && calls >= 3 ? "adb-example\t_adb-tls-connect._tcp\t192.168.2.3:44444\n" : "").utf8)
+                }
+            }
+        }
+        let delayed = Lookup()
+        let name = try await PhoneImageADBClient.discoverTLSService(endpoint: "192.168.2.3:44444", wait: {}) { delayed.next(appears: true) }
+        #expect(name == "adb-example._adb-tls-connect._tcp" && delayed.calls == 3)
+        let absent = Lookup()
+        let missing = try await PhoneImageADBClient.discoverTLSService(endpoint: "192.168.2.3:44444", wait: {}) { absent.next(appears: false) }
+        #expect(missing == nil && absent.calls == 8)
+    }
+    @Test func tlsWireControlsUseActualExchange() throws {
+        func header(_ words: [UInt32]) -> Data {
+            var data = Data()
+            for word in words { var little = word.littleEndian; withUnsafeBytes(of: &little) { data.append(contentsOf: $0) } }
+            return data
+        }
+        let stls: UInt32 = 0x534c5453
+        let valid = header([stls, 0x01000000, 0, 0, 0, ~stls])
+        #expect(PhoneImageTLS.isSTLS(valid))
+        for words: [UInt32] in [[0x48545541, 0x01000000, 0, 0, 0, ~UInt32(0x48545541)],
+                               [0x4e584e43, 0x01000000, 0, 0, 0, ~UInt32(0x4e584e43)],
+                               [stls, 1, 0, 0, 0, ~stls], [stls, 0x01000000, 0, 1, 0, ~stls],
+                               [stls, 0x01000000, 0, 0, 0, 0]] {
+            #expect(!PhoneImageTLS.isSTLS(header(words)))
+        }
+        var pair: [Int32] = [-1, -1]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
+        defer { close(pair[0]); close(pair[1]) }
+        _ = valid.withUnsafeBytes { Darwin.send(pair[1], $0.baseAddress!, $0.count, 0) }
+        try PhoneImageTLS.exchange(pair[0])
+        var received = [UInt8](repeating: 0, count: PhoneImageTLS.greeting.count)
+        let count = Darwin.recv(pair[1], &received, received.count, 0)
+        #expect(count == PhoneImageTLS.greeting.count && Data(received) == PhoneImageTLS.greeting)
+        #expect(throws: PhoneImageError.tlsRequired) { try PhoneImageTLS.exchange(pair[0], timeout: 0.02) }
+        _ = shutdown(pair[1], SHUT_WR)
+        #expect(throws: PhoneImageError.tlsRequired) { try PhoneImageTLS.exchange(pair[0]) }
     }
     @Test func actualClientViewRendersImportedGraphic() throws {
         let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }

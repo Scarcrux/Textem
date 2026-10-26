@@ -338,6 +338,9 @@ Google Messages media-viewer share of the a pet-supplies business graphic saved 
 1050×700 PNG (571608 bytes). The signed Mac client imported it through the
 production transport/store and rendered the actual cat/orange-bag graphic;
 digest/size/dimensions and 0700/0600 Mac permissions were checked. A vendor-hidden
-TLS port property initially caused a false refusal; the Mac now requires an
-exact TLS-connect mDNS record and its authorized named transport in that case.
+TLS port property initially caused a false refusal; the Mac checks an exact
+TLS-connect mDNS record and its authorized named transport in that case. If
+discovery is unavailable, a fixed, bounded CNXN/STLS protocol preflight verifies
+the explicitly supplied listener requires TLS; adb still handles authenticated
+encryption. Legacy AUTH/CNXN replies, malformed data and timeouts are refused.
 No new permission, message send, ad-link click or full-history claim.

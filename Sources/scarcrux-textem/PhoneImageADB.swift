@@ -85,7 +85,9 @@ final class PhoneImageADBClient: @unchecked Sendable {
             if let daemon, daemon.isRunning, let port { return port }
             let selectedPort = try Self.availablePort()
             let process = Process(); process.executableURL = executable
-            process.arguments = ["-L", "tcp:127.0.0.1:\(selectedPort)", "nodaemon", "server"]
+            // This platform-tools build rejects a hostname in -L's listening socket.
+            // -P without -a binds localhost and keeps this exact foreground child alive.
+            process.arguments = ["-P", String(selectedPort), "nodaemon", "server"]
             process.standardInput = FileHandle.nullDevice; process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
             try process.run(); daemon = process; port = selectedPort
@@ -130,11 +132,38 @@ final class PhoneImageADBClient: @unchecked Sendable {
         }
         return names.count == 1 ? names[0] : nil
     }
+    static func discoverTLSService(endpoint: String,
+                                  wait: @Sendable () async throws -> Void = { try await Task.sleep(for: .milliseconds(500)) },
+                                  lookup: @Sendable () throws -> Data) async throws -> String? {
+        for attempt in 0..<8 {
+            if let name = tlsService(try lookup(), endpoint: endpoint) { return name }
+            if attempt < 7 { try await wait() }
+        }
+        return nil
+    }
+    private static func listening(port: Int) -> Bool {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }; defer { close(fd) }
+        var address = sockaddr_in(); address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET); address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        address.sin_port = UInt16(port).bigEndian
+        return withUnsafePointer(to: &address) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+            }
+        }
+    }
     func fetch(endpoint: String) async throws -> (PhoneImageManifest, Data) {
         let executable = try Self.executable(), port = try server(executable)
-        // Give the owned foreground server time to bind without spawning a second background daemon.
-        if externalPort == nil { try await Task.sleep(for: .milliseconds(250)) }
-        if externalPort == nil && !lock.withLock({ daemon?.isRunning == true }) { throw PhoneImageError.connection }
+        // Do not let an early client command silently auto-spawn an unowned background server.
+        if externalPort == nil {
+            for _ in 0..<20 {
+                guard lock.withLock({ daemon?.isRunning == true }) else { throw PhoneImageError.connection }
+                if Self.listening(port: port) { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            guard lock.withLock({ daemon?.isRunning == true }), Self.listening(port: port) else { throw PhoneImageError.connection }
+        }
         let base = ["-P", String(port)]
         let serial: String
         if !endpoint.isEmpty {
@@ -160,11 +189,18 @@ final class PhoneImageADBClient: @unchecked Sendable {
             let tls = try? PhoneImageCommand.run(executable, device + ["shell", "getprop", "service.adb.tls.port"])
             if tls.flatMap({ String(data: $0, encoding: .utf8) })?.trimmingCharacters(in: .whitespacesAndNewlines)
                 != String(serial.split(separator: ":").last ?? "") {
-                let services = try PhoneImageCommand.run(executable, base + ["mdns", "services"], maximum: 32768)
-                guard let name = Self.tlsService(services, endpoint: serial) else { throw PhoneImageError.tlsRequired }
-                device = base + ["-s", name]
-                // The named mDNS transport must actually be authorized, not merely advertised.
-                guard connected() else { throw PhoneImageError.tlsRequired }
+                let name = try await Self.discoverTLSService(endpoint: serial) {
+                    try PhoneImageCommand.run(executable, base + ["mdns", "services"], maximum: 32768, timeout: 2)
+                }
+                if let name {
+                    device = base + ["-s", name]
+                    // The named mDNS transport must actually be authorized, not merely advertised.
+                    guard connected() else { throw PhoneImageError.tlsRequired }
+                } else {
+                    // Discovery can be unavailable even though the explicit TLS endpoint works.
+                    // Require its actual STLS protocol response; an open port alone is not enough.
+                    try PhoneImageTLS.verify(endpoint: serial)
+                }
             }
         }
         func read(_ filename: String, maximum: Int) throws -> Data {
