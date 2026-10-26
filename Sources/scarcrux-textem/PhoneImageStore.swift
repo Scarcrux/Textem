@@ -14,6 +14,7 @@ enum PhoneImageError: String, LocalizedError {
     case timeout = "The phone transfer timed out. No image was imported."
     case tlsRequired = "Use Android Wireless debugging (TLS), not legacy adb tcpip, for network transfers."
     case noExport = "No valid saved image is available. On the phone, Share → Textem Share Probe → Save image for Mac."
+    case alreadyLinked = "This image is linked to another conversation. Unlink it first before assigning it elsewhere."
     var errorDescription: String? { rawValue }
 }
 
@@ -70,6 +71,24 @@ struct ImportedPhoneImage: Codable, Equatable, Identifiable, Sendable {
     var filename: String { id.uuidString + ".png" }
 }
 
+/// Display label stays in memory. Only the account-scoped route digest is persisted.
+struct PhoneImageConversation: Equatable, Sendable {
+    let accountID: UUID
+    let route: String
+    let label: String
+    var key: String? {
+        guard !route.isEmpty, route.utf8.count <= 512,
+              route.rangeOfCharacter(from: .whitespacesAndNewlines.union(.controlCharacters).union(CharacterSet(charactersIn: "/?#"))) == nil,
+              !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, label.utf8.count <= 1024 else { return nil }
+        return PhoneImageManifest.digest(Data((accountID.uuidString + ":" + route).utf8))
+    }
+}
+
+struct PhoneImageBinding: Codable, Equatable, Sendable {
+    let imageID: UUID
+    let conversationKey: String
+}
+
 enum PhoneImageStore {
     private static let writes = NSRecursiveLock()
     static var directory: URL {
@@ -77,6 +96,7 @@ enum PhoneImageStore {
             .appendingPathComponent("Textem/PhoneImages", isDirectory: true)
     }
     private struct Index: Codable { let schema: Int; let images: [ImportedPhoneImage] }
+    private struct Bindings: Codable { let schema: Int; let bindings: [PhoneImageBinding] }
     private static func checkDirectory(_ directory: URL, create: Bool = false) throws {
         var info = stat()
         if lstat(directory.path, &info) != 0 {
@@ -165,7 +185,54 @@ enum PhoneImageStore {
         writes.lock(); defer { writes.unlock() }
         var images = try load(in: directory)
         guard images.contains(image) else { throw PhoneImageError.invalid }
+        let bindings = try loadBindings(in: directory).filter { $0.imageID != image.id }
         images.removeAll { $0.id == image.id }; try writeIndex(images, in: directory)
+        try writeBindings(bindings, in: directory)
         try FileManager.default.removeItem(at: directory.appendingPathComponent(image.filename))
+    }
+    static func loadBindings(in directory: URL = directory) throws -> [PhoneImageBinding] {
+        var info = stat()
+        if lstat(directory.path, &info) != 0 && errno == ENOENT { return [] }
+        try checkDirectory(directory)
+        let url = directory.appendingPathComponent("bindings.json")
+        if lstat(url.path, &info) != 0 && errno == ENOENT { return [] }
+        let data = try readPrivate(url, maximum: 16384)
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["schema", "bindings"],
+              let records = object["bindings"] as? [[String: Any]],
+              records.allSatisfy({ Set($0.keys) == ["imageID", "conversationKey"] }),
+              let value = try? JSONDecoder().decode(Bindings.self, from: data), value.schema == 1,
+              value.bindings.count <= 25, Set(value.bindings.map(\.imageID)).count == value.bindings.count,
+              value.bindings.allSatisfy({ $0.conversationKey.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil })
+        else { throw PhoneImageError.invalid }
+        return value.bindings
+    }
+    private static func writeBindings(_ bindings: [PhoneImageBinding], in directory: URL) throws {
+        let url = directory.appendingPathComponent("bindings.json")
+        try JSONEncoder().encode(Bindings(schema: 1, bindings: bindings)).write(to: url, options: .atomic)
+        guard chmod(url.path, 0o600) == 0 else { throw PhoneImageError.privateFile }
+    }
+    static func link(_ image: ImportedPhoneImage, to conversation: PhoneImageConversation, in directory: URL = directory) throws {
+        writes.lock(); defer { writes.unlock() }
+        guard let key = conversation.key, try load(in: directory).contains(image) else { throw PhoneImageError.invalid }
+        _ = try imageData(image, in: directory)
+        var bindings = try loadBindings(in: directory)
+        if let old = bindings.first(where: { $0.imageID == image.id }) {
+            guard old.conversationKey == key else { throw PhoneImageError.alreadyLinked }; return
+        }
+        guard bindings.count < 25 else { throw PhoneImageError.full }
+        bindings.append(PhoneImageBinding(imageID: image.id, conversationKey: key))
+        try writeBindings(bindings, in: directory)
+    }
+    static func unlink(_ image: ImportedPhoneImage, in directory: URL = directory) throws {
+        writes.lock(); defer { writes.unlock() }
+        guard try load(in: directory).contains(image) else { throw PhoneImageError.invalid }
+        let bindings = try loadBindings(in: directory).filter { $0.imageID != image.id }
+        try writeBindings(bindings, in: directory)
+    }
+    static func images(for conversation: PhoneImageConversation, in directory: URL = directory) throws -> [ImportedPhoneImage] {
+        guard let key = conversation.key else { throw PhoneImageError.invalid }
+        let ids = Set(try loadBindings(in: directory).filter { $0.conversationKey == key }.map(\.imageID))
+        return try load(in: directory).filter { ids.contains($0.id) }
     }
 }

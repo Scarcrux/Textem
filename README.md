@@ -160,6 +160,27 @@ refused by the shipping importer. A real Google Messages promotional graphic was
 shared through companion v0.7, imported and visually verified in the Mac panel
 on the owner's test phone. This validates that sample, not every business preview.
 
+#### Show saved graphics with a conversation
+
+Select a phone-only conversation in the inbox, open **Shared Phone Images…**,
+choose the correct saved graphic and click **Link image to this conversation**.
+Check that the displayed conversation and graphic belong together: Android's
+share payload does not identify the source thread. Textem rechecks the live page
+route before linking. Without a verified selected route, linking is unavailable.
+
+After that explicit link, opening the same phone-only thread in the same account
+shows its saved graphics automatically, without a phone connection or another
+share. A same-name thread or another account does not match. **Manage shared
+images** returns to the full library; **Unlink image** removes only the mapping.
+An image must be unlinked before assigning it elsewhere. Deleting a Mac image
+also clears its mapping, leaving the original phone content unchanged.
+
+Bindings are stored privately in a separate bounded `bindings.json` sidecar
+containing image UUIDs and account-scoped route hashes, not conversation names or
+raw routes. Existing unlinked imports are preserved. This organizes explicitly
+recovered graphics; it does not retrieve missing text/history or infer message
+ordering. The original phone export format and permissions are unchanged.
+
 ## Missing notification banners
 
 Choose **Textem → Send Test Notification** to test macOS delivery independently

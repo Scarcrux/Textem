@@ -124,6 +124,9 @@ final class WebViewController: NSViewController {
     private var linkPreviewHost: NSView?
     private var showingPhoneImages = false
     private var phoneImagesModel: PhoneImagesModel?
+    private var browsingPhoneImageLibrary = false
+    private var currentImageConversation: PhoneImageConversation?
+    private var displayedImageConversationKey: String?
     private var displayedLinkPreviewDocument: LinkPreviewDocument?
     private var dismissedPhoneOnlyConversation: String?
     private struct RecoverySelection {
@@ -324,13 +327,16 @@ final class WebViewController: NSViewController {
     }
 
     private func handlePhoneOnlyState(
-        visible: Bool, conversation: String, conversationID: String
+        visible: Bool, conversation: String, conversationID: String, routeConfirmed: Bool
     ) {
-        if showingPhoneImages { return }
         if ProcessInfo.processInfo.environment["TEXTEM_PHONE_FALLBACK_SNAPSHOT"] == "1" {
             return
         }
         let normalized = LinkPreviewStore.normalizedConversation(conversation)
+        let imageConversation = PhoneImageConversation(accountID: accountID, route: conversationID, label: conversation)
+        currentImageConversation = visible && routeConfirmed && imageConversation.key != nil ? imageConversation : nil
+        phoneImagesModel?.setConversation(currentImageConversation)
+        if browsingPhoneImageLibrary { return }
         guard visible else {
             // The native relay temporarily becomes Google's one active
             // computer. Keep the recovery pane and route while it works; the
@@ -348,6 +354,10 @@ final class WebViewController: NSViewController {
         let selection = RecoverySelection(
             conversation: conversation, conversationID: conversationID)
         currentPhoneOnlySelection = selection
+        if let context = currentImageConversation, dismissedPhoneOnlyConversation != normalized,
+           let images = try? PhoneImageStore.images(for: context), !images.isEmpty {
+            showConversationImages(context); return
+        }
         if dismissedPhoneOnlyConversation != normalized,
            let document = try? LinkPreviewStore.load(
                 matching: conversation, webConversationID: conversationID) {
@@ -534,12 +544,12 @@ final class WebViewController: NSViewController {
     }
 
     func showPhoneImages() {
-        let model = phoneImagesModel ?? PhoneImagesModel()
-        phoneImagesModel = model; model.reload()
+        let model = imageModel()
+        model.setConversation(currentImageConversation, only: false); model.reload()
         let host = NSHostingView(rootView: PhoneImagesView(model: model, onClose: { [weak self] in
-            self?.hideLinkPreviewFallback()
+            self?.dismissPhoneImages()
         }))
-        installLinkPreviewHost(host); showingPhoneImages = true
+        installLinkPreviewHost(host); showingPhoneImages = true; browsingPhoneImageLibrary = true
         // Owner-invoked local verification only: normal launches never transfer automatically.
         if ProcessInfo.processInfo.environment["TEXTEM_PHONE_IMAGE_CHECK"] == "1" {
             if let endpoint = ProcessInfo.processInfo.environment["TEXTEM_PHONE_IMAGE_ENDPOINT"] { model.endpoint = endpoint }
@@ -554,6 +564,37 @@ final class WebViewController: NSViewController {
                 }
             }
         }
+    }
+
+    private func imageModel() -> PhoneImagesModel {
+        if let phoneImagesModel { return phoneImagesModel }
+        let model = PhoneImagesModel()
+        model.validateConversation = { [weak self] context in
+            guard let self, context.accountID == self.accountID,
+                  self.webView.url?.scheme == "https", self.webView.url?.host == "messages.google.com",
+                  self.currentImageConversation?.key == context.key else { return false }
+            let route = try? await self.webView.evaluateJavaScript(WebBridge.phoneImageRouteScript) as? String
+            return route == context.route && self.currentImageConversation?.key == context.key
+                && self.webView.url?.scheme == "https" && self.webView.url?.host == "messages.google.com"
+        }
+        phoneImagesModel = model; return model
+    }
+
+    private func dismissPhoneImages() {
+        if let context = currentImageConversation {
+            dismissedPhoneOnlyConversation = LinkPreviewStore.normalizedConversation(context.label)
+        }
+        hideLinkPreviewFallback()
+    }
+
+    private func showConversationImages(_ context: PhoneImageConversation) {
+        let model = imageModel(); model.setConversation(context, only: true); model.reload()
+        guard !showingPhoneImages || displayedImageConversationKey != context.key else { return }
+        model.status = "Saved images explicitly linked to this conversation. No background phone scan."
+        let host = NSHostingView(rootView: PhoneImagesView(model: model,
+            onClose: { [weak self] in self?.dismissPhoneImages() },
+            onOpenLibrary: { [weak self] in self?.showPhoneImages() }))
+        installLinkPreviewHost(host); showingPhoneImages = true; displayedImageConversationKey = context.key
     }
 
     private func installLinkPreviewHost(_ host: NSView) {
@@ -575,6 +616,7 @@ final class WebViewController: NSViewController {
 
     private func hideLinkPreviewFallback() {
         showingPhoneImages = false
+        browsingPhoneImageLibrary = false; displayedImageConversationKey = nil
         linkPreviewHost?.removeFromSuperview()
         linkPreviewHost = nil
         displayedLinkPreviewDocument = nil
@@ -1226,7 +1268,8 @@ extension WebViewController: WKScriptMessageHandler {
             handlePhoneOnlyState(
                 visible: (body["visible"] as? Bool) ?? false,
                 conversation: body["conversation"] as? String ?? "",
-                conversationID: body["conversationID"] as? String ?? ""
+                conversationID: body["conversationID"] as? String ?? "",
+                routeConfirmed: (body["routeConfirmed"] as? Bool) ?? false
             )
         case "replyResult":
             guard let rawID = body["requestId"] as? String,

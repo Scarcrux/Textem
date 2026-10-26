@@ -9,14 +9,50 @@ final class WebBridgeWebKitTests: XCTestCase {
     private final class Collector: NSObject, WKScriptMessageHandler {
         var snapshot: [[String: Any]] = []
         var ready: XCTestExpectation?
+        var phoneReady: XCTestExpectation?
+        var phoneState: [String: Any] = [:]
         func userContentController(_ userContentController: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
-            guard let body = message.body as? [String: Any],
-                  body["type"] as? String == "snapshot" else { return }
+            guard let body = message.body as? [String: Any] else { return }
+            if body["type"] as? String == "phoneOnlyState" {
+                phoneState = body; phoneReady?.fulfill(); phoneReady = nil; return
+            }
+            guard body["type"] as? String == "snapshot" else { return }
             snapshot = body["rows"] as? [[String: Any]] ?? []
             ready?.fulfill()
             ready = nil
         }
+    }
+
+    func testImageLinkRouteRejectsStaleAndDuplicateSelections() async throws {
+        let collector = Collector(), configuration = WKWebViewConfiguration()
+        configuration.userContentController.add(collector, name: WebBridge.handlerName)
+        configuration.userContentController.addUserScript(WKUserScript(source: WebBridge.userScript,
+            injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        let web = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
+        let ready = expectation(description: "verified phone-only route")
+        collector.phoneReady = ready
+        web.loadHTMLString("""
+        <html><body><mws-conversation-list-item><a href="/web/conversations/A" aria-selected="true">Example</a></mws-conversation-list-item>
+        <div id="notice">Use the Google Messages app on your phone to chat with Example</div></body></html>
+        """, baseURL: URL(string: "https://textem-fixture.invalid/web/conversations/A")!)
+        await fulfillment(of: [ready], timeout: 15)
+        XCTAssertEqual(collector.phoneState["routeConfirmed"] as? Bool, true)
+        let verifiedRoute = try await web.evaluateJavaScript(WebBridge.phoneImageRouteScript) as? String
+        XCTAssertEqual(verifiedRoute, "A")
+        let stale = expectation(description: "stale selected row rejected")
+        collector.phoneReady = stale
+        _ = try await web.evaluateJavaScript("history.pushState({}, '', '/web/conversations/B'); document.querySelector('a').setAttribute('aria-label', 'changed'); true;")
+        await fulfillment(of: [stale], timeout: 5)
+        XCTAssertEqual(collector.phoneState["routeConfirmed"] as? Bool, false)
+        let staleRoute = try await web.evaluateJavaScript(WebBridge.phoneImageRouteScript) as? String
+        XCTAssertEqual(staleRoute, "")
+        _ = try await web.evaluateJavaScript("history.pushState({}, '', '/web/conversations/A'); document.body.append(document.querySelector('mws-conversation-list-item').cloneNode(true)); true;")
+        let duplicateRoute = try await web.evaluateJavaScript(WebBridge.phoneImageRouteScript) as? String
+        XCTAssertEqual(duplicateRoute, "")
+        _ = try await web.evaluateJavaScript("document.querySelector('mws-conversation-list-item').remove(); document.getElementById('notice').remove(); true;")
+        let ordinaryRoute = try await web.evaluateJavaScript(WebBridge.phoneImageRouteScript) as? String
+        XCTAssertEqual(ordinaryRoute, "")
     }
 
     func testEmptyMarkersProduceRoutedUnreadEventAndRejectExternalRow() async throws {

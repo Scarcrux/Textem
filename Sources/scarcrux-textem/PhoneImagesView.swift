@@ -8,6 +8,10 @@ final class PhoneImagesModel: ObservableObject {
     @Published var status = "Share a graphic on your phone → Textem Share Probe → Save image for Mac. Then import here."
     @Published var busy = false
     @Published var endpoint: String
+    @Published private(set) var conversation: PhoneImageConversation?
+    @Published private(set) var conversationOnly = false
+    @Published private(set) var bindings: [PhoneImageBinding] = []
+    var validateConversation: ((PhoneImageConversation) async -> Bool)?
     let directory: URL
     let client: PhoneImageADBClient
     init(directory: URL = PhoneImageStore.directory, client: PhoneImageADBClient = .shared) {
@@ -20,9 +24,41 @@ final class PhoneImagesModel: ObservableObject {
         guard let selected, let data = try? PhoneImageStore.imageData(selected, in: directory) else { return nil }
         return NSImage(data: data)
     }
+    var selectedBinding: PhoneImageBinding? { bindings.first { $0.imageID == selected?.id } }
+    func setConversation(_ value: PhoneImageConversation?, only: Bool? = nil) {
+        let changed = conversation != value || (only != nil && only != conversationOnly)
+        conversation = value
+        if let only { conversationOnly = only }
+        if changed { selectedID = nil; reload() }
+    }
     func reload() {
-        do { images = try PhoneImageStore.load(in: directory) }
-        catch { status = (error as? PhoneImageError ?? .privateFile).localizedDescription }
+        do {
+            bindings = try PhoneImageStore.loadBindings(in: directory)
+            images = conversationOnly ? (try conversation.map { try PhoneImageStore.images(for: $0, in: directory) } ?? [])
+                : try PhoneImageStore.load(in: directory)
+        } catch {
+            images = []; bindings = []; selectedID = nil
+            status = (error as? PhoneImageError ?? .privateFile).localizedDescription
+        }
+    }
+    func linkSelected(to expected: PhoneImageConversation) async {
+        guard !busy, let image = selected, let key = expected.key, conversation?.key == key else { return }
+        busy = true; defer { busy = false }
+        guard let validateConversation, await validateConversation(expected),
+              conversation?.key == key, selected?.id == image.id else {
+            status = "Conversation changed or could not be verified. Nothing was linked."; return
+        }
+        do {
+            try PhoneImageStore.link(image, to: expected, in: directory); reload()
+            status = "Linked explicitly. This image will appear when this account and conversation open."
+        } catch { status = (error as? PhoneImageError ?? .privateFile).localizedDescription }
+    }
+    func unlinkSelected() {
+        guard !busy, let image = selected else { return }
+        do {
+            try PhoneImageStore.unlink(image, in: directory); reload()
+            status = "Conversation link removed. The saved image and phone original are unchanged."
+        } catch { status = (error as? PhoneImageError ?? .privateFile).localizedDescription }
     }
     func importFromPhone() async {
         guard !busy else { return }; busy = true; defer { busy = false }
@@ -54,13 +90,15 @@ final class PhoneImagesModel: ObservableObject {
 struct PhoneImagesView: View {
     @ObservedObject var model: PhoneImagesModel
     let onClose: () -> Void
+    var onOpenLibrary: (() -> Void)? = nil
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "photo.on.rectangle").font(.title2)
                 VStack(alignment: .leading) {
-                    Text("Shared Phone Images").font(.headline)
-                    Text("Explicit shares · local Mac library").font(.caption).foregroundStyle(.secondary)
+                    Text(model.conversationOnly ? "Saved Conversation Images" : "Shared Phone Images").font(.headline)
+                    Text(model.conversationOnly ? "Explicitly linked · this account and thread only" : "Explicit shares · local Mac library")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.plain)
@@ -68,16 +106,38 @@ struct PhoneImagesView: View {
             }.padding(20)
             Divider()
             VStack(alignment: .leading, spacing: 10) {
-                TextField("Wireless debugging IP:port (optional for USB)", text: $model.endpoint)
+                if !model.conversationOnly {
+                  TextField("Wireless debugging IP:port (optional for USB)", text: $model.endpoint)
                     .textFieldStyle(.roundedBorder).disabled(model.busy)
                     .accessibilityLabel("Phone wireless debugging address")
+                }
                 HStack {
-                    Button("Import from phone") { Task { await model.importFromPhone() } }.disabled(model.busy)
+                    if model.conversationOnly {
+                        if let onOpenLibrary { Button("Manage shared images", action: onOpenLibrary) }
+                    } else {
+                        Button("Import from phone") { Task { await model.importFromPhone() } }.disabled(model.busy)
+                    }
                     if model.busy { ProgressView().controlSize(.small) }
                     Spacer()
                     Button("Remove Mac copy") { model.removeSelected() }.disabled(model.busy || model.selected == nil)
                 }
                 Text(model.status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                if let conversation = model.conversation {
+                    Text("Conversation: \(conversation.label)").font(.subheadline).lineLimit(2)
+                    HStack {
+                        if !model.conversationOnly {
+                            Button("Link image to this conversation") { Task { await model.linkSelected(to: conversation) } }
+                                .disabled(model.busy || model.selected == nil || model.selectedBinding != nil)
+                        }
+                        Button("Unlink image") { model.unlinkSelected() }
+                            .disabled(model.busy || model.selectedBinding == nil)
+                    }
+                    Text("Link only after checking that this graphic belongs here. Textem cannot infer its source thread.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("To link a graphic, select a phone-only conversation in the inbox. A verified account and route are required.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }.padding(.horizontal, 20).padding(.bottom, 14)
             Divider()
             if !model.images.isEmpty {
@@ -94,8 +154,8 @@ struct PhoneImagesView: View {
             } else {
                 VStack(spacing: 10) {
                     Image(systemName: "photo").font(.system(size: 42))
-                    Text(model.images.isEmpty ? "No imported images yet" : "Saved image unavailable or refused")
-                    Text("This imports individual shared graphics, not complete conversations or background history.")
+                    Text(model.images.isEmpty ? (model.conversationOnly ? "No images linked to this conversation" : "No imported images yet") : "Saved image unavailable or refused")
+                    Text("Individual shared graphics only · no complete conversation or background history recovery.")
                         .font(.caption).multilineTextAlignment(.center)
                 }.foregroundStyle(.secondary).padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)
             }

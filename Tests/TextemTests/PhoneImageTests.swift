@@ -188,6 +188,10 @@ struct PhoneImageTests {
         try PhoneImageStore.importImage(manifest: manifest, png: png, in: root)
         let model = PhoneImagesModel(directory: root)
         #expect(model.graphic != nil && model.images.count == 1)
+        #expect(try orangeSamples(in: model) > 100)
+    }
+    func orangeSamples(in model: PhoneImagesModel) throws -> Int {
+        model.endpoint = "" // Fixture rendering must not depend on owner connection preferences.
         let renderer = ImageRenderer(content: PhoneImagesView(model: model, onClose: {}).frame(width: 620, height: 720))
         #expect(renderer.nsImage != nil)
         #expect(renderer.nsImage!.size == NSSize(width: 620, height: 720))
@@ -208,6 +212,109 @@ struct PhoneImageTests {
                    pixels[offset + 2] < 50 { orangeSamples += 1 }
             }
         }
-        #expect(orangeSamples > 100) // A placeholder/background cannot satisfy the graphic control.
+        return orangeSamples
+    }
+    @Test func explicitBindingIsExactAccountAndRouteOnly() throws {
+        let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let (manifest, png) = try fixture()
+        let image = try PhoneImageStore.importImage(manifest: manifest, png: png, in: root)
+        let account = UUID()
+        let target = PhoneImageConversation(accountID: account, route: "route-A", label: "Private fixture label")
+        let before = try Data(contentsOf: root.appendingPathComponent("index.json"))
+        #expect(try PhoneImageStore.images(for: target, in: root).isEmpty)
+        try PhoneImageStore.link(image, to: target, in: root)
+        try PhoneImageStore.link(image, to: target, in: root)
+        #expect(try PhoneImageStore.loadBindings(in: root).count == 1)
+        #expect(try PhoneImageStore.images(for: target, in: root) == [image])
+        #expect(try PhoneImageStore.images(for: PhoneImageConversation(accountID: UUID(), route: target.route, label: target.label), in: root).isEmpty)
+        #expect(try PhoneImageStore.images(for: PhoneImageConversation(accountID: account, route: "route-B", label: target.label), in: root).isEmpty)
+        #expect(try PhoneImageStore.images(for: PhoneImageConversation(accountID: account, route: target.route, label: "Renamed fixture"), in: root) == [image])
+        let sidecar = root.appendingPathComponent("bindings.json")
+        let serialized = try String(contentsOf: sidecar, encoding: .utf8)
+        #expect(!serialized.contains(target.label) && !serialized.contains(target.route) && !serialized.contains(account.uuidString))
+        #expect(try FileManager.default.attributesOfItem(atPath: sidecar.path)[.posixPermissions] as? Int == 0o600)
+        #expect(try Data(contentsOf: root.appendingPathComponent("index.json")) == before)
+        for route in ["", "route/other", "route?query", "route#fragment", "two words", String(repeating: "x", count: 513)] {
+            #expect(PhoneImageConversation(accountID: account, route: route, label: "Example").key == nil)
+        }
+    }
+    @Test func reassignmentRequiresUnlinkAndDeletionCleansBinding() throws {
+        let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let (manifest, png) = try fixture()
+        let image = try PhoneImageStore.importImage(manifest: manifest, png: png, in: root)
+        let a = PhoneImageConversation(accountID: UUID(), route: "A", label: "Example")
+        let b = PhoneImageConversation(accountID: a.accountID, route: "B", label: "Example")
+        try PhoneImageStore.link(image, to: a, in: root)
+        #expect(throws: PhoneImageError.alreadyLinked) { try PhoneImageStore.link(image, to: b, in: root) }
+        try PhoneImageStore.unlink(image, in: root)
+        #expect(try PhoneImageStore.images(for: a, in: root).isEmpty)
+        #expect(try PhoneImageStore.imageData(image, in: root) == png)
+        try PhoneImageStore.link(image, to: b, in: root)
+        try PhoneImageStore.remove(image, in: root)
+        #expect(try PhoneImageStore.loadBindings(in: root).isEmpty)
+    }
+    @Test func unsafeAndMalformedBindingsFailClosed() throws {
+        let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let (manifest, png) = try fixture()
+        let image = try PhoneImageStore.importImage(manifest: manifest, png: png, in: root)
+        let context = PhoneImageConversation(accountID: UUID(), route: "A", label: "Example")
+        try PhoneImageStore.link(image, to: context, in: root)
+        let url = root.appendingPathComponent("bindings.json")
+        let good = try Data(contentsOf: url)
+        var object = try #require(JSONSerialization.jsonObject(with: good) as? [String: Any])
+        let entry = try #require((object["bindings"] as? [[String: Any]])?.first)
+        for invalid: [String: Any] in [
+            ["schema": 2, "bindings": [entry]],
+            ["schema": 1, "bindings": [entry, entry]],
+            ["schema": 1, "bindings": (0..<26).map { _ in ["imageID": UUID().uuidString, "conversationKey": String(repeating: "0", count: 64)] }],
+            ["schema": 1, "bindings": [["imageID": image.id.uuidString, "conversationKey": "bad"]]]
+        ] {
+            try JSONSerialization.data(withJSONObject: invalid).write(to: url)
+            #expect(throws: PhoneImageError.invalid) { try PhoneImageStore.loadBindings(in: root) }
+        }
+        try Data(repeating: 0, count: 16385).write(to: url)
+        #expect(throws: PhoneImageError.privateFile) { try PhoneImageStore.loadBindings(in: root) }
+        object["privateText"] = "PRIVATE_SENTINEL"
+        try JSONSerialization.data(withJSONObject: object).write(to: url)
+        #expect(throws: PhoneImageError.invalid) { try PhoneImageStore.images(for: context, in: root) }
+        let model = PhoneImagesModel(directory: root)
+        #expect(model.images.isEmpty && model.graphic == nil)
+        try good.write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+        #expect(throws: PhoneImageError.privateFile) { try PhoneImageStore.images(for: context, in: root) }
+        try FileManager.default.removeItem(at: url)
+        try FileManager.default.createSymbolicLink(at: url, withDestinationURL: root.appendingPathComponent("index.json"))
+        #expect(throws: PhoneImageError.privateFile) { try PhoneImageStore.link(image, to: context, in: root) }
+    }
+    @Test func linkingRevalidatesContextAfterAsyncCheck() async throws {
+        let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let (manifest, png) = try fixture()
+        try PhoneImageStore.importImage(manifest: manifest, png: png, in: root)
+        let context = PhoneImageConversation(accountID: UUID(), route: "A", label: "Example")
+        let model = PhoneImagesModel(directory: root); model.setConversation(context)
+        model.validateConversation = { _ in model.setConversation(nil); return true }
+        await model.linkSelected(to: context)
+        #expect(try PhoneImageStore.loadBindings(in: root).isEmpty)
+        model.setConversation(context); model.validateConversation = { _ in false }
+        await model.linkSelected(to: context)
+        #expect(try PhoneImageStore.loadBindings(in: root).isEmpty)
+        model.validateConversation = { _ in true }
+        await model.linkSelected(to: context)
+        #expect(try PhoneImageStore.loadBindings(in: root).count == 1)
+    }
+    @Test func conversationViewRendersOnlyItsExplicitlyLinkedGraphic() throws {
+        let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let (manifest, png) = try fixture()
+        let image = try PhoneImageStore.importImage(manifest: manifest, png: png, in: root)
+        let context = PhoneImageConversation(accountID: UUID(), route: "A", label: "Example")
+        try PhoneImageStore.link(image, to: context, in: root)
+        let model = PhoneImagesModel(directory: root)
+        model.setConversation(context, only: true)
+        #expect(try orangeSamples(in: model) > 100)
+        model.setConversation(PhoneImageConversation(accountID: UUID(), route: "A", label: "Example"))
+        #expect(model.images.isEmpty && model.graphic == nil)
+        #expect(try orangeSamples(in: model) == 0)
+        model.setConversation(nil)
+        #expect(model.images.isEmpty)
     }
 }

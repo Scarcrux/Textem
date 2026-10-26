@@ -6,6 +6,18 @@ import Foundation
 enum WebBridge {
     static let handlerName = "textem"
 
+    // Re-evaluated immediately before a user-requested image link, not a cached label match.
+    static let phoneImageRouteScript = """
+    (() => {
+      \(ConversationDOM.helpers)
+      const rows = document.querySelectorAll('mws-conversation-list-item [aria-selected="true"][href]');
+      if (rows.length !== 1 || !/use\\s+the\\s+google\\s+messages\\s+app\\s+on\\s+your\\s+phone\\s+to\\s+chat\\s+with/i.test(document.body.innerText || '')) return '';
+      const page = document.createElement('a'); page.href = location.href;
+      const id = textemConversationID(rows[0]);
+      return id && id === textemConversationID(page) ? id : '';
+    })()
+    """
+
     static let userScript = """
     (function() {
       // Popup configurations inherit the opener's user-content controller.
@@ -87,9 +99,10 @@ enum WebBridge {
       var timer = null;
 
       function reportPhoneOnly(force) {
-        var selected = document.querySelector(
+        var selections = document.querySelectorAll(
           'mws-conversation-list-item a[aria-selected="true"], ' +
           'mws-conversation-list-item [aria-selected="true"][href]');
+        var selected = selections.length === 1 ? selections[0] : null;
         // Google's row label can append sender metadata inside the same text
         // node. Read the active pane's notice instead; native matching accepts
         // an expansion only when it resolves to one stored conversation.
@@ -101,14 +114,16 @@ enum WebBridge {
           var route = row ? row.querySelector('a[href]') : null;
           conversationID = textemConversationID(route);
         }
+        var pageRoute = document.createElement('a'); pageRoute.href = location.href;
+        var routeConfirmed = !!conversationID && conversationID === textemConversationID(pageRoute);
         var serialized = JSON.stringify({
-          visible: visible, conversation: conversation, conversationID: conversationID
+          visible: visible, conversation: conversation, conversationID: conversationID, routeConfirmed: routeConfirmed
         });
         if (!force && serialized === lastPhoneOnlySerialized) return;
         lastPhoneOnlySerialized = serialized;
         post({
           type: 'phoneOnlyState', visible: visible,
-          conversation: conversation, conversationID: conversationID
+          conversation: conversation, conversationID: conversationID, routeConfirmed: routeConfirmed
         });
       }
 
