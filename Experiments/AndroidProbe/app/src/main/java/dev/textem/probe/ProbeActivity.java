@@ -60,6 +60,8 @@ public final class ProbeActivity extends Activity {
         });
         setContentView(scroll);
         home(false);
+        if (getIntent().getBooleanExtra("open_capture_setup", false))
+            startActivity(new android.content.Intent(this, CaptureSetupActivity.class));
     }
 
     private void base(String title) {
@@ -99,6 +101,7 @@ public final class ProbeActivity extends Activity {
         button("Run synthetic controls (no phone reads)", "controls", this::synthetic);
         button("How to test shared graphics", "share-help", () ->
             startActivity(new android.content.Intent(this, ShareProbeActivity.class)));
+        button("Automatic recovery setup", "capture-setup", () -> startActivity(new android.content.Intent(this, CaptureSetupActivity.class)));
     }
     private boolean hasPermission() { return checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED; }
     private ProbeEngine.Source source() {

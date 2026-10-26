@@ -154,12 +154,14 @@ public class ProbeAutomation extends Instrumentation {
             check(!summary.contains("PRIVATE") && !summary.contains("example.invalid") && !summary.contains("999991"));
             check(summary.contains("web links: 1") && summary.contains("not a complete RCS history"));
 
-            phase("APK manifest has only read permission and no services/providers");
+            phase("APK manifest keeps read permission and only a system-bound notification listener");
             PackageManager pm = getTargetContext().getPackageManager();
             PackageInfo info = pm.getPackageInfo(getTargetContext().getPackageName(),
                 PackageManager.GET_PERMISSIONS | PackageManager.GET_SERVICES | PackageManager.GET_PROVIDERS);
             check(Arrays.equals(info.requestedPermissions, new String[] {Manifest.permission.READ_SMS}));
-            check(info.services == null && info.providers == null);
+            check(info.services != null && info.services.length == 1 && info.providers == null);
+            check(info.services[0].name.equals("dev.textem.probe.CaptureListener") && !info.services[0].exported
+                && "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE".equals(info.services[0].permission));
             check((info.applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_ALLOW_BACKUP) == 0);
             check((info.applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_USES_CLEARTEXT_TRAFFIC) == 0);
 
@@ -248,6 +250,7 @@ public class ProbeAutomation extends Instrumentation {
                 fixtureActivity.finish();
             });
             ShareProbeChecks.run(this);
+            NotificationReadinessChecks.run(this);
             phase("no private provider calls and no permission changes during automation");
             check(ProviderSource.queryAttempts() == privateQueriesBefore);
             check(ProviderSource.mediaAttempts() == privateMediaBefore);

@@ -34,6 +34,70 @@ SOURCE_ENUMS = {
     "explicit_read_grant": {"NOT_CHECKED", "GRANTED", "DENIED", "UNAVAILABLE", "MULTIPLE"},
 }
 SHARE_V2_KEYS = SHARE_KEYS | set(SOURCE_ENUMS) | {"share_read_flag"}
+NOTIFICATION_BOUNDS = {"notifications": 1, "messages": 10, "text_values": 10, "text_chars": 40000,
+                       "bitmap_pictures": 1, "bitmap_picture_icons": 1, "uri_attachments": 11,
+                       "shortcut_ids": 1, "conversation_titles": 1, "summaries_skipped": 1}
+NOTIFICATION_KEYS = set(NOTIFICATION_BOUNDS) | {"schema", "kind", "recorded_at_ms", "origin", "state",
+    "capture_enabled", "notification_access", "listener_connected", "limited", "messaging_style", "content_exported", "graphics_decoded"}
+
+
+def validate_notification(raw, now_ms=None):
+    if not raw or len(raw) > 4096:
+        raise InvalidReport()
+    try:
+        r = json.loads(raw, object_pairs_hook=_unique)
+        if not isinstance(r, dict) or set(r) != NOTIFICATION_KEYS or type(r["schema"]) is not int or r["schema"] != 1:
+            raise InvalidReport()
+        if r["kind"] != "NOTIFICATION_SAMPLE" or r["origin"] not in {"STATE", "POSTED", "ACTIVE_SCAN"}:
+            raise InvalidReport()
+        if r["state"] not in {"OFF", "ACCESS_REQUIRED", "OTHER_APP_IGNORED", "MALFORMED", "SUMMARY_SKIPPED",
+                              "EMPTY", "SHAPES_PRESENT", "LISTENING", "WAITING_FOR_LISTENER", "UNAVAILABLE"}:
+            raise InvalidReport()
+        for key in ["capture_enabled", "notification_access", "listener_connected", "limited", "messaging_style", "content_exported", "graphics_decoded"]:
+            if type(r[key]) is not bool:
+                raise InvalidReport()
+        if r["content_exported"] or r["graphics_decoded"]:
+            raise InvalidReport()
+        for key, maximum in NOTIFICATION_BOUNDS.items():
+            if type(r[key]) is not int or not 0 <= r[key] <= maximum:
+                raise InvalidReport()
+        now = int(time.time() * 1000) if now_ms is None else now_ms
+        if type(r["recorded_at_ms"]) is not int or not now - 1800000 <= r["recorded_at_ms"] <= now + 300000:
+            raise InvalidReport()
+        if not r["text_values"] <= r["text_chars"] <= r["text_values"] * 4000 or r["text_values"] > r["messages"]:
+            raise InvalidReport()
+        if (r["uri_attachments"] > r["messages"] + 1 or r["shortcut_ids"] > r["notifications"]
+                or r["conversation_titles"] > r["notifications"]):
+            raise InvalidReport()
+        shapes = sum(r[k] for k in ("text_values", "bitmap_pictures", "bitmap_picture_icons", "uri_attachments"))
+        enabled, access, connected = r["capture_enabled"], r["notification_access"], r["listener_connected"]
+        if r["origin"] in {"POSTED", "ACTIVE_SCAN"} and not connected:
+            raise InvalidReport()
+        state = r["state"]
+        if r["origin"] == "STATE" and state in {"SUMMARY_SKIPPED", "MALFORMED", "OTHER_APP_IGNORED"}:
+            raise InvalidReport()
+        if state in {"SHAPES_PRESENT", "EMPTY"}:
+            if (not enabled or not access or r["summaries_skipped"] or r["origin"] == "STATE"
+                    or (state == "SHAPES_PRESENT" and (r["notifications"] != 1 or shapes == 0))
+                    or (state == "EMPTY" and shapes != 0)):
+                raise InvalidReport()
+        else:
+            if (r["messages"] + shapes + r["notifications"] + r["shortcut_ids"] + r["conversation_titles"]
+                    or r["messaging_style"] or r["limited"]):
+                raise InvalidReport()
+            if state == "SUMMARY_SKIPPED":
+                if not enabled or not access or r["summaries_skipped"] != 1:
+                    raise InvalidReport()
+            elif r["summaries_skipped"]:
+                raise InvalidReport()
+            if ((state == "OFF" and enabled) or (state == "ACCESS_REQUIRED" and (not enabled or access))
+                    or (state == "LISTENING" and not (enabled and access and connected))
+                    or (state == "WAITING_FOR_LISTENER" and not (enabled and access and not connected))
+                    or (state in {"MALFORMED", "OTHER_APP_IGNORED", "UNAVAILABLE"} and not (enabled and access))):
+                raise InvalidReport()
+        return r
+    except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
+        raise InvalidReport() from None
 
 
 def validate_source(report):
@@ -187,7 +251,7 @@ def verdict(report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True, help="Explicit previously approved adb device")
-    parser.add_argument("mode", choices=["self-test", "report", "share-report"])
+    parser.add_argument("mode", choices=["self-test", "report", "share-report", "notification-report"])
     args = parser.parse_args()
     sdk = os.environ.get("ANDROID_HOME")
     adb = os.path.join(sdk, "platform-tools", "adb") if sdk else shutil.which("adb")
@@ -229,6 +293,11 @@ def main():
                       "-c", "4097", "files/probe-summary.json", timeout=15)
             result = validate_report(raw)
             result = {"verdict": verdict(result), "report": result}
+        elif args.mode == "notification-report":
+            raw = run("exec-out", "run-as", "dev.textem.probe", "/system/bin/head",
+                      "-c", "4097", "files/notification-summary.json", timeout=15)
+            result = validate_notification(raw)
+            result = {"verdict": result["state"], "report": result}
         else:
             raw = run("exec-out", "run-as", "dev.textem.probe", "/system/bin/head",
                       "-c", "4097", "files/share-summary.json", timeout=15)

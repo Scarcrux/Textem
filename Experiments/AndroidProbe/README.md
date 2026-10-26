@@ -10,7 +10,8 @@ The second native relay disconnected the normal web inbox. A phone-side reader
 could avoid that relay arbitration entirely. Google's [storage/access help](https://support.google.com/messages/answer/10262381)
 says received encrypted messages can be accessible to apps granted SMS or
 notification permissions. That is a lead, **not** proof of business-message or
-link-preview accessibility. This probe tests only public SMS/MMS provider access.
+link-preview accessibility. The history probe tests public SMS/MMS provider access;
+v0.8 adds a separately opted-in, metadata-only notification readiness check below.
 
 `PREREGISTRATION.md` defines the sample and its stop conditions. Do not turn a
 blocked permission, missing thread, or empty cursor into a claim that RCS is absent.
@@ -29,9 +30,11 @@ blocked permission, missing thread, or empty cursor into a claim that RCS is abs
   lookups remain explicitly unavailable; they do not hide the thread. These
   are **not** Google business/contact names; no Contacts permission or lookup is
   added. Try a short code, number, brand word or recognizable phrase in a preview.
-- No Internet permission, networking, notification access, Google credentials,
+- No Internet permission, networking, Google credentials,
   Google pairing, default-SMS role, root, Accessibility, sending, mark-read,
   deletion, or provider writes. No analytics or third-party runtime libraries.
+  Notification access is optional and separately approved in Android from v0.8;
+  it is never requested by history or image sharing.
 - History and Inspect data appear only in the phone UI and process memory; image
   content is not saved unless **Save image for Mac** is explicitly selected
   (see below). Content is never logged. Screenshots are blocked; backup and device transfer are
@@ -322,8 +325,8 @@ cannot replace a real pending image and the Mac refuses them.
 original Google message. Clear diagnostics/close does not delete that export.
 The export persists until replaced/removed or app data is cleared; Mac import
 requires it to be no older than 24 hours. The separate Mac library persists until
-its own **Remove Mac copy** action. No Internet permission, listener, background
-sync or new Android component is added. Content transfer is explicit over the
+its own **Remove Mac copy** action. The v0.7 image handoff adds no Internet
+permission, listener or background sync. Content transfer is explicit over the
 owner-authorized developer connection; do not publish collected image artifacts.
 
 The Mac panel is **Textem → Shared Phone Images…**. It requires local
@@ -344,3 +347,51 @@ discovery is unavailable, a fixed, bounded CNXN/STLS protocol preflight verifies
 the explicitly supplied listener requires TLS; adb still handles authenticated
 encryption. Legacy AUTH/CNXN replies, malformed data and timeouts are refused.
 No new permission, message send, ad-link click or full-history claim.
+
+### Automatic recovery readiness check (v0.8)
+
+This is an instrument, **not automatic content sync**. Open **Automatic recovery
+setup** in the phone probe. **Enable checks and open Android access settings**
+sets a separate local opt-in and opens Android's notification-access screen.
+The owner must approve **Textem automatic recovery** there. Android's permission
+is broad and can expose other apps' notifications; the service filters the exact
+Google Messages package before retrieving its payload. Never grant this access
+through ADB on the owner's device.
+
+After both approvals, the passive listener samples new notifications and one
+current non-summary Google Messages notification when connected/refreshed. It
+examines at most 20 Google notifications: summaries-only stays `SUMMARY_SKIPPED`,
+and an exhausted search cap is `UNAVAILABLE`, never successful empty. It
+stores only fixed counts/types in private mode0600 `notification-summary.json`:
+text lengths, bitmap/picture-icon presence, attachment-URI counts and identity
+field presence. It never stores source text, titles, sender/notification IDs,
+URI strings or pixels, loads icons/attachment URIs, invokes notification actions,
+dismisses notifications or marks them read. At most 10 messages and 4000 characters
+per text value are counted. It cannot establish historical completeness or that
+notification graphics equal the phone's full card. MessagingStyle decoding needs
+API30+; older devices report `UNAVAILABLE` rather than guessing Bundle fields.
+
+**Disable checks** stops payload inspection without changing Android's permission;
+revoke that permission in Android to remove system access. **Clear readiness
+diagnostics** deletes only the report, not the saved Mac image or phone messages.
+History, sharing and notification opt-in remain independent. The APK still has
+only READ_SMS in uses-permissions, plus one non-exported listener protected by
+Android's signature-level binding permission; no Internet or Accessibility.
+
+```sh
+python3 -B probe.py --serial PHONE_CONNECTION notification-report
+```
+
+The host reads only that known app-private report, rejecting synthetic, stale,
+oversized, duplicate/unknown fields and impossible states without printing raw
+errors/content. Synthetic notification controls use isolated cache and do not
+change capture opt-in or OS access. Live notification delivery, content transport
+and reliable conversation identity must be verified before automatic sync is built
+or claimed ready. Existing explicit Share → Save → Mac import remains usable.
+
+Verified v0.8: build/lint/signature, 36 host tests, 327 denied/324 granted API35
+emulator assertions and 324 test phone assertions pass; existing SMS access and
+the real saved export remain intact. The installed setup UI is script-checked.
+An emulator-only permission grant proves Android binds the service and an actual
+Refresh yields `ACTIVE_SCAN/EMPTY`. Owner notification access remains ungranted;
+no actual Google notification format or full-card recovery is claimed.

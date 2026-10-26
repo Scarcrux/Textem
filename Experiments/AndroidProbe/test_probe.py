@@ -5,7 +5,7 @@ import io
 import subprocess
 import time
 from unittest.mock import patch
-from probe import BOUNDS, SHARE_BOUNDS, SOURCE_ENUMS, InvalidReport, main, validate_checks, validate_report, validate_share, verdict
+from probe import BOUNDS, SHARE_BOUNDS, SOURCE_ENUMS, NOTIFICATION_BOUNDS, InvalidReport, main, validate_checks, validate_report, validate_share, validate_notification, verdict
 
 
 class ReadbackTests(unittest.TestCase):
@@ -269,6 +269,64 @@ class SourceReadbackTests(ShareReadbackTests):
                 contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             self.assertEqual(main(), 1)
         self.assertNotIn("PRIVATE_SOURCE_SENTINEL", stdout.getvalue() + stderr.getvalue())
+
+
+class NotificationReadbackTests(unittest.TestCase):
+    def sample(self):
+        r = {key: 0 for key in NOTIFICATION_BOUNDS}
+        r.update(schema=1, kind="NOTIFICATION_SAMPLE", recorded_at_ms=1000000, origin="POSTED", state="SHAPES_PRESENT",
+                 capture_enabled=True, notification_access=True, listener_connected=True, limited=False, messaging_style=True,
+                 content_exported=False, graphics_decoded=False, notifications=1, messages=1, text_values=1, text_chars=10)
+        return r
+
+    def parse(self, r):
+        return validate_notification(json.dumps(r).encode(), now_ms=1000000)
+
+    def test_positive_text_and_uri_are_shapes_not_full_content(self):
+        self.assertEqual(self.parse(self.sample())["text_values"], 1)
+        r=self.sample(); r.update(text_values=0, text_chars=0, uri_attachments=1)
+        self.assertEqual(self.parse(r)["uri_attachments"], 1)
+        self.assertFalse(self.parse(r)["graphics_decoded"])
+
+    def test_empty_off_and_denied_discriminate(self):
+        for state, enabled, access, connected, origin in [("EMPTY",True,True,True,"ACTIVE_SCAN"),
+                ("OFF",False,False,False,"STATE"), ("ACCESS_REQUIRED",True,False,False,"STATE"),
+                ("WAITING_FOR_LISTENER",True,True,False,"STATE")]:
+            r=self.sample(); r.update({key:0 for key in NOTIFICATION_BOUNDS})
+            r.update(state=state,capture_enabled=enabled,notification_access=access,listener_connected=connected,origin=origin,messaging_style=False)
+            self.assertEqual(self.parse(r)["state"],state)
+
+    def test_synthetic_private_unknown_fields_and_types_reject(self):
+        for key,value in [("kind","SYNTHETIC"),("origin","SYNTHETIC"),("private_text","PRIVATE_SENTINEL"),
+                ("uri","content://private.invalid/path"),("text_values",True),("messages",11),
+                ("graphics_decoded",True),("notification_access",1),("state",[]),("schema",True)]:
+            r=self.sample(); r[key]=value
+            with self.subTest(key=key), self.assertRaises(InvalidReport): self.parse(r)
+
+    def test_invalid_delivery_and_counter_combinations_reject(self):
+        for changes in [dict(notification_access=False),dict(capture_enabled=False),dict(listener_connected=False),
+                dict(state="EMPTY"),dict(state="OFF"),dict(text_chars=0),dict(uri_attachments=3),dict(origin="STATE")]:
+            r=self.sample();r.update(changes)
+            with self.subTest(changes=changes),self.assertRaises(InvalidReport):self.parse(r)
+
+    def test_stale_missing_oversized_duplicate_reject(self):
+        for changes in [dict(recorded_at_ms=-1000000),dict(recorded_at_ms=1400000)]:
+            r=self.sample();r.update(changes)
+            with self.assertRaises(InvalidReport):self.parse(r)
+        for raw in [b'',b'{}',b'[]',b'x'*4097,b'{"schema":1,"schema":1}',b'\xff']:
+            with self.assertRaises(InvalidReport):validate_notification(raw,now_ms=1000000)
+
+    def test_cli_uses_only_private_diagnostics_and_suppresses_payload(self):
+        for invalid in [False,True]:
+            r=self.sample();r['recorded_at_ms']=int(time.time()*1000)
+            if invalid:r['private_text']='PRIVATE_SENTINEL'
+            responses=[subprocess.CompletedProcess([],0,b'device\n',b''),subprocess.CompletedProcess([],0,json.dumps(r).encode(),b'')]
+            stdout,stderr=io.StringIO(),io.StringIO()
+            with patch.dict('os.environ',{'ANDROID_HOME':'/fixture-sdk'}),patch('sys.argv',['probe.py','--serial','fixture','notification-report']), \
+                    patch('subprocess.run',side_effect=responses) as transport,contextlib.redirect_stdout(stdout),contextlib.redirect_stderr(stderr):
+                self.assertEqual(main(),1 if invalid else 0)
+            self.assertEqual(transport.call_args_list[-1].args[0][-1],'files/notification-summary.json')
+            self.assertNotIn('PRIVATE_SENTINEL',stdout.getvalue()+stderr.getvalue())
 
 
 if __name__ == "__main__":

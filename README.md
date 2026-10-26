@@ -181,6 +181,12 @@ raw routes. Existing unlinked imports are preserved. This organizes explicitly
 recovered graphics; it does not retrieve missing text/history or infer message
 ordering. The original phone export format and permissions are unchanged.
 
+Companion v0.8 also includes an optional **Automatic recovery setup** readiness
+check. It needs separate owner-approved Android notification access and currently
+exports only counts/types—not message text or graphics. It does not enable
+automatic content sync. See the [probe documentation](Experiments/AndroidProbe/README.md#automatic-recovery-readiness-check-v08)
+for its access boundary and remaining live-delivery/identity gates.
+
 ## Missing notification banners
 
 Choose **Textem → Send Test Notification** to test macOS delivery independently
