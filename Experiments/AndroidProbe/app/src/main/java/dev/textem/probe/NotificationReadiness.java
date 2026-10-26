@@ -38,7 +38,7 @@ final class NotificationReadiness {
                 + "\nBitmap pictures/icons: " + pictures + "/" + pictureIcons + "; URI attachments: " + uriAttachments
                 + "\nStable shortcut present: " + shortcutIds + "; conversation title present: " + conversationTitles
                 + (limited ? "\nSample capped." : "")
-                + "\nCounts/types only. No message content exported; no graphics decoded.";
+                + "\nCounts/types only in this readiness report. Separate content samples have their own opt-in/file.";
         }
     }
     static Report inspect(String packageName, Supplier<Notification> payload, boolean enabled, boolean access) {
@@ -62,6 +62,8 @@ final class NotificationReadiness {
                 r.messagingStyle = true; r.limited = raw.length > MESSAGE_LIMIT;
                 Parcelable[] bounded = Arrays.copyOfRange(raw, Math.max(0, raw.length - MESSAGE_LIMIT), raw.length);
                 java.util.List<Notification.MessagingStyle.Message> messages = Notification.MessagingStyle.Message.getMessagesFromBundleArray(bounded);
+                if (bounded.length > 0 && messages.isEmpty()) throw new IllegalArgumentException();
+                r.limited |= messages.size() < bounded.length;
                 for (Notification.MessagingStyle.Message message : messages) {
                     r.messages++; text(r, message.getText());
                     if (message.getDataUri() != null) r.uriAttachments++;

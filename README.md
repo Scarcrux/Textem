@@ -187,6 +187,28 @@ exports only counts/types—not message text or graphics. It does not enable
 automatic content sync. See the [probe documentation](Experiments/AndroidProbe/README.md#automatic-recovery-readiness-check-v08)
 for its access boundary and remaining live-delivery/identity gates.
 
+#### Local notification preview sample
+
+The optional developer companion v0.9 can separately save its latest Google
+Messages notification preview after **Enable local content samples** is selected.
+Android notification access alone does not enable content storage. On the Mac,
+choose **Textem → Phone Notification Preview… → Read latest phone sample** using
+the same authorized TLS/USB developer connection. Source titles/text and available
+bitmap pictures stay in private local storage; no URLs are automatically fetched.
+
+This is a bounded sample, **not automatic inbox/history recovery**. Android can
+shorten or omit notification content; the sampled graphic is not guaranteed to
+match a full phone card. URI attachments and unknown picture types remain
+unsupported. A title never determines identity, web account or conversation;
+this viewer is explicitly unlinked and cannot send messages. Existing shared
+images/bindings and Google pairing are unchanged.
+
+The Mac keeps one latest snapshot in owner-only `Textem/NotificationPreviews`
+under Application Support until **Delete Mac sample**; the phone's delete action
+is separate. A cached snapshot is timestamped, not presented as a live inbox.
+See the [probe documentation](Experiments/AndroidProbe/README.md#separate-local-notification-content-sample-v09)
+for limits, retention, content opt-in and safe summary readback.
+
 ## Missing notification banners
 
 Choose **Textem → Send Test Notification** to test macOS delivery independently

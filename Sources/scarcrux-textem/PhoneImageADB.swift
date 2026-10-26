@@ -153,7 +153,7 @@ final class PhoneImageADBClient: @unchecked Sendable {
             }
         }
     }
-    func fetch(endpoint: String) async throws -> (PhoneImageManifest, Data) {
+    private func connectedDevice(endpoint: String) async throws -> (URL, [String]) {
         let executable = try Self.executable(), port = try server(executable)
         // Do not let an early client command silently auto-spawn an unowned background server.
         if externalPort == nil {
@@ -203,6 +203,14 @@ final class PhoneImageADBClient: @unchecked Sendable {
                 }
             }
         }
+        return (executable, device)
+    }
+    func fetch(endpoint: String) async throws -> (PhoneImageManifest, Data) {
+        let (executable, device) = try await connectedDevice(endpoint: endpoint)
+        func connected() -> Bool {
+            guard let data = try? PhoneImageCommand.run(executable, device + ["get-state"]) else { return false }
+            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) == "device"
+        }
         func read(_ filename: String, maximum: Int) throws -> Data {
             try PhoneImageCommand.run(executable, device + ["exec-out", "run-as", "dev.textem.probe", "/system/bin/head",
                 "-c", String(maximum + 1), "files/" + filename], maximum: maximum)
@@ -217,5 +225,24 @@ final class PhoneImageADBClient: @unchecked Sendable {
             return (manifest, png)
         } catch let error as PhoneImageError where error == .timeout || error == .invalid { throw error }
         catch { if !connected() { throw PhoneImageError.connection }; throw PhoneImageError.noExport }
+    }
+    /// The same owned authenticated transport, but a separate fixed preview format/storage path.
+    func fetchNotification(endpoint: String) async throws -> PhoneNotificationSnapshot {
+        let (executable, device) = try await connectedDevice(endpoint: endpoint)
+        return try Self.readNotification { name, maximum in
+            try PhoneImageCommand.run(executable, device + ["exec-out", "run-as", "dev.textem.probe", "/system/bin/head",
+                "-c", String(maximum + 1), "files/" + name], maximum: maximum)
+        }
+    }
+    static func readNotification(read: (String, Int) throws -> Data) throws -> PhoneNotificationSnapshot {
+        let first: Data
+        do { first = try read("notification-content-state.json", 4096) }
+        catch { throw PhoneNotificationError.unavailable }
+        let state = try PhoneNotificationState.parse(first)
+        guard state.state == "SAVED" else { throw PhoneNotificationError.forState(state.state) }
+        let snapshot = try PhoneNotificationSnapshot.parse(read("notification-content.json", PhoneNotificationSnapshot.maximumBytes))
+        let second = try read("notification-content-state.json", 4096)
+        guard first == second, snapshot.capturedAtMS <= state.recordedAtMS else { throw PhoneNotificationError.changed }
+        return snapshot
     }
 }

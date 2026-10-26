@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit-device automated checks and fixed-field readback; never pulls messages/UI."""
+"""Explicit-device checks and safe summaries; approved notification content is never printed."""
 import argparse
 import json
 import os
@@ -8,6 +8,119 @@ import shutil
 import subprocess
 import sys
 import time
+import base64
+import hashlib
+import struct
+import uuid
+import zlib
+
+CONTENT_BYTES = 2 * 1024 * 1024
+CONTENT_STATES = {"OFF", "ACCESS_REQUIRED", "OTHER_APP_IGNORED", "MALFORMED", "SUMMARY_SKIPPED", "SOURCE_REQUIRED",
+                  "UNAVAILABLE", "URI_ONLY_UNSUPPORTED", "IMAGE_UNSUPPORTED", "NO_CONTENT", "SAVED", "CLEARED"}
+
+
+def validate_content_state(raw, now_ms=None):
+    try:
+        if not raw or len(raw) > 4096:
+            raise InvalidReport()
+        r = json.loads(raw, object_pairs_hook=_unique)
+        now = int(time.time() * 1000) if now_ms is None else now_ms
+        if (not isinstance(r, dict) or set(r) != {"schema", "state", "recorded_at_ms"}
+                or type(r["schema"]) is not int or r["schema"] != 1 or r["state"] not in CONTENT_STATES
+                or type(r["recorded_at_ms"]) is not int or not now - 1800000 <= r["recorded_at_ms"] <= now + 300000):
+            raise InvalidReport()
+        return r
+    except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
+        raise InvalidReport() from None
+
+
+def validate_content_png(data, width, height):
+    if not data.startswith(b'\x89PNG\r\n\x1a\n'):
+        raise InvalidReport()
+    offset, compressed, header, ended = 8, bytearray(), None, False
+    while offset + 12 <= len(data):
+        length = struct.unpack('>I', data[offset:offset+4])[0]
+        if offset + length + 12 > len(data):
+            raise InvalidReport()
+        kind, body = data[offset+4:offset+8], data[offset+8:offset+8+length]
+        crc = struct.unpack('>I', data[offset+8+length:offset+12+length])[0]
+        if zlib.crc32(kind + body) != crc or kind == b'acTL':
+            raise InvalidReport()
+        if header is None and kind != b'IHDR':
+            raise InvalidReport()
+        if kind == b'IHDR':
+            if header is not None or length != 13:
+                raise InvalidReport()
+            header = struct.unpack('>IIBBBBB', body)
+            if header[:2] != (width, height) or header[2] != 8 or header[3] not in (0, 2, 4, 6) or header[4:] != (0, 0, 0):
+                raise InvalidReport()
+        elif kind == b'IDAT':
+            compressed.extend(body)
+        elif kind == b'IEND':
+            if length != 0 or offset + 12 != len(data):
+                raise InvalidReport()
+            ended = True
+        offset += length + 12
+    if not ended or offset != len(data) or header is None or not compressed:
+        raise InvalidReport()
+    channels = {0: 1, 2: 3, 4: 2, 6: 4}[header[3]]
+    row = width * channels + 1
+    decoder = zlib.decompressobj()
+    pixels = decoder.decompress(compressed, row * height + 1)
+    if len(pixels) != row * height or not decoder.eof or decoder.unused_data or decoder.unconsumed_tail or any(pixels[n] > 4 for n in range(0, len(pixels), row)):
+        raise InvalidReport()
+
+
+def validate_notification_content(raw, now_ms=None):
+    try:
+        if not raw or len(raw) > CONTENT_BYTES:
+            raise InvalidReport()
+        r = json.loads(raw, object_pairs_hook=_unique)
+        keys = {"schema", "kind", "captured_at_ms", "origin", "install_id", "source_key", "title", "messages",
+                "truncated", "image", "image_state", "uri_attachments", "complete"}
+        if not isinstance(r, dict) or set(r) != keys or type(r["schema"]) is not int or r["schema"] != 1 or r["kind"] != "NOTIFICATION_CONTENT":
+            raise InvalidReport()
+        now = int(time.time() * 1000) if now_ms is None else now_ms
+        if type(r["captured_at_ms"]) is not int or not now - 1800000 <= r["captured_at_ms"] <= now + 300000:
+            raise InvalidReport()
+        if (r["origin"] not in {"POSTED", "ACTIVE_SCAN"} or type(r["install_id"]) is not str or str(uuid.UUID(r["install_id"])) != r["install_id"]
+                or type(r["source_key"]) is not str or not re.fullmatch('[0-9a-f]{64}', r["source_key"])
+                or type(r["title"]) is not str or len(r["title"]) > 256 or type(r["truncated"]) is not bool or r["complete"] is not False
+                or type(r["uri_attachments"]) is not int or not 0 <= r["uri_attachments"] <= 11
+                or type(r["messages"]) is not list or len(r["messages"]) > 10):
+            raise InvalidReport()
+        for m in r["messages"]:
+            if (not isinstance(m, dict) or set(m) != {"timestamp_ms", "text", "truncated"}
+                    or type(m["timestamp_ms"]) is not int or not 0 <= m["timestamp_ms"] <= now + 300000
+                    or type(m["text"]) is not str or len(m["text"]) > 4000 or type(m["truncated"]) is not bool):
+                raise InvalidReport()
+        image = r["image"]
+        if r["image_state"] not in {"ABSENT", "UNSUPPORTED", "UNAVAILABLE", "BITMAP_PREVIEW"} or (image is not None) != (r["image_state"] == "BITMAP_PREVIEW"):
+            raise InvalidReport()
+        if image is not None:
+            if (not isinstance(image, dict) or set(image) != {"mime", "width", "height", "bytes", "sha256", "data_base64"}
+                    or image["mime"] != "image/png" or type(image["width"]) is not int or not 1 <= image["width"] <= 2048
+                    or type(image["height"]) is not int or not 1 <= image["height"] <= 2048 or type(image["bytes"]) is not int or not 8 <= image["bytes"] <= 1048576
+                    or type(image["data_base64"]) is not str or len(image["data_base64"]) > 1398104
+                    or type(image["sha256"]) is not str or not re.fullmatch('[0-9a-f]{64}', image["sha256"])):
+                raise InvalidReport()
+            data = base64.b64decode(image["data_base64"], validate=True)
+            if (base64.b64encode(data).decode() != image["data_base64"] or len(data) != image["bytes"]
+                    or hashlib.sha256(data).hexdigest() != image["sha256"]):
+                raise InvalidReport()
+            validate_content_png(data, image["width"], image["height"])
+        if image is None and not any(m["text"] for m in r["messages"]):
+            raise InvalidReport()
+        return r
+    except (ValueError, TypeError, KeyError, UnicodeError, RecursionError, zlib.error, struct.error):
+        raise InvalidReport() from None
+
+
+def content_summary(r):
+    return {"verdict": "NOTIFICATION_PREVIEW", "text_values": sum(bool(m["text"]) for m in r["messages"]),
+            "text_characters": sum(len(m["text"]) for m in r["messages"]), "image_present": r["image"] is not None,
+            "image_state": r["image_state"], "uri_attachments": r["uri_attachments"],
+            "truncated": r["truncated"] or any(m["truncated"] for m in r["messages"]), "complete": False}
 
 BOUNDS = {
     "sms_rows": 20, "mms_rows": 20, "text_messages": 40, "links": 1_000_000,
@@ -251,7 +364,7 @@ def verdict(report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True, help="Explicit previously approved adb device")
-    parser.add_argument("mode", choices=["self-test", "report", "share-report", "notification-report"])
+    parser.add_argument("mode", choices=["self-test", "report", "share-report", "notification-report", "notification-content-summary"])
     args = parser.parse_args()
     sdk = os.environ.get("ANDROID_HOME")
     adb = os.path.join(sdk, "platform-tools", "adb") if sdk else shutil.which("adb")
@@ -298,6 +411,18 @@ def main():
                       "-c", "4097", "files/notification-summary.json", timeout=15)
             result = validate_notification(raw)
             result = {"verdict": result["state"], "report": result}
+        elif args.mode == "notification-content-summary":
+            first = run("exec-out", "run-as", "dev.textem.probe", "/system/bin/head", "-c", "4097", "files/notification-content-state.json", timeout=15)
+            state = validate_content_state(first)
+            if state["state"] != "SAVED":
+                result = {"verdict": state["state"], "complete": False}
+            else:
+                raw = run("exec-out", "run-as", "dev.textem.probe", "/system/bin/head", "-c", str(CONTENT_BYTES + 1), "files/notification-content.json", timeout=15)
+                content = validate_notification_content(raw)
+                second = run("exec-out", "run-as", "dev.textem.probe", "/system/bin/head", "-c", "4097", "files/notification-content-state.json", timeout=15)
+                if first != second or content["captured_at_ms"] > state["recorded_at_ms"]:
+                    raise InvalidReport()
+                result = content_summary(content)
         else:
             raw = run("exec-out", "run-as", "dev.textem.probe", "/system/bin/head",
                       "-c", "4097", "files/share-summary.json", timeout=15)

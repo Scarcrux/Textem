@@ -251,11 +251,12 @@ public class ProbeAutomation extends Instrumentation {
             });
             ShareProbeChecks.run(this);
             NotificationReadinessChecks.run(this);
+            NotificationContentChecks.run(this);
             phase("no private provider calls and no permission changes during automation");
             check(ProviderSource.queryAttempts() == privateQueriesBefore);
             check(ProviderSource.mediaAttempts() == privateMediaBefore);
             check((getTargetContext().checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) == granted);
-            result.putString("stream", "PASS: " + checks + " assertions; production pipeline controls and actual UI; no phone reads.\n");
+            result.putString("stream", "PASS: " + checks + " assertions; production pipeline controls and actual UI; no test-triggered private provider reads or permission grants.\n");
             result.putString("permission_branch", granted ? "GRANTED_NO_PROVIDER_READS" : "DENIED_GUARD_TESTED");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {

@@ -393,5 +393,70 @@ Verified v0.8: build/lint/signature, 36 host tests, 327 denied/324 granted API35
 emulator assertions and 324 test phone assertions pass; existing SMS access and
 the real saved export remain intact. The installed setup UI is script-checked.
 An emulator-only permission grant proves Android binds the service and an actual
-Refresh yields `ACTIVE_SCAN/EMPTY`. Owner notification access remains ungranted;
-no actual Google notification format or full-card recovery is claimed.
+Refresh yields `ACTIVE_SCAN/EMPTY`. After the owner approved access, the actual
+test phone listener reported `ACTIVE_SCAN/SHAPES_PRESENT`: three MessagingStyle text
+entries (423 characters), a shortcut, and no picture/URI fields. That source is
+not yet established as an affected business conversation; full cards/history
+and exact graphics are not proven by this metadata sample.
+
+### Separate local notification content sample (v0.9)
+
+**Enable local content samples** is a separate opt-in, off by default. It needs
+readiness checks and Android notification access too; approving metadata alone
+does not save content. The owner has explicitly approved local text/available-image
+capture for this development campaign. Enable it only after build/control gates.
+
+The companion saves one latest notification sample, replacing its predecessor,
+not a continuous inbox/history. It captures at most ten text previews (4000 UTF-16
+units each), a 256-unit source title and one explicit bitmap picture. A plain
+bitmap picture-icon can also qualify; avatars/large icons are never used as card
+graphics. Pictures are re-encoded as PNG, at most2048px per side and1MiB. Unsupported
+or oversized pictures do not erase usable text; URI/resource/adaptive icons are
+not opened. No URLs in message text are fetched. Notification-level pictures are
+not attributed to particular messages, nor called original/full-card graphics.
+
+Only a nonempty Google shortcut supplies identity, combined with Google app UID
+(including Android user) under a private per-install HMAC secret. Titles never
+become identity. Another install/UID/shortcut produces a different key. Missing
+identity is refused, never matched by sender/title. No raw shortcut, notification
+ID, separate sender field or attachment URI leaves the phone. The approved title
+and message text can naturally contain names, addresses or links; they are private
+content, not content-free diagnostics. Content callbacks require API29+ and
+MessagingStyle decoding API30+; unsupported older devices report unavailable.
+
+The private mode0600 files are `notification-content.json` (2MiB maximum), the
+fixed-state `notification-content-state.json`, and a separate private identity
+file that is never transferred. The image is inline canonical base64, so the
+sample is replaced atomically as a unit. A bounded single-worker/latest-only
+queue, generation checks and opt-in revision checks prevent late publication
+after Disable/Clear/close. Summary updates cannot cancel a queued individual.
+This does not change Google pairing, default messaging, existing SMS grants,
+shared-image exports or metadata report format. The metadata report's false
+content-export/decode flags describe that counts-only report, not this separately
+approved content file.
+
+**Disable content samples** prevents new saves but retains the latest sample.
+**Delete saved notification content** removes only that sample, not the stable
+identity, Google messages, saved shared image or metadata. Disable first to prevent
+a future new notification from repopulating the file. Files persist until replaced
+or deleted; transfer accepts only samples captured within30 minutes. No new OS
+permission or Internet/send/provider-write capability is added.
+
+```sh
+python3 -B probe.py --serial PHONE_CONNECTION notification-content-summary
+```
+
+This command reads fixed state/sample/state files, refuses a changed or stale
+attempt and rejects synthetic/private/unknown fields and bad images. It outputs
+only counts and support states, never a source title, message body, identifier,
+URL or base64. Synthetic parser/encoder controls use isolated cache and cannot
+overwrite owner files or arm content capture. A separately tagged synthetic cache
+fixture permits automated Android-to-host PNG compatibility checks.
+
+Validated locally:377 denied/374 granted API35 assertions,44 host tests, and87
+Mac tests including actual native fixture rendering. The installed Mac viewer
+uses specific support-state errors rather than suggesting more permissions for
+unsupported source data. The signed universal desktop build is2026102605.
+The test phone's v0.9 update and real content transfer are still pending reconnecting
+its wireless-debugging listener; a real metadata sample is not a content-transfer
+or business-card proof.

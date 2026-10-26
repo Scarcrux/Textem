@@ -52,6 +52,17 @@ public final class CaptureSetupActivity extends Activity {
             CaptureState.record(this, report, "STATE"); refresh();
         });
         button(root, "Clear readiness diagnostics", "capture-clear", () -> { CaptureState.clear(this); refresh(); });
+        label(root, "Optional local content sample: separately saves the latest Google notification title, up to ten text previews and one available picture. This replaces the previous sample, not a message archive. Images may be partial; URI attachments are not opened. No automatic web-thread mapping or full cards/history. No uploads.", 16);
+        button(root, "Enable local content samples", "content-enable", () -> {
+            if (!CaptureState.enabled(this) || !CaptureState.access(this)) {
+                status.setText("Enable readiness checks and approve Android notification access first."); return;
+            }
+            NotificationContentStore.enabled(this, true); CaptureListener.sampleCurrent(); refresh();
+        });
+        button(root, "Disable content samples (keep last sample)", "content-disable", () -> {
+            NotificationContentStore.enabled(this, false); NotificationContentStore.status(this, "OFF"); refresh();
+        });
+        button(root, "Delete saved notification content", "content-clear", () -> { NotificationContentStore.clear(this); refresh(); });
         button(root, "Back", "capture-back", this::finish);
         // Status must be meaningful before the first lifecycle/handler pulse.
         refresh();
@@ -73,7 +84,10 @@ public final class CaptureSetupActivity extends Activity {
                 + "; attachment URIs: " + j.getInt("uri_attachments")
                 + "\nCounts only; full content recovery remains unproven.";
         } catch (Exception absent) { }
-        status.setText("Checks: " + state + "\n" + sample);
+        String content = NotificationContentStore.enabled(this) ? "ON" : "OFF";
+        try { content += " / last attempt: " + NotificationContentStore.read(this, NotificationContentStore.STATE, 4096).getString("state"); }
+        catch (Exception absent) { }
+        status.setText("Checks: " + state + "\n" + sample + "\nLocal content samples: " + content);
     }
     @Override protected void onResume() { super.onResume(); refresh(); handler.postDelayed(update, 1000); }
     @Override protected void onPause() { handler.removeCallbacksAndMessages(null); super.onPause(); }

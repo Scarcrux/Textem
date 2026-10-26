@@ -24,6 +24,7 @@ enum MainMenu {
         appMenu.addItem(withTitle: "Send Test Notification", action: #selector(AppDelegate.sendTestNotification(_:)), keyEquivalent: "")
         appMenu.addItem(withTitle: "Phone-only Message Preview…", action: #selector(AppDelegate.showLinkPreviews(_:)), keyEquivalent: "")
         appMenu.addItem(withTitle: "Shared Phone Images…", action: #selector(AppDelegate.showPhoneImages(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "Phone Notification Preview…", action: #selector(AppDelegate.showPhoneNotification(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
 
         // Page reload — needed for the pairing dance and general refresh.

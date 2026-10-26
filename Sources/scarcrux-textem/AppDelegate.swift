@@ -256,6 +256,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showMainWindow()
     }
 
+    private var phoneNotificationWindow: PhoneNotificationWindowController?
+    @objc func showPhoneNotification(_ sender: Any?) {
+        if phoneNotificationWindow == nil { phoneNotificationWindow = PhoneNotificationWindowController() }
+        phoneNotificationWindow?.showWindow(nil); phoneNotificationWindow?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func applicationWillTerminate(_ notification: Notification) { PhoneImageADBClient.shared.stop() }
 
     private func showMainWindow() {
