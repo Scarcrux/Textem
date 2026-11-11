@@ -199,10 +199,9 @@ guarantee the identical automatic “from Messages” popup.
 Run `bash Experiments/NativeAutoFill/build.sh` to compile the universal `.appex`
 into `.build.nosync/native-autofill`, and
 `bash Experiments/NativeAutoFill/preflight.sh` for a read-only signing-capability
-check (counts and booleans only, never decoded profile contents). The extension
-is only ad-hoc signed for local build verification, not installed or activated.
-Apple requires the AutoFill capability on both the app and extension; current
-local profiles authorize neither exact identifier with the shared Keychain group. The preflight is an early
+check (counts and booleans only, never decoded profile contents). This standalone
+build is ad-hoc signed for local verification, not installation or activation.
+Apple requires the AutoFill capability on both the app and extension. The preflight is an early
 capability check, not a complete signing/profile validation or installer.
 Run `swift test --filter NativeAutoFillTests` for synthetic policy/request/UI
 controls; optionally set `TEXTEM_AUTOFILL_FIXTURE` to a local PNG output path.
@@ -247,17 +246,43 @@ For signing, `bash Experiments/NativeAutoFill/project.sh` generates an experimen
 Xcode host+embedded extension project under `.build.nosync/native-autofill-project`.
 Both targets declare AutoFill and the shared Keychain group; the extension is
 sandboxed. The complete project builds unsigned. An automatic provisioning build
-was attempted but Xcode reports **No Accounts** and missing profiles for both
-targets: add the developer account in Xcode Settings → Accounts first. Generating
-the project does not install, register, enable or run the extension. Do not replace
-the stable installed app with a development-signed build: final deployment must
-preserve its Developer ID designated requirement and pass signed-profile checks.
+initially failed with **No Accounts**. After the owner added the account and
+explicitly approved registering this Mac, the provisioned build/archive succeeded;
+both exact target profiles include this Mac and the shared-group capability.
+Device identifiers and certificate/account names are never printed by the checker.
+Generating the project does not itself install, enable or run the extension.
 
-Remaining live gates: authorized host/extension profiles and stable signing,
-actual shared-Keychain access, owner enablement as an AutoFill provider, a fresh
+`BUILD_NUMBER=2026111102 bash Experiments/NativeAutoFill/signed-build.sh` is the
+tested local archive/export workflow (choose a number newer than the installed
+build). It exports with the pinned stable Developer ID certificate and restores
+the installed host's exact designated requirement. This matters: Xcode's default
+export synthesized a broader requirement with a Mac App Store alternative, which
+the first candidate check correctly refused. Exported entitlements and the nested
+extension signature are preserved. Never run the development-signed build over
+the stable installation.
+
+The artifact is under `.build.nosync/native-autofill-release-BUILD/export/Textem.app`.
+`verify.sh candidate.app /Applications/Textem.app BUILD` checks strict nested
+signatures, pinned leaf certificate, CMS profile signature/trust, profile expiry,
+distribution eligibility, exact IDs/group, disabled debug entitlement, extension
+sandbox, both architectures, advancing build versions and the installed OS
+requirement. It is read-only and prints no profile contents. Negative policy
+controls cover wrong certificates, development/expired profiles, extra groups and
+debug entitlements. `signed-build.sh` does not notarize, publish, install, register
+a new device or enable an OS credential provider. Keep Xcode build logs private.
+
+Notarize and staple this exported candidate separately; normal `make bundle`
+still produces the app without an embedded provider. The provisioned universal
+build2026111102 passes these checks and Apple notarization. The canonical
+requirement text matches the installed host and macOS accepts the candidate
+against the actual old requirement; raw requirement-blob bytes are not a reliable
+equality check. Owner provider enablement in System Settings remains a separate
+consent step, not a preference to bypass.
+
+Remaining live gates: actual shared-Keychain access, owner enablement as an AutoFill provider, a fresh
 real phone code transfer, and an OS-launched extension plus actual target-field
 fill. These are not proven by injected storage, compiling, or rendering a local
-controller. The installed app has not been replaced. Initial controls and their
+controller. Initial controls and their
 verdicts are recorded in the experiment's `PREREGISTRATION.txt`.
 
 #### Local notification preview sample
