@@ -8,6 +8,9 @@ let package = Package(
     ],
     targets: [
         .executableTarget(name: "scarcrux-textem"),
-        .testTarget(name: "TextemTests", dependencies: ["scarcrux-textem"]),
+        .target(name: "NativeAutoFillCore", path: "Experiments/NativeAutoFill/Core"),
+        .target(name: "NativeAutoFillProvider", dependencies: ["NativeAutoFillCore"],
+                path: "Experiments/NativeAutoFill/Provider"),
+        .testTarget(name: "TextemTests", dependencies: ["scarcrux-textem", "NativeAutoFillProvider"]),
     ]
 )

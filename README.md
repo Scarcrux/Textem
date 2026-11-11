@@ -187,6 +187,42 @@ exports only counts/types—not message text or graphics. It does not enable
 automatic content sync. See the [probe documentation](Experiments/AndroidProbe/README.md#automatic-recovery-readiness-check-v08)
 for its access boundary and remaining live-delivery/identity gates.
 
+#### Native verification-code AutoFill prototype
+
+`Experiments/NativeAutoFill` contains a real macOS 15+ AuthenticationServices
+credential-provider extension, separate from the shipping application. This
+uses Apple's [public OTP provider API](https://developer.apple.com/documentation/authenticationservices/providing-one-time-passcodes-to-autofill),
+not clipboard/key injection or writes into Apple Messages. It does not enroll
+Textem in Apple's Messages/Mail delivered-code detection pipeline and does not
+guarantee the identical automatic “from Messages” popup.
+
+Run `bash Experiments/NativeAutoFill/build.sh` to compile the universal `.appex`
+into `.build.nosync/native-autofill`, and
+`bash Experiments/NativeAutoFill/preflight.sh` for a read-only signing-capability
+check (counts and booleans only, never decoded profile contents). The extension
+is only ad-hoc signed for local build verification, not installed or activated.
+Apple requires the AutoFill capability on both the app and extension; current
+local profiles authorize neither exact identifier. The preflight is an early
+capability check, not a complete signing/profile validation or installer.
+Run `swift test --filter NativeAutoFillTests` for synthetic policy/request/UI
+controls; optionally set `TEXTEM_AUTOFILL_FIXTURE` to a local PNG output path.
+
+The first prototype only accepts fresh, unambiguous numeric codes with a single
+explicit domain-binding footer such as `@example.com #004321`. Offers expire
+after three minutes, match the exact requested domain and record, and are
+rechecked when selected. Password/passkey requests are refused; a fill requires
+user interaction. Synthetic tests inject samples in memory into the real native
+controller, with completion redirected to a test sink rather than macOS AutoFill.
+The default sample source is empty, with no disk store or real-message ingestion.
+The installed app, clipboard, accounts and phone settings remain unchanged.
+
+Remaining integration gates: authorized host/extension provisioning, encrypted
+shared storage, fresh incoming-message ingestion (never re-age old snippets),
+user enablement as an AutoFill provider, identity publication/removal, and an
+OS-launched extension plus actual target-field fill. No system-wide success is
+claimed from compiling or rendering a controller locally. Initial controls and
+their verdicts are recorded in the experiment's `PREREGISTRATION.txt`.
+
 #### Local notification preview sample
 
 Previously recovered legacy exports remain available in **Phone-only Message
