@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import NativeAutoFillCore
 
 @MainActor
 final class PhoneNotificationModel: ObservableObject {
@@ -10,10 +11,13 @@ final class PhoneNotificationModel: ObservableObject {
     private var requestID = UUID()
     let directory: URL
     private let persistEndpoint: Bool
+    private let revokeCodes: @MainActor (PhoneNotificationSnapshot) throws -> Void
     let fetch: @Sendable (String) async throws -> PhoneNotificationSnapshot
     init(directory: URL = PhoneNotificationStore.directory, persistEndpoint: Bool = true,
-         fetch: @escaping @Sendable (String) async throws -> PhoneNotificationSnapshot = { try await PhoneImageADBClient.shared.fetchNotification(endpoint: $0) }) {
+         fetch: @escaping @Sendable (String) async throws -> PhoneNotificationSnapshot = { try await PhoneImageADBClient.shared.fetchNotification(endpoint: $0) },
+         revokeCodes: @escaping @MainActor (PhoneNotificationSnapshot) throws -> Void = { try NativeAutoFillCoordinator.shared.clearSource($0) }) {
         self.directory = directory; self.fetch = fetch; self.persistEndpoint = persistEndpoint
+        self.revokeCodes = revokeCodes
         endpoint = UserDefaults.standard.string(forKey: "phoneImageEndpoint") ?? ""
         do { snapshot = try PhoneNotificationStore.load(in: directory) }
         catch { status = (error as? PhoneNotificationError ?? .privateFile).localizedDescription }
@@ -46,9 +50,11 @@ final class PhoneNotificationModel: ObservableObject {
     func clear() {
         guard !busy else { return }
         do {
-            if persistEndpoint, let snapshot { try NativeAutoFillCoordinator.shared.clearSource(snapshot) }
+            if persistEndpoint, let snapshot { try revokeCodes(snapshot) }
             if FileManager.default.fileExists(atPath: directory.path) { try PhoneNotificationStore.clear(in: directory) }
             snapshot = nil; status = "Mac sample deleted. The phone sample, original messages and shared-image library are unchanged."
+        } catch let error as CodeVaultError {
+            status = "Mac sample retained because native code revocation failed. " + error.localizedDescription
         } catch { status = PhoneNotificationError.privateFile.localizedDescription }
     }
 }

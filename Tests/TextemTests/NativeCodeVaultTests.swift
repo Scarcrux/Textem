@@ -211,4 +211,23 @@ struct NativeCodeVaultTests {
         await model.setEnabled(false)
         #expect(storage.data == nil && model.status.contains("off"))
     }
+
+    @Test func macSampleClearReportsRevocationFailureAndPreservesSample() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("textem-revocation-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sample = try PhoneNotificationTests().fixture()
+        try PhoneNotificationStore.save(sample, in: root)
+        let beforeEndpoint = UserDefaults.standard.string(forKey: "phoneImageEndpoint")
+        let failed = PhoneNotificationModel(directory: root, revokeCodes: { _ in throw CodeVaultError.unavailable(-25308) })
+        failed.clear()
+        #expect(failed.status.contains("revocation") && !failed.status.contains("storage is not private"))
+        let retained = try PhoneNotificationStore.load(in: root)
+        #expect(failed.snapshot == sample && retained == sample)
+        var revoked = false
+        let success = PhoneNotificationModel(directory: root, revokeCodes: { _ in revoked = true })
+        success.clear()
+        #expect(revoked && success.snapshot == nil)
+        #expect(try PhoneNotificationStore.load(in: root) == nil)
+        #expect(UserDefaults.standard.string(forKey: "phoneImageEndpoint") == beforeEndpoint)
+    }
 }
