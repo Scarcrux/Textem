@@ -14,8 +14,11 @@ private final class ProviderBackground: NSView {
 @available(macOS 15.0, *)
 @objc(TextemCodeProvider)
 public final class CredentialProvider: ASCredentialProviderViewController {
-    // Safe empty production default. Tests inject only synthetic samples in memory.
-    public var readSamples: () -> [CodeSample] = { [] }
+    // Missing entitlement, locked device, disabled consent or malformed storage
+    // all fail closed. Tests replace this reader with in-memory synthetic data.
+    public var readSamples: () -> [CodeSample] = {
+        (try? CodeVault(storage: KeychainCodeStorage()).eligible(now: Date())) ?? []
+    }
     public var now: () -> Date = Date.init
     public var testCompletion: ((String?) -> Void)?
     public var testCancellation: ((ASExtensionError.Code) -> Void)?

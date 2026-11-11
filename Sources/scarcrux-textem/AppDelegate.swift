@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var globalHotkey: GlobalHotkey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NativeAutoFillCoordinator.shared.start()
         NSApp.mainMenu = MainMenu.build(appName: "Textem")
 
         let controller = MainWindowController()

@@ -7,7 +7,7 @@ let package = Package(
         .macOS(.v13),
     ],
     targets: [
-        .executableTarget(name: "scarcrux-textem"),
+        .executableTarget(name: "scarcrux-textem", dependencies: ["NativeAutoFillCore"]),
         .target(name: "NativeAutoFillCore", path: "Experiments/NativeAutoFill/Core"),
         .target(name: "NativeAutoFillProvider", dependencies: ["NativeAutoFillCore"],
                 path: "Experiments/NativeAutoFill/Provider"),

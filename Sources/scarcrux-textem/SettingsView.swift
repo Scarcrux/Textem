@@ -13,6 +13,11 @@ struct SettingsView: View {
     @AppStorage("blurMessages") private var blurMessages = false
     @AppStorage("hideAvatars") private var hideAvatars = false
     @State private var launchAtLogin = LoginItem.isEnabled
+    @StateObject private var nativeCodes: NativeAutoFillCoordinator
+
+    init(nativeCodes: NativeAutoFillCoordinator = .shared) {
+        _nativeCodes = StateObject(wrappedValue: nativeCodes)
+    }
 
     // Notify the live web view to re-apply privacy CSS after a toggle.
     private func privacyChanged() {
@@ -62,6 +67,17 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Native code AutoFill") {
+                Toggle("Offer fresh verification codes through Textem Codes", isOn: Binding(
+                    get: { nativeCodes.enabled }, set: { value in Task { await nativeCodes.setEnabled(value) } }
+                )).disabled(!nativeCodes.available).accessibilityIdentifier("native-code-autofill-toggle")
+                Text(nativeCodes.status).font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-code-autofill-status")
+                Button("Delete native codes and source links") {
+                    Task { await nativeCodes.setEnabled(false) }
+                }.disabled(!nativeCodes.available)
+            }
+
             Section("Privacy") {
                 Toggle("Blur message previews (clears on hover)", isOn: Binding(
                     get: { blurMessages },
@@ -77,6 +93,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 470)
+        .frame(width: 460, height: 740)
     }
 }

@@ -46,8 +46,15 @@ struct NativeAutoFillTests {
         #expect(CodePolicy.domain(for: "https://example.com", isURL: false) == nil)
     }
 
+    @Test func explicitRecordCannotBypassDomainAmbiguity() throws {
+        let first = try #require(sample())
+        let second = try #require(sample("@example.com #112233"))
+        #expect(CodePolicy.select([first, second], domains: ["example.com"], recordID: first.id.uuidString, now: time) == nil)
+    }
+
     @Test func signingGateDiscriminatesUnrelatedExpiredAndMissingCapabilities() {
         let entitlements: [String: Any] = ["com.apple.application-identifier": "TESTTEAM.com.scarcrux.textem.codeprovider",
+            "keychain-access-groups": ["TESTTEAM.com.scarcrux.textem.codes"],
             "com.apple.developer.authentication-services.autofill-credential-provider": true]
         var profile: [String: Any] = ["TeamIdentifier": ["TESTTEAM"], "ExpirationDate": time.addingTimeInterval(1), "Entitlements": entitlements]
         func allowed(_ p: [String: Any], _ bundle: String = "com.scarcrux.textem.codeprovider") -> Bool {

@@ -1,0 +1,56 @@
+name: TextemNativeCodes
+options:
+  deploymentTarget:
+    macOS: '13.0'
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    DEVELOPMENT_TEAM: K466Z7J2AS
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+targets:
+  NativeAutoFillCore:
+    type: library.static
+    platform: macOS
+    sources: [Experiments/NativeAutoFill/Core]
+    settings:
+      base:
+        PRODUCT_MODULE_NAME: NativeAutoFillCore
+        DEFINES_MODULE: YES
+        SKIP_INSTALL: YES
+  TextemCodeProvider:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: '15.0'
+    sources: [Experiments/NativeAutoFill/Provider]
+    dependencies:
+      - target: NativeAutoFillCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.scarcrux.textem.codeprovider
+        INFOPLIST_FILE: $(SRCROOT)/../../Experiments/NativeAutoFill/Extension-Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: $(SRCROOT)/../../Experiments/NativeAutoFill/Provider.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+  Textem:
+    type: application
+    platform: macOS
+    sources: [Sources/scarcrux-textem]
+    dependencies:
+      - target: NativeAutoFillCore
+      - target: TextemCodeProvider
+        embed: true
+    resources: [Resources/AppIcon.icns]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.scarcrux.textem
+        INFOPLIST_FILE: $(SRCROOT)/../../Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: $(SRCROOT)/../../Experiments/NativeAutoFill/Host.entitlements
+        COMBINE_HIDPI_IMAGES: YES
+schemes:
+  TextemNativeCodes:
+    build:
+      targets:
+        Textem: all

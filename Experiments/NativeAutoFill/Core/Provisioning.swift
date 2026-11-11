@@ -6,7 +6,9 @@ public enum AutoFillProvisioning {
               let teams = profile["TeamIdentifier"] as? [String], teams.contains(teamID),
               let entitlements = profile["Entitlements"] as? [String: Any],
               let enabled = entitlements["com.apple.developer.authentication-services.autofill-credential-provider"] as? NSNumber,
-              CFGetTypeID(enabled) == CFBooleanGetTypeID(), enabled.boolValue else { return false }
+              CFGetTypeID(enabled) == CFBooleanGetTypeID(), enabled.boolValue,
+              let groups = entitlements["keychain-access-groups"] as? [String],
+              groups.contains(where: { $0 == teamID + ".com.scarcrux.textem.codes" || $0 == teamID + ".*" }) else { return false }
         let identifier = entitlements["com.apple.application-identifier"] as? String ?? entitlements["application-identifier"] as? String
         // Deliberately require exact IDs, not wildcard/unrelated provisioning.
         return identifier == teamID + "." + bundleID

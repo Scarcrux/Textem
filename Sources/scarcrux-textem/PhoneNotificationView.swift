@@ -35,6 +35,7 @@ final class PhoneNotificationModel: ObservableObject {
             try PhoneNotificationStore.save(value, in: directory)
             if persistEndpoint { UserDefaults.standard.set(address, forKey: "phoneImageEndpoint") }
             snapshot = value; status = "Imported one private notification preview. No web account or conversation was guessed."
+            if persistEndpoint { await NativeAutoFillCoordinator.shared.ingest(value) }
         } catch {
             guard requestID == id else { return }
             if let error = error as? PhoneNotificationError { status = error.localizedDescription }
@@ -45,6 +46,7 @@ final class PhoneNotificationModel: ObservableObject {
     func clear() {
         guard !busy else { return }
         do {
+            if persistEndpoint, let snapshot { try NativeAutoFillCoordinator.shared.clearSource(snapshot) }
             if FileManager.default.fileExists(atPath: directory.path) { try PhoneNotificationStore.clear(in: directory) }
             snapshot = nil; status = "Mac sample deleted. The phone sample, original messages and shared-image library are unchanged."
         } catch { status = PhoneNotificationError.privateFile.localizedDescription }
@@ -53,10 +55,22 @@ final class PhoneNotificationModel: ObservableObject {
 
 struct PhoneNotificationView: View {
     @ObservedObject var model: PhoneNotificationModel
+    @ObservedObject var nativeCodes = NativeAutoFillCoordinator.shared
+    var codeAccounts: [Account] = []
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Phone Notification Preview", systemImage: "text.bubble").font(.title2)
             Text("Separate local sample · not linked to a web conversation").font(.subheadline).foregroundStyle(.secondary)
+            if nativeCodes.enabled, let snapshot = model.snapshot, !codeAccounts.isEmpty {
+                Menu("Link this code source to an account…") {
+                    ForEach(codeAccounts) { account in
+                        Button(account.name) { Task { await NativeAutoFillCoordinator.shared.bind(snapshot, accountID: account.id) } }
+                    }
+                }.disabled(model.busy)
+                Text("Links only this phone installation and notification source for verification codes. It does not attach message history or graphics to a web thread.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(nativeCodes.status).font(.caption).foregroundStyle(.secondary)
+            }
             TextField("Wireless debugging IP:port (optional for USB)", text: $model.endpoint)
                 .textFieldStyle(.roundedBorder).disabled(model.busy).accessibilityIdentifier("notification-endpoint")
             HStack {
@@ -113,7 +127,7 @@ struct PhoneNotificationView: View {
 final class PhoneNotificationWindowController: NSWindowController, NSWindowDelegate {
     let model = PhoneNotificationModel()
     init() {
-        let host = NSHostingController(rootView: PhoneNotificationView(model: model))
+        let host = NSHostingController(rootView: PhoneNotificationView(model: model, codeAccounts: AccountStore.shared.accounts))
         let window = NSWindow(contentViewController: host)
         window.title = "Phone Notification Preview"; window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.setContentSize(NSSize(width: 680, height: 780)); window.minSize = NSSize(width: 520, height: 640)

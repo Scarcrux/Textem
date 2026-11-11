@@ -61,9 +61,10 @@ public enum CodePolicy {
     public static func select(_ samples: [CodeSample], domains: Set<String>, recordID: String? = nil,
                               now: Date) -> CodeSample? {
         let matches = samples.filter {
-            domains.contains($0.domain) && $0.eligible(domain: $0.domain, now: now) &&
-            (recordID == nil || $0.id.uuidString == recordID)
+            domains.contains($0.domain) && $0.eligible(domain: $0.domain, now: now)
         }
-        return matches.count == 1 ? matches[0] : nil
+        guard matches.count == 1, let sample = matches.first,
+              recordID == nil || sample.id.uuidString == recordID else { return nil }
+        return sample
     }
 }

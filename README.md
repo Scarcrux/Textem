@@ -202,10 +202,13 @@ into `.build.nosync/native-autofill`, and
 check (counts and booleans only, never decoded profile contents). The extension
 is only ad-hoc signed for local build verification, not installed or activated.
 Apple requires the AutoFill capability on both the app and extension; current
-local profiles authorize neither exact identifier. The preflight is an early
+local profiles authorize neither exact identifier with the shared Keychain group. The preflight is an early
 capability check, not a complete signing/profile validation or installer.
 Run `swift test --filter NativeAutoFillTests` for synthetic policy/request/UI
 controls; optionally set `TEXTEM_AUTOFILL_FIXTURE` to a local PNG output path.
+`swift test --filter NativeCodeVaultTests` exercises the storage/feed/index
+controls with injected in-memory storage, not the owner's Keychain. Set
+`TEXTEM_AUTOFILL_SETTINGS_FIXTURE` for an offscreen settings screenshot.
 
 The first prototype only accepts fresh, unambiguous numeric codes with a single
 explicit domain-binding footer such as `@example.com #004321`. Offers expire
@@ -213,15 +216,49 @@ after three minutes, match the exact requested domain and record, and are
 rechecked when selected. Password/passkey requests are refused; a fill requires
 user interaction. Synthetic tests inject samples in memory into the real native
 controller, with completion redirected to a test sink rather than macOS AutoFill.
-The default sample source is empty, with no disk store or real-message ingestion.
-The installed app, clipboard, accounts and phone settings remain unchanged.
+The provider now reads an explicitly scoped data-protection Keychain item, with
+when-unlocked/device-only protection and noninteractive authentication. There is
+no file, UserDefaults or unscoped login-Keychain fallback. Missing entitlements,
+locked storage, disabled consent and invalid data fail closed. The bounded vault
+stores code/domain records and opaque source/account bindings, not message bodies
+or sender labels. Disabling/clearing deletes those records and bindings. Account
+removal and clearing a linked notification sample revoke its codes as well.
 
-Remaining integration gates: authorized host/extension provisioning, encrypted
-shared storage, fresh incoming-message ingestion (never re-age old snippets),
-user enablement as an AutoFill provider, identity publication/removal, and an
-OS-launched extension plus actual target-field fill. No system-wide success is
-claimed from compiling or rendering a controller locally. Initial controls and
-their verdicts are recorded in the experiment's `PREREGISTRATION.txt`.
+The experimental host has a default-off **Native code AutoFill** setting. In a
+properly provisioned build, enable it, then use **Phone Notification Preview… →
+Link this code source to an account…** for an explicit binding. Only validated real
+`POSTED` notification samples with original message timestamps younger than three
+minutes can feed codes on a manual phone import. Unknown timestamps, active scans,
+truncated messages, synthetic kinds and unlinked sources are refused. Import time
+never resets a code's lifetime. No code is extracted by guessing from a business
+name or by rescanning old web snippets. Message direction is still not established
+by these notification samples; this is notification-code capture, not proven SMS
+inbox ingestion. Continuous/background phone sync is not implemented.
+
+The native suggestion index contains only domain/record metadata, never the code.
+Ambiguous domains are suppressed, expiry prunes stale records while the host runs, and publication
+is serialized so a late update cannot undo a clear. The provider rechecks ambiguity
+and storage on selection, including requests for an old explicit record ID.
+If the host exits, expired data can remain in the encrypted Keychain until the
+next host startup or explicit clear; it is never eligible for filling after its
+deadline. This is not a claim of OS-scheduled physical deletion.
+
+For signing, `bash Experiments/NativeAutoFill/project.sh` generates an experimental
+Xcode host+embedded extension project under `.build.nosync/native-autofill-project`.
+Both targets declare AutoFill and the shared Keychain group; the extension is
+sandboxed. The complete project builds unsigned. An automatic provisioning build
+was attempted but Xcode reports **No Accounts** and missing profiles for both
+targets: add the developer account in Xcode Settings → Accounts first. Generating
+the project does not install, register, enable or run the extension. Do not replace
+the stable installed app with a development-signed build: final deployment must
+preserve its Developer ID designated requirement and pass signed-profile checks.
+
+Remaining live gates: authorized host/extension profiles and stable signing,
+actual shared-Keychain access, owner enablement as an AutoFill provider, a fresh
+real phone code transfer, and an OS-launched extension plus actual target-field
+fill. These are not proven by injected storage, compiling, or rendering a local
+controller. The installed app has not been replaced. Initial controls and their
+verdicts are recorded in the experiment's `PREREGISTRATION.txt`.
 
 #### Local notification preview sample
 
