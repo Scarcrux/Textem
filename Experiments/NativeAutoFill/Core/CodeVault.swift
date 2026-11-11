@@ -80,6 +80,11 @@ public struct NotificationCodeSource: Codable, Equatable, Sendable {
 /// One host process writes; extensions read only. All local calls are serialized
 /// on the main actor. No real message or title is persisted in this vault.
 @MainActor public final class CodeVault {
+    public struct Readiness: Equatable, Sendable {
+        public let enabled: Bool
+        public let sources: Int
+        public let eligible: Int
+    }
     public static let maximumBytes = 32_768
     private struct Binding: Codable { let source: NotificationCodeSource; let accountID: UUID }
     private struct Record: Codable { let receipt: String; let sample: CodeSample }
@@ -114,6 +119,11 @@ public struct NotificationCodeSource: Codable, Equatable, Sendable {
         try storage.write(data)
     }
     public func isEnabled() throws -> Bool { try load().enabled }
+    public func readiness(now: Date) throws -> Readiness {
+        let state = try load()
+        return Readiness(enabled: state.enabled, sources: state.bindings.count,
+                         eligible: state.enabled ? state.records.filter { $0.sample.eligible(domain: $0.sample.domain, now: now) }.count : 0)
+    }
     public func enable() throws { var state = try load(); state.enabled = true; try save(state) }
     public func disableAndClear() throws { try storage.delete() }
     public func bind(_ source: NotificationCodeSource, to accountID: UUID) throws {

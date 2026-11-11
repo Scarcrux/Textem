@@ -60,13 +60,20 @@ enum NativeCodeSetupError: Error { case notEnabled, unsupported }
     private let publisher: any CodeIndexPublishing
     private let clock: () -> Date
     private let accountExists: (UUID) -> Bool
+    private let diagnose: (NativeAutoFillDiagnostics.Event, NativeAutoFillDiagnostics.Counts) -> Void
     private var publication: Task<Void, Never>?
     private var expiry: Task<Void, Never>?
     private var revision = UUID()
 
     init(vault: CodeVault? = nil, publisher: (any CodeIndexPublishing)? = nil,
          available: Bool? = nil, clock: @escaping () -> Date = Date.init,
-         accountExists: @escaping (UUID) -> Bool = { id in AccountStore.shared.accounts.contains { $0.id == id } }) {
+         accountExists: @escaping (UUID) -> Bool = { id in AccountStore.shared.accounts.contains { $0.id == id } },
+         diagnose: ((NativeAutoFillDiagnostics.Event, NativeAutoFillDiagnostics.Counts) -> Void)? = nil) {
+        // Injected stores/publishers/runtime gates are test contexts: no default
+        // live diagnostics, even if the test forgets to pass a private sink.
+        let live = vault == nil && publisher == nil && available == nil
+            && Bundle.main.bundleIdentifier == "com.scarcrux.textem"
+        self.diagnose = diagnose ?? (live ? NativeAutoFillDiagnostics.record : { _, _ in })
         self.vault = vault ?? CodeVault(storage: KeychainCodeStorage())
         self.publisher = publisher ?? SystemCodeIndex()
         self.available = available ?? NativeCodeRuntime.available
@@ -78,7 +85,10 @@ enum NativeCodeSetupError: Error { case notEnabled, unsupported }
         }
     }
 
-    func start() { guard available else { return }; Task { await synchronize() } }
+    func start() {
+        guard available else { diagnose(.runtimeUnavailable, .init()); return }
+        Task { await synchronize() }
+    }
     func setEnabled(_ value: Bool) async {
         guard available else { return }
         revision = UUID(); expiry?.cancel()
@@ -86,7 +96,12 @@ enum NativeCodeSetupError: Error { case notEnabled, unsupported }
             if value { try vault.enable() } else { try vault.disableAndClear() }
             enabled = value
             await synchronize()
-        } catch { status = "Could not change protected code storage. No fallback storage was used." }
+        } catch {
+            var counts = NativeAutoFillDiagnostics.Counts()
+            if case CodeVaultError.unavailable(let status) = error { counts.failure = Int(status) }
+            diagnose(.vaultRefused, counts)
+            status = "Could not change protected code storage. No fallback storage was used."
+        }
     }
 
     func bind(_ snapshot: PhoneNotificationSnapshot, accountID: UUID) async {
@@ -138,19 +153,33 @@ enum NativeCodeSetupError: Error { case notEnabled, unsupported }
         let task = Task { [weak self] in
             await previous?.value
             guard let self else { return }
+            var counts = NativeAutoFillDiagnostics.Counts()
+            var vaultRead = false
             do {
                 try vault.prune(now: clock())
+                let readiness = try vault.readiness(now: clock())
+                counts = .init(capture: readiness.enabled ? 1 : 0, provider: 0,
+                               sources: readiness.sources, eligible: readiness.eligible)
                 let samples = try vault.eligible(now: clock())
+                vaultRead = true
                 scheduleExpiry(samples)
                 try await publisher.replace(CodeIndexEntry.project(samples, now: clock()))
                 guard revision == id else { return }
+                counts.provider = 1
+                diagnose(.ready, counts)
                 status = enabled ? "Native provider updated: \(CodeIndexEntry.project(samples, now: clock()).count) fresh domain-matched code(s). Phone imports are manual; continuous sync is not enabled." : "Native code AutoFill is off. Protected samples and source bindings were deleted."
             } catch NativeCodeSetupError.notEnabled {
                 if revision == id {
+                    diagnose(.providerDisabled, counts)
                     status = enabled ? "Enable Textem Codes in System Settings → General → AutoFill & Passwords. Codes stay protected; native suggestions are not active." : "Native code AutoFill is off. Protected samples and source bindings were deleted; the OS has disabled its suggestion index."
                 }
             } catch {
-                if revision == id { status = "Native AutoFill update failed or protected storage is locked. No native suggestion success is claimed." }
+                if revision == id {
+                    if case CodeVaultError.unavailable(let status) = error { counts.failure = Int(status) }
+                    else if vaultRead { counts.failure = (error as NSError).code }
+                    diagnose(vaultRead ? .publicationRefused : .vaultRefused, counts)
+                    status = "Native AutoFill update failed or protected storage is locked. No native suggestion success is claimed."
+                }
             }
         }
         publication = task

@@ -279,6 +279,17 @@ against the actual old requirement; raw requirement-blob bytes are not a reliabl
 equality check. Owner provider enablement in System Settings remains a separate
 consent step, not a preference to bypass.
 
+The genuine containing app writes bounded, private readiness evidence to
+`~/Library/Logs/Textem/native-autofill.jsonl`. It records only fixed event names,
+integer capture/provider flags, source/eligible counts, numeric failure status,
+timestamp and process ID. A `ready` event requires successful protected-vault
+reads, an enabled OS credential store and a completed native index update. It is
+not evidence that a code was filled. Provider-disabled, locked/refused storage,
+publication refusal and unavailable runtime produce distinct events. No code,
+domain, sender/body, account/shortcut ID, raw error or UI snapshot is logged.
+Injected test dependencies disable the live sink by default; synthetic controls
+use private sinks and never populate the owner's readiness history or code vault.
+
 Remaining live gates: actual shared-Keychain access, owner enablement as an AutoFill provider, a fresh
 real phone code transfer, and an OS-launched extension plus actual target-field
 fill. These are not proven by injected storage, compiling, or rendering a local
