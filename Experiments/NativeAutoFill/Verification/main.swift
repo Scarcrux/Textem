@@ -115,6 +115,11 @@ do {
         let id = index == 0 ? "com.scarcrux.textem" : "com.scarcrux.textem.codeprovider"
         let info = try object(Data(contentsOf: bundle.appendingPathComponent("Contents/Info.plist")))
         try require(info["CFBundleIdentifier"] as? String == id && info["CFBundleVersion"] as? String == expectedBuild, "bundle identity/version mismatch")
+        if index == 0 {
+            let reference = try Data(contentsOf: URL(fileURLWithPath: "Resources/AppIcon.icns"))
+            let icon = try? Data(contentsOf: bundle.appendingPathComponent("Contents/Resources/AppIcon.icns"))
+            try require(AppIconPolicy.accepts(iconFile: info["CFBundleIconFile"] as? String, data: icon, reference: reference), "app icon missing, corrupt or different from source")
+        }
         guard let binary = info["CFBundleExecutable"] as? String, !binary.contains("/") else { throw Refused.check("invalid executable") }
         for arch in ["arm64", "x86_64"] { _ = try run("/usr/bin/lipo", ["-verify_arch", arch, bundle.appendingPathComponent("Contents/MacOS/" + binary).path]) }
         let signed = try signing(bundle)

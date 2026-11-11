@@ -38,12 +38,14 @@ targets:
   Textem:
     type: application
     platform: macOS
-    sources: [Sources/scarcrux-textem]
+    sources:
+      - path: Sources/scarcrux-textem
+      - path: Resources/AppIcon.icns
+        buildPhase: resources
     dependencies:
       - target: NativeAutoFillCore
       - target: TextemCodeProvider
         embed: true
-    resources: [Resources/AppIcon.icns]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.scarcrux.textem

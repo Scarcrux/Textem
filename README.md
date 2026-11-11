@@ -261,6 +261,12 @@ the first candidate check correctly refused. Exported entitlements and the neste
 extension signature are preserved. Never run the development-signed build over
 the stable installation.
 
+The app icon is an explicit `sources` entry with `buildPhase: resources` in the
+XcodeGen specification. A former unsupported top-level `resources` key silently
+omitted it, producing a valid signed app but a broken Dock icon. The distribution
+checker now rejects a missing, corrupt or source-mismatched icon and requires
+the declared icon to decode successfully. No icon artwork was changed.
+
 The artifact is under `.build.nosync/native-autofill-release-BUILD/export/Textem.app`.
 `verify.sh candidate.app /Applications/Textem.app BUILD` checks strict nested
 signatures, pinned leaf certificate, CMS profile signature/trust, profile expiry,
