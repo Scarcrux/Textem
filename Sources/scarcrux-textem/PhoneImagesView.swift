@@ -93,35 +93,30 @@ struct PhoneImagesView: View {
     var onOpenLibrary: (() -> Void)? = nil
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Image(systemName: "photo.on.rectangle").font(.title2)
-                VStack(alignment: .leading) {
-                    Text(model.conversationOnly ? "Saved Conversation Images" : "Shared Phone Images").font(.headline)
-                    Text(model.conversationOnly ? "Explicitly linked · this account and thread only" : "Explicit shares · local Mac library")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.plain)
-                    .accessibilityLabel("Close shared phone images")
-            }.padding(20)
+            PhonePanelHeader(
+                symbol: "photo.on.rectangle",
+                title: model.conversationOnly ? "Saved Conversation Images" : "Shared Phone Images",
+                subtitle: model.conversationOnly ? "Explicitly linked · this account and thread only" : "Explicit shares · local Mac library",
+                onClose: onClose, closeLabel: "Close shared phone images").padding(20)
             Divider()
             VStack(alignment: .leading, spacing: 10) {
-                if !model.conversationOnly {
-                  TextField("Wireless debugging IP:port (optional for USB)", text: $model.endpoint)
-                    .textFieldStyle(.roundedBorder).disabled(model.busy)
-                    .accessibilityLabel("Phone wireless debugging address")
-                }
                 HStack {
                     if model.conversationOnly {
                         if let onOpenLibrary { Button("Manage shared images", action: onOpenLibrary) }
+                        Spacer()
                     } else {
-                        Button("Import from phone") { Task { await model.importFromPhone() } }.disabled(model.busy)
+                        TextField("Wireless debugging IP:port (optional for USB)", text: $model.endpoint)
+                            .textFieldStyle(.roundedBorder).disabled(model.busy)
+                            .accessibilityLabel("Phone wireless debugging address")
+                        Button("Import from phone") { Task { await model.importFromPhone() } }
+                            .keyboardShortcut(.defaultAction).disabled(model.busy)
                     }
-                    if model.busy { ProgressView().controlSize(.small) }
-                    Spacer()
-                    Button("Remove Mac copy") { model.removeSelected() }.disabled(model.busy || model.selected == nil)
                 }
-                Text(model.status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    if model.busy { ProgressView().controlSize(.small) }
+                    Text(model.status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let conversation = model.conversation {
                     Text("Conversation: \(conversation.label)").font(.subheadline).lineLimit(2)
                     HStack {
@@ -138,26 +133,30 @@ struct PhoneImagesView: View {
                     Text("To link a graphic, select a phone-only conversation in the inbox. A verified account and route are required.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-            }.padding(.horizontal, 20).padding(.bottom, 14)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.vertical, 14)
             Divider()
             if !model.images.isEmpty {
-                Picker("Saved image", selection: Binding(get: { model.selected?.id ?? model.images[0].id }, set: { model.selectedID = $0 })) {
-                    ForEach(model.images) { image in
-                        Text("\(image.importedAt.formatted(date: .abbreviated, time: .shortened)) · \(image.width)×\(image.height)").tag(image.id)
+                HStack {
+                    Picker("Saved image", selection: Binding(get: { model.selected?.id ?? model.images[0].id }, set: { model.selectedID = $0 })) {
+                        ForEach(model.images) { image in
+                            Text("\(image.importedAt.formatted(date: .abbreviated, time: .shortened)) · \(image.width)×\(image.height)").tag(image.id)
+                        }
                     }
+                    Button("Remove Mac copy", role: .destructive) { model.removeSelected() }
+                        .disabled(model.busy || model.selected == nil)
                 }.padding(.horizontal, 20).padding(.top, 12)
             }
             if let graphic = model.graphic {
-                Image(nsImage: graphic).resizable().scaledToFit().padding(20)
+                Image(nsImage: graphic).resizable().scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(20)
                     .accessibilityLabel("Imported shared phone graphic")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "photo").font(.system(size: 42))
-                    Text(model.images.isEmpty ? (model.conversationOnly ? "No images linked to this conversation" : "No imported images yet") : "Saved image unavailable or refused")
-                    Text("Individual shared graphics only · no complete conversation or background history recovery.")
-                        .font(.caption).multilineTextAlignment(.center)
-                }.foregroundStyle(.secondary).padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)
+                PhoneEmptyState(
+                    symbol: "photo",
+                    title: model.images.isEmpty ? (model.conversationOnly ? "No images linked to this conversation" : "No imported images yet") : "Saved image unavailable or refused",
+                    detail: "Individual shared graphics only · no complete conversation or background history recovery.")
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))

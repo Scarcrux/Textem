@@ -3,7 +3,7 @@ import AppKit
 // A slim find bar that overlays the top of the web view (⌘F). Reports search
 // requests and close via closures; the controller drives WKWebView.find.
 @MainActor
-final class FindBar: NSView {
+final class FindBar: NSView, NSSearchFieldDelegate {
     var onFind: ((String, Bool) -> Void)?
     var onClose: (() -> Void)?
 
@@ -25,41 +25,73 @@ final class FindBar: NSView {
     }
 
     private func build() {
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        // Toolbar-style material instead of a flat fill: it follows light/dark
+        // switches on its own (a CGColor assigned once does not) and reads as
+        // window chrome rather than as part of Google's page.
+        let material = NSVisualEffectView()
+        material.material = .titlebar
+        material.blendingMode = .withinWindow
+        material.state = .followsWindowActiveState
+        let hairline = NSBox()
+        hairline.boxType = .separator
 
         field.placeholderString = "Find on page"
         field.target = self
         field.action = #selector(searchAction)
+        field.delegate = self
         field.sendsSearchStringImmediately = false
+        field.controlSize = .large
 
-        let prev = button("‹", accessibilityLabel: "Previous match", #selector(prevAction))
-        let next = button("›", accessibilityLabel: "Next match", #selector(nextAction))
+        let previous = button("chevron.left", accessibilityLabel: "Previous match", #selector(prevAction))
+        let next = button("chevron.right", accessibilityLabel: "Next match", #selector(nextAction))
+        previous.toolTip = "Previous match (⇧⌘G)"
+        next.toolTip = "Next match (⌘G)"
         let done = NSButton(title: "Done", target: self, action: #selector(closeAction))
         done.bezelStyle = .rounded
+        done.controlSize = .large
 
-        let stack = NSStackView(views: [field, prev, next, done])
+        let stack = NSStackView(views: [field, previous, next, done])
         stack.orientation = .horizontal
         stack.spacing = 6
-        stack.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
+        stack.setCustomSpacing(10, after: next)
+        stack.edgeInsets = NSEdgeInsets(top: 7, left: 12, bottom: 8, right: 12)
 
+        for view in [material, stack, hairline] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
         NSLayoutConstraint.activate([
+            material.leadingAnchor.constraint(equalTo: leadingAnchor),
+            material.trailingAnchor.constraint(equalTo: trailingAnchor),
+            material.topAnchor.constraint(equalTo: topAnchor),
+            material.bottomAnchor.constraint(equalTo: bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            hairline.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hairline.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hairline.bottomAnchor.constraint(equalTo: bottomAnchor),
             field.widthAnchor.constraint(greaterThanOrEqualToConstant: 220),
         ])
     }
 
-    private func button(_ title: String, accessibilityLabel: String,
+    private func button(_ symbol: String, accessibilityLabel: String,
                         _ action: Selector) -> NSButton {
-        let b = NSButton(title: title, target: self, action: action)
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: accessibilityLabel) ?? NSImage()
+        let b = NSButton(image: image, target: self, action: action)
         b.bezelStyle = .rounded
+        b.controlSize = .large
         b.setAccessibilityLabel(accessibilityLabel)
         return b
+    }
+
+    // Escape closes the bar, as in Safari. Without this NSSearchField swallows
+    // Escape to clear its text and the bar can only be dismissed with the mouse.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
+        onClose?()
+        return true
     }
 
     @objc private func searchAction() { onFind?(field.stringValue, false) }

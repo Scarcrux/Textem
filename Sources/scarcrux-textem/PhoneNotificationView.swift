@@ -64,68 +64,88 @@ struct PhoneNotificationView: View {
     @ObservedObject var nativeCodes = NativeAutoFillCoordinator.shared
     var codeAccounts: [Account] = []
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("Phone Notification Preview", systemImage: "text.bubble").font(.title2)
-            Text("Separate local sample · not linked to a web conversation").font(.subheadline).foregroundStyle(.secondary)
-            if nativeCodes.enabled, let snapshot = model.snapshot, !codeAccounts.isEmpty {
-                Menu("Link this code source to an account…") {
-                    ForEach(codeAccounts) { account in
-                        Button(account.name) { Task { await NativeAutoFillCoordinator.shared.bind(snapshot, accountID: account.id) } }
-                    }
-                }.disabled(model.busy)
-                Text("Links only this phone installation and notification source for verification codes. It does not attach message history or graphics to a web thread.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text(nativeCodes.status).font(.caption).foregroundStyle(.secondary)
-            }
-            TextField("Wireless debugging IP:port (optional for USB)", text: $model.endpoint)
-                .textFieldStyle(.roundedBorder).disabled(model.busy).accessibilityIdentifier("notification-endpoint")
-            HStack {
-                Button("Read latest phone sample") { Task { await model.readFromPhone() } }.disabled(model.busy)
-                if model.busy { ProgressView().controlSize(.small) }
-                Spacer()
-                Button("Delete Mac sample") { model.clear() }.disabled(model.busy || model.snapshot == nil)
-            }
-            Text(model.status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 0) {
+            PhonePanelHeader(symbol: "text.bubble", title: "Phone Notification Preview",
+                             subtitle: "Separate local sample · not linked to a web conversation")
+                .padding(20)
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 15) {
-                    if let snapshot = model.snapshot {
-                        Text(verbatim: snapshot.title.isEmpty ? "Unnamed Google Messages source" : snapshot.title)
-                            .font(.headline).accessibilityIdentifier("notification-source")
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    TextField("Wireless debugging IP:port (optional for USB)", text: $model.endpoint)
+                        .textFieldStyle(.roundedBorder).disabled(model.busy).accessibilityIdentifier("notification-endpoint")
+                    Button("Read latest phone sample") { Task { await model.readFromPhone() } }
+                        .keyboardShortcut(.defaultAction).disabled(model.busy)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    if model.busy { ProgressView().controlSize(.small) }
+                    Text(model.status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if nativeCodes.enabled, let snapshot = model.snapshot, !codeAccounts.isEmpty {
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Menu("Link this code source to an account…") {
+                                ForEach(codeAccounts) { account in
+                                    Button(account.name) { Task { await NativeAutoFillCoordinator.shared.bind(snapshot, accountID: account.id) } }
+                                }
+                            }.disabled(model.busy).fixedSize()
+                            Text("Links only this phone installation and notification source for verification codes. It does not attach message history or graphics to a web thread.")
+                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Text(nativeCodes.status).font(.caption).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(4)
+                    }
+                }
+            }.padding(.horizontal, 20).padding(.vertical, 14)
+            Divider()
+            if let snapshot = model.snapshot {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(verbatim: snapshot.title.isEmpty ? "Unnamed Google Messages source" : snapshot.title)
+                                .font(.title3.weight(.semibold)).accessibilityIdentifier("notification-source")
+                            Spacer()
+                            Button("Delete Mac sample", role: .destructive) { model.clear() }.disabled(model.busy)
+                        }
                         Text("Captured \(Date(timeIntervalSince1970: Double(snapshot.capturedAtMS) / 1000).formatted(date: .abbreviated, time: .shortened)) · saved snapshot, not a live inbox")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Text("Notification previews may omit or shorten messages and images. Message direction and full history are not established.")
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(Array(snapshot.messages.enumerated()), id: \.offset) { index, message in
                             if !message.text.isEmpty {
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(verbatim: message.text).textSelection(.enabled)
                                         .accessibilityIdentifier("notification-message-\(index)")
-                                    Text(message.timestampMS > 0 ? Date(timeIntervalSince1970: Double(message.timestampMS) / 1000).formatted(date: .abbreviated, time: .shortened) : "Message time not supplied")
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                    if message.truncated { Text("Preview capped").font(.caption2).foregroundStyle(.secondary) }
+                                    HStack(spacing: 6) {
+                                        Text(message.timestampMS > 0 ? Date(timeIntervalSince1970: Double(message.timestampMS) / 1000).formatted(date: .abbreviated, time: .shortened) : "Message time not supplied")
+                                        if message.truncated { Text("· Preview capped") }
+                                    }.font(.caption2).foregroundStyle(.secondary)
                                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 10))
+                                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(nsColor: .separatorColor)))
                             }
                         }
                         if let data = snapshot.image?.data, let image = NSImage(data: data) {
-                            Text("Notification-level picture preview · not assigned to a specific message").font(.caption).foregroundStyle(.secondary)
                             Image(nsImage: image).resizable().scaledToFit().frame(maxHeight: 340)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 .accessibilityLabel("Saved notification picture preview").accessibilityIdentifier("notification-picture")
-                        } else { Text("No usable picture in this saved notification sample.").font(.caption).foregroundStyle(.secondary) }
-                        if snapshot.uriAttachments > 0 { Text("\(snapshot.uriAttachments) attachment reference(s) were not opened. Their graphics are not recovered.").font(.caption).foregroundStyle(.secondary) }
+                            note("Notification-level picture preview · not assigned to a specific message")
+                        } else { note("No usable picture in this saved notification sample.") }
+                        if snapshot.uriAttachments > 0 { note("\(snapshot.uriAttachments) attachment reference(s) were not opened. Their graphics are not recovered.") }
                         if snapshot.imageState == "UNAVAILABLE" || snapshot.imageState == "UNSUPPORTED" {
-                            Text("The notification’s picture was unavailable or unsupported; no graphic was inferred.").font(.caption).foregroundStyle(.secondary)
+                            note("The notification’s picture was unavailable or unsupported; no graphic was inferred.")
                         }
-                        if snapshot.truncated { Text("The sample reached a title/message cap.").font(.caption).foregroundStyle(.secondary) }
-                    } else {
-                        Text("No notification preview saved on this Mac").font(.headline).accessibilityIdentifier("notification-empty")
-                        Text("Enable local content samples in the phone companion and use Read latest phone sample. This does not replace the shared-image library or recover historical business cards.")
-                            .foregroundStyle(.secondary)
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 8)
+                        if snapshot.truncated { note("The sample reached a title/message cap.") }
+                        note("Notification previews may omit or shorten messages and images. Message direction and full history are not established.")
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
+                }
+            } else {
+                PhoneEmptyState(symbol: "text.bubble", title: "No notification preview saved on this Mac",
+                                detail: "Enable local content samples in the phone companion and use Read latest phone sample. This does not replace the shared-image library or recover historical business cards.",
+                                titleIdentifier: "notification-empty")
             }
-        }.padding(22).frame(minWidth: 500, minHeight: 600).background(Color(nsColor: .windowBackgroundColor))
+        }.frame(minWidth: 500, minHeight: 600).background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 }
 

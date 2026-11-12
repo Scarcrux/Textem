@@ -16,12 +16,23 @@ enum MainMenu {
 
         // App-action selectors are typed #selectors (no runtime target set, so
         // they still route through the responder chain to the web VC / delegate).
-        appMenu.addItem(withTitle: "Sign-in Help…", action: #selector(AppDelegate.showSignInHelp(_:)), keyEquivalent: "")
+        // Standard order first (About, Settings), then what people do daily,
+        // then help, then the phone-companion tools in their own group so the
+        // everyday commands aren't buried among them.
+        appMenu.addItem(withTitle: "About \(appName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
+        appMenu.addItem(.separator())
+
         appMenu.addItem(withTitle: "New Conversation", action: #selector(WebViewController.compose(_:)), keyEquivalent: "n")
         let copyCode = appMenu.addItem(withTitle: "Copy Latest Code", action: #selector(WebViewController.copyLatestCode(_:)), keyEquivalent: "c")
         copyCode.keyEquivalentModifierMask = [.command, .shift]
-        appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
+        appMenu.addItem(.separator())
+
+        appMenu.addItem(withTitle: "Sign-in Help…", action: #selector(AppDelegate.showSignInHelp(_:)), keyEquivalent: "")
         appMenu.addItem(withTitle: "Send Test Notification", action: #selector(AppDelegate.sendTestNotification(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+
         appMenu.addItem(withTitle: "Phone-only Message Preview…", action: #selector(AppDelegate.showLinkPreviews(_:)), keyEquivalent: "")
         appMenu.addItem(withTitle: "Shared Phone Images…", action: #selector(AppDelegate.showPhoneImages(_:)), keyEquivalent: "")
         appMenu.addItem(withTitle: "Phone Notification Preview…", action: #selector(AppDelegate.showPhoneNotification(_:)), keyEquivalent: "")

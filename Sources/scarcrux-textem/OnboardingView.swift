@@ -8,41 +8,51 @@ struct OnboardingView: View {
     let onDone: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Welcome to Textem")
-                .font(.title).bold()
-            Text("Textem signs you into Google Messages inside the app. One thing matters for a smooth sign-in:")
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 14) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable().frame(width: 56, height: 56)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Welcome to Textem").font(.title2).bold()
+                    Text("Pair with Google Messages on your phone in four steps.")
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             Label {
-                Text("Don't use a **passkey** — it can't work inside an app like this. Choose **“Enter your password”** instead.")
+                Text("**Don’t use a passkey.** Passkeys can’t work inside an app like this. Choose **“Enter your password”** instead.")
+                    .fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             }
             .padding(12)
-            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             // Sequence follows Google's own pairing steps (support.google.com/
             // messages/answer/7611075, verified 2026-10-13): the phone path is
             // the account menu → Device pairing; the old "Switch to Google
             // Account pairing" toggle no longer exists and QR pairing is gone in
             // the US.
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 step(1, "On your phone, open Google Messages and tap your account menu (top right) → Device pairing.")
-                step(2, "Here, sign in with the same Google account and choose “Enter your password.”")
+                step(2, "In Textem, sign in with the same Google account and choose “Enter your password.”")
                 step(3, "For the second step, pick a non-passkey option: a Google prompt (“Tap Yes”), an SMS/email code, or an authenticator.")
                 step(4, "Your phone shows three emoji. Tap the one that matches what Textem shows.")
             }
 
-            Text("Google allows one active computer at a time. Opening Messages for web in a browser makes it the active one and disconnects Textem — reload Textem (⇧⌘R) to switch back.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Divider()
 
-            HStack {
-                Spacer()
-                Button("Got it — Sign in") { onDone() }
+            HStack(alignment: .center, spacing: 16) {
+                Text("Google allows one active computer at a time. If Messages for web opens in a browser, reload Textem (⇧⌘R) to switch back.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button("Sign In") { onDone() }
                     .keyboardShortcut(.defaultAction)
+                    .controlSize(.large)
             }
         }
         .padding(24)
@@ -50,12 +60,13 @@ struct OnboardingView: View {
     }
 
     private func step(_ n: Int, _ text: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text("\(n)")
-                .font(.callout).bold()
+                .font(.caption.weight(.semibold)).monospacedDigit()
+                .foregroundStyle(Color.accentColor)
                 .frame(width: 22, height: 22)
-                .background(Color.accentColor.opacity(0.2), in: Circle())
-            Text(text)
+                .background(Color.accentColor.opacity(0.15), in: Circle())
+            Text(text).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

@@ -47,52 +47,81 @@ struct SettingsView: View {
                         settingsChanged()
                     }
                 ))
-                Toggle("Start hidden (menu bar only at launch)", isOn: notifying($startHidden))
-                Toggle("Menu bar only (hide Dock icon)", isOn: Binding(
+                Toggle(isOn: notifying($startHidden)) {
+                    row("Start hidden", "Launch into the menu bar without opening a window.")
+                }
+                Toggle(isOn: Binding(
                     get: { menuBarOnly },
                     set: { newValue in
                         menuBarOnly = newValue
                         NSApp.setActivationPolicy(newValue ? .accessory : .regular)
                         settingsChanged()
                     }
-                ))
-                Toggle("Quit when window is closed", isOn: notifying($quitOnClose))
+                )) {
+                    row("Menu bar only", "Hide the Dock icon. Textem stays in the menu bar.")
+                }
+                Toggle("Quit when the window is closed", isOn: notifying($quitOnClose))
             }
 
-            Section("Notifications") {
+            Section {
                 Toggle("Mute notifications", isOn: notifying($notificationsMuted))
-                Toggle("Hide sender & preview in notifications", isOn: notifying($hideNotificationPreview))
-                Text("The dock badge still updates while muted.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Toggle("Hide sender and message preview", isOn: notifying($hideNotificationPreview))
+            } header: {
+                Text("Notifications")
+            } footer: {
+                footer("The Dock badge still updates while notifications are muted.")
             }
 
-            Section("Native code AutoFill") {
-                Toggle("Offer fresh verification codes through Textem Codes", isOn: Binding(
+            Section {
+                Toggle(isOn: Binding(
                     get: { nativeCodes.enabled }, set: { value in Task { await nativeCodes.setEnabled(value) } }
-                )).disabled(!nativeCodes.available).accessibilityIdentifier("native-code-autofill-toggle")
-                Text(nativeCodes.status).font(.caption).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("native-code-autofill-status")
-                Button("Delete native codes and source links") {
+                )) {
+                    row("AutoFill verification codes",
+                        "Offer fresh codes from your texts in other apps, through Textem Codes.")
+                }.disabled(!nativeCodes.available).accessibilityIdentifier("native-code-autofill-toggle")
+                Button("Delete native codes and source links", role: .destructive) {
                     Task { await nativeCodes.setEnabled(false) }
                 }.disabled(!nativeCodes.available)
+            } header: {
+                Text("Verification Codes")
+            } footer: {
+                footer(nativeCodes.status).accessibilityIdentifier("native-code-autofill-status")
             }
 
-            Section("Privacy") {
-                Toggle("Blur message previews (clears on hover)", isOn: Binding(
+            Section {
+                Toggle(isOn: Binding(
                     get: { blurMessages },
                     set: { blurMessages = $0; privacyChanged() }
-                ))
+                )) {
+                    row("Blur message previews", "Hover over a preview to read it.")
+                }
                 Toggle("Hide avatars", isOn: Binding(
                     get: { hideAvatars },
                     set: { hideAvatars = $0; privacyChanged() }
                 ))
-                Text("Display-only — these hide content from view but don't change what's sent (read receipts are server-side).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Privacy")
+            } footer: {
+                footer("These only change what is shown on this Mac. Read receipts and what you send are unaffected.")
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 740)
+        .frame(width: 480)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // A setting whose name alone doesn't say what it does gets one line of
+    // explanation under it, instead of a parenthetical crammed into the label.
+    private func row(_ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func footer(_ text: String) -> some View {
+        Text(text).font(.caption).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

@@ -73,9 +73,16 @@ final class StatusItemController: NSObject {
             menu.addItem(actionItem("Remove Current Account…", #selector(removeAccount)))
         }
 
+        // Reachable from here because in menu-bar-only mode there is no app
+        // menu, so this is the only route to Settings without the window.
+        menu.addItem(.separator())
+        let settings = NSMenuItem(title: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
+        settings.target = NSApp.delegate
+        menu.addItem(settings)
+
         menu.addItem(.separator())
         menu.addItem(toggle("Launch at Login", #selector(toggleLaunchAtLogin), LoginItem.isEnabled))
-        menu.addItem(toggle("Menu Bar Only (hide Dock)", #selector(toggleMenuBarOnly), Preferences.menuBarOnly))
+        menu.addItem(toggle("Menu Bar Only", #selector(toggleMenuBarOnly), Preferences.menuBarOnly))
         menu.addItem(toggle("Mute Notifications", #selector(toggleMute), Preferences.notificationsMuted))
         menu.addItem(toggle("Quit When Window Closed", #selector(toggleQuitOnClose), Preferences.quitOnClose))
 
