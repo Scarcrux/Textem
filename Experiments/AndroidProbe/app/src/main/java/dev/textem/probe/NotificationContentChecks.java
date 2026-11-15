@@ -140,12 +140,28 @@ final class NotificationContentChecks {
         i.check(NotificationContentStore.publish(fixture, body, true));
         i.check(!NotificationContentStore.publish(owner, body, true));
         String before = NotificationContentStore.read(fixture, NotificationContentStore.FILE, NotificationContent.MAX_BYTES).toString();
+        String savedState = NotificationContentStore.read(fixture, NotificationContentStore.STATE, 4096).toString();
+        long savedRevision = NotificationContentStore.revision(fixture);
+        NotificationContentStore.missingSource(fixture);
+        i.check(before.equals(NotificationContentStore.read(fixture, NotificationContentStore.FILE, NotificationContent.MAX_BYTES).toString()));
+        i.check(savedState.equals(NotificationContentStore.read(fixture, NotificationContentStore.STATE, 4096).toString()));
+        i.check(savedRevision == NotificationContentStore.revision(fixture));
+        JSONObject expiredState = new JSONObject(savedState);
+        expiredState.put("recorded_at_ms", System.currentTimeMillis() - 1800001);
+        try (java.io.FileOutputStream stream = new java.io.FileOutputStream(new File(directory, NotificationContentStore.STATE))) {
+            stream.write(expiredState.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        NotificationContentStore.missingSource(fixture);
+        i.check(NotificationContentStore.read(fixture, NotificationContentStore.STATE, 4096).getString("state").equals("SOURCE_REQUIRED"));
+        i.check(before.equals(NotificationContentStore.read(fixture, NotificationContentStore.FILE, NotificationContent.MAX_BYTES).toString()));
         i.check((android.system.Os.stat(new File(directory, NotificationContentStore.FILE).getPath()).st_mode & 0777) == 0600);
         i.check(!NotificationContentStore.publish(fixture, body, false));
         i.check(!NotificationContentStore.publish(fixture, image, true, () -> false));
         i.check(before.equals(NotificationContentStore.read(fixture, NotificationContentStore.FILE, NotificationContent.MAX_BYTES).toString()));
         long revision = NotificationContentStore.revision(fixture), ownerRevision = NotificationContentStore.revision(owner); NotificationContentStore.clear(fixture);
         i.check(NotificationContentStore.revision(fixture) != revision && !new File(directory, NotificationContentStore.FILE).exists());
+        NotificationContentStore.missingSource(fixture);
+        i.check(NotificationContentStore.read(fixture, NotificationContentStore.STATE, 4096).getString("state").equals("SOURCE_REQUIRED"));
         i.check(NotificationContentStore.revision(owner) == ownerRevision);
         NotificationContentStore.Identity first = NotificationContentStore.identity(fixture), again = NotificationContentStore.identity(fixture);
         i.check(first.install.equals(again.install) && java.util.Arrays.equals(first.secret, again.secret));

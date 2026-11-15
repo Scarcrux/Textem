@@ -78,5 +78,16 @@ final class NotificationContentStore {
             write(c, STATE, j.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception ignored) { }
     }
+    static synchronized void missingSource(Context c) {
+        // A non-conversation event cannot cancel/replace a recently saved
+        // identified preview. Never refresh its timestamp or infer an identity.
+        try {
+            JSONObject state = read(c, STATE, 4096);
+            long age = System.currentTimeMillis() - state.getLong("recorded_at_ms");
+            if (state.getString("state").equals("SAVED") && age >= 0 && age <= 1800000
+                    && new File(c.getFilesDir(), FILE).isFile()) return;
+        } catch (Exception absent) { }
+        status(c, "SOURCE_REQUIRED");
+    }
     static synchronized void clear(Context c) { advance(c); file(c, FILE).delete(); status(c, "CLEARED"); }
 }

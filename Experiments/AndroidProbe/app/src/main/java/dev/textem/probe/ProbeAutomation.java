@@ -252,6 +252,7 @@ public class ProbeAutomation extends Instrumentation {
             ShareProbeChecks.run(this);
             NotificationReadinessChecks.run(this);
             NotificationContentChecks.run(this);
+            NotificationCandidateChecks.run(this);
             CompanionLinkChecks.run(this);
             phase("no private provider calls and no permission changes during automation");
             check(ProviderSource.queryAttempts() == privateQueriesBefore);

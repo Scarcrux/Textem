@@ -29,7 +29,14 @@ public final class CaptureListener extends NotificationListenerService {
             true, CaptureState.access(this));
         CaptureState.record(this, report, "POSTED");
         // Group-summary updates must not cancel the individual preview queued just before them.
-        if (!report.state.equals("SUMMARY_SKIPPED")) sampleContent(item, "POSTED");
+        if (!report.state.equals("SUMMARY_SKIPPED")) {
+            if (NotificationCandidates.hasSource(item)) sampleContent(item, "POSTED");
+            else if (NotificationContentStore.enabled(this) && CaptureState.access(this)) {
+                // Do not advance contentGeneration: a source-less event must not
+                // discard a valid conversation already queued on the worker.
+                NotificationContentStore.missingSource(this);
+            }
+        }
     }
     private void sampleContent(StatusBarNotification item, String origin) {
         if (!NotificationContentStore.enabled(this) || !CaptureState.enabled(this) || !CaptureState.access(this)) return;
@@ -63,22 +70,10 @@ public final class CaptureListener extends NotificationListenerService {
             empty.state = enabled ? "ACCESS_REQUIRED" : "OFF"; CaptureState.record(this, empty, "STATE"); return;
         }
         try {
-            StatusBarNotification[] items = getActiveNotifications();
-            int inspected = 0;
-            if (items != null) for (StatusBarNotification item : items) {
-                if (item == null || !NotificationReadiness.PACKAGE.equals(item.getPackageName())) continue;
-                if (++inspected > 20) {
-                    // A capped search is not proof of an empty Google sample.
-                    empty.state = "UNAVAILABLE"; CaptureState.record(this, empty, "STATE"); noContentCandidate("UNAVAILABLE"); return;
-                }
-                NotificationReadiness.Report report = NotificationReadiness.inspect(item.getPackageName(), item::getNotification, true, true);
-                if (!report.state.equals("SUMMARY_SKIPPED")) {
-                    CaptureState.record(this, report, "ACTIVE_SCAN"); sampleContent(item, "ACTIVE_SCAN"); return;
-                }
-            }
-            if (inspected > 0) { empty.state = "SUMMARY_SKIPPED"; empty.summaries = 1; }
-            CaptureState.record(this, empty, "ACTIVE_SCAN");
-            noContentCandidate(inspected > 0 ? "SUMMARY_SKIPPED" : "NO_CONTENT");
+            NotificationCandidates.Selection selection = NotificationCandidates.active(getActiveNotifications());
+            CaptureState.record(this, selection.report, "ACTIVE_SCAN");
+            if (selection.item != null) sampleContent(selection.item, "ACTIVE_SCAN");
+            else noContentCandidate(selection.absentState);
         } catch (RuntimeException failure) { empty.state = "UNAVAILABLE"; CaptureState.record(this, empty, "STATE"); noContentCandidate("UNAVAILABLE"); }
     }
 }

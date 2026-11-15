@@ -1,5 +1,18 @@
 # Textem read-only Android probe
 
+## Conversation sampling (v0.11)
+
+Some Google Messages notifications have no conversation shortcut. They are not
+eligible sources for code linking. These events no longer cancel a queued valid
+preview or invalidate a recent saved preview; the saved timestamps are unchanged.
+If no recent saved preview exists, the companion still reports `SOURCE_REQUIRED`.
+Refreshing scans at most20 Google notifications and chooses the latest usable
+source-bearing conversation instead of stopping at the first non-summary event.
+A capped scan refuses to claim a complete selection. Source identity, explicit
+account linking, original message time, POSTED origin and code expiry rules remain
+unchanged. The preview is the latest supported conversation sample, not an archive
+or proof that every Google notification can be recovered.
+
 ## Verification-code redaction (v0.10)
 
 A real posted dummy-code notification on the test phone was delivered to the companion
