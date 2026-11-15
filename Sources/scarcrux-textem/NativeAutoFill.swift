@@ -7,7 +7,24 @@ import Security
     func replace(_ entries: [CodeIndexEntry]) async throws
 }
 
-enum NativeCodeSetupError: Error { case notEnabled, unsupported }
+enum NativeCodeSetupError: Error { case notEnabled, unsupported, indexReadbackRefused }
+
+enum NativeCodeIndexReadback {
+    @available(macOS 15, *)
+    static func matches(_ actual: [any ASCredentialIdentity], expected: [CodeIndexEntry]) -> Bool {
+        guard actual.count == expected.count,
+              Set(expected.map(\.recordID)).count == expected.count else { return false }
+        var seen = Set<String>()
+        for value in actual {
+            guard let code = value as? ASOneTimeCodeCredentialIdentity,
+                  let record = code.recordIdentifier, seen.insert(record).inserted,
+                  let entry = expected.first(where: { $0.recordID == record }),
+                  code.serviceIdentifier.type == .domain,
+                  code.serviceIdentifier.identifier == entry.domain, code.label == entry.label else { return false }
+        }
+        return true
+    }
+}
 
 @MainActor private struct SystemCodeIndex: CodeIndexPublishing {
     func replace(_ entries: [CodeIndexEntry]) async throws {
@@ -29,6 +46,8 @@ enum NativeCodeSetupError: Error { case notEnabled, unsupported }
                 else { continuation.resume(throwing: error ?? NativeCodeSetupError.unsupported) }
             }
         }
+        let stored = await store.credentialIdentities(credentialIdentityTypes: .oneTimeCode)
+        guard NativeCodeIndexReadback.matches(stored, expected: entries) else { throw NativeCodeSetupError.indexReadbackRefused }
     }
 }
 
@@ -163,11 +182,24 @@ enum NativeCodeSetupError: Error { case notEnabled, unsupported }
                 let samples = try vault.eligible(now: clock())
                 vaultRead = true
                 scheduleExpiry(samples)
-                try await publisher.replace(CodeIndexEntry.project(samples, now: clock()))
+                let entries = CodeIndexEntry.project(samples, now: clock())
+                counts.withheld = max(0, samples.count - entries.count)
+                try await publisher.replace(entries)
                 guard revision == id else { return }
                 counts.provider = 1
+                counts.indexed = entries.count
                 diagnose(.ready, counts)
-                status = enabled ? "Native provider updated: \(CodeIndexEntry.project(samples, now: clock()).count) fresh domain-matched code(s). Phone imports are manual; continuous sync is not enabled." : "Native code AutoFill is off. Protected samples and source bindings were deleted."
+                if enabled {
+                    status = "System index verified: \(entries.count) fresh domain-matched code(s)."
+                    if counts.withheld > 0 { status += " \(counts.withheld) fresh receipt(s) withheld because their domains overlap; no code was guessed." }
+                    status += " An actual macOS field offer/fill is not established by this index check. Phone imports are manual."
+                } else { status = "Native code AutoFill is off. Protected samples and source bindings were deleted." }
+            } catch NativeCodeSetupError.indexReadbackRefused {
+                if revision == id {
+                    counts.failure = 2
+                    diagnose(.publicationRefused, counts)
+                    status = "macOS accepted the index update, but its metadata readback did not match. Native AutoFill readiness is unverified; no code was filled."
+                }
             } catch NativeCodeSetupError.notEnabled {
                 if revision == id {
                     diagnose(.providerDisabled, counts)

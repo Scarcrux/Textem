@@ -132,4 +132,26 @@ struct NativeAutoFillTests {
         controller.fillCode(); #expect(completed.count == 1)
         #expect(errors.last == .credentialIdentityNotFound)
     }
+    @Test @MainActor func providerRequestObservationCannotConfuseMockCompletionWithSystemFill() throws {
+        guard #available(macOS 15, *) else { return }
+        let controller = CredentialProvider()
+        let value = try #require(sample())
+        var clock = time
+        var events: [(CredentialProvider.Event, Int)] = []
+        controller.readSamples = { [value] }; controller.now = { clock }
+        controller.observe = { events.append(($0, $1)) }
+        controller.testCompletion = { _ in }
+        controller.testCancellation = { _ in }
+        let services = [ASCredentialServiceIdentifier(identifier: "example.com", type: .domain)]
+        controller.prepareOneTimeCodeCredentialList(for: services)
+        #expect(events.contains { $0.0 == .listRequested && $0.1 == 1 })
+        #expect(events.contains { $0.0 == .evaluatedOffer && $0.1 == 1 })
+        controller.fillCode()
+        #expect(!events.contains { $0.0 == .systemCompletion || $0.0 == .fillRequested })
+        controller.prepareOneTimeCodeCredentialList(for: services)
+        clock = time.addingTimeInterval(180); controller.fillCode()
+        #expect(events.last?.0 == .fillRefused)
+        controller.prepareCredentialList(for: services)
+        #expect(events.contains { $0.0 == .otherRequested })
+    }
 }

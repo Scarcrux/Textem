@@ -9,6 +9,8 @@ import Foundation
         var provider = 0
         var sources = 0
         var eligible = 0
+        var indexed = 0
+        var withheld = 0
         var failure = 0
     }
     static let url = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
@@ -20,6 +22,7 @@ import Foundation
         try NotificationDiagnostics.append(event.rawValue, values: [
             "capture": counts.capture == 0 ? 0 : 1, "provider": counts.provider == 0 ? 0 : 1,
             "sources": min(16, max(0, counts.sources)), "eligible": min(16, max(0, counts.eligible)),
+            "indexed": min(16, max(0, counts.indexed)), "withheld": min(16, max(0, counts.withheld)),
             "failure": min(Int(Int32.max), max(Int(Int32.min), counts.failure)),
             "process": Int(ProcessInfo.processInfo.processIdentifier)
         ], to: url)
