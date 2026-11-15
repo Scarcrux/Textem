@@ -17,6 +17,8 @@ import android.widget.TextView;
 public final class CaptureSetupActivity extends Activity {
     private final Handler handler = new Handler(android.os.Looper.getMainLooper());
     private TextView status;
+    private TextView companionStatus;
+    CompanionLink companion;
     private final Runnable update = new Runnable() { public void run() { refresh(); handler.postDelayed(this, 1000); } };
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved); getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
@@ -34,6 +36,15 @@ public final class CaptureSetupActivity extends Activity {
         label(root, "This readiness check counts what Google Messages notifications expose: text, picture objects and attachment addresses. It does NOT save message text, graphics, addresses or titles. Full automatic sync is not enabled yet.", 17);
         label(root, "Android notification access is broad and can expose notifications from all apps. Textem ignores other packages before examining their payload. Only Google Messages shapes are inspected. No Internet, message sending, notification dismissal, mark-read, Accessibility or default messaging changes.", 16);
         status = label(root, "", 16); status.setTag("capture-status");
+        companion = new CompanionLink(this);
+        label(root, "Verification-code access", 20);
+        label(root, "Android can hide verification codes even when notification access is on. Open Bluetooth settings on your Mac to make it discoverable, then select that Mac in Android's device chooser. Choose only your actual Mac. Android controls approval; Textem cannot approve it for you. The association does not start message transfer or prove code recovery. Existing capture controls still apply.", 16);
+        companionStatus = label(root, "", 16); companionStatus.setTag("companion-status");
+        button(root, "Link Textem Mac (Android approval)", "companion-link", () -> companion.request(approval -> {
+            try { startIntentSenderForResult(approval, 42, null, 0, 0, 0); }
+            catch (android.content.IntentSender.SendIntentException failure) { throw new IllegalStateException(); }
+        }, this::refresh));
+        button(root, "Remove Textem Mac companion link", "companion-remove", () -> companion.remove(this::refresh));
         button(root, "Enable checks and open Android access settings", "capture-enable", () -> {
             CaptureState.enabled(this, true);
             NotificationReadiness.Report report = new NotificationReadiness.Report();
@@ -74,7 +85,7 @@ public final class CaptureSetupActivity extends Activity {
         Button button = new Button(this); button.setText(title); button.setAllCaps(false); button.setTag(tag);
         button.setOnClickListener(v -> action.run()); root.addView(button);
     }
-    private void refresh() {
+    void refresh() {
         String state = !CaptureState.enabled(this) ? "OFF" : !CaptureState.access(this) ? "ACCESS REQUIRED — approve on Android" : CaptureListener.connected() ? "CONNECTED" : "WAITING FOR ANDROID";
         String sample = "No current readiness sample.";
         try {
@@ -87,7 +98,18 @@ public final class CaptureSetupActivity extends Activity {
         String content = NotificationContentStore.enabled(this) ? "ON" : "OFF";
         try { content += " / last attempt: " + NotificationContentStore.read(this, NotificationContentStore.STATE, 4096).getString("state"); }
         catch (Exception absent) { }
+        if (content.endsWith("REDACTED")) content += " — Android hid sensitive notification content; no code was recovered.";
         status.setText("Checks: " + state + "\n" + sample + "\nLocal content samples: " + content);
+        if (companionStatus != null) {
+            CompanionLink.State link = companion.state();
+            companionStatus.setText(switch (link) {
+                case LINKED -> "Android companion association: approved. Fresh verification-code recovery has not been verified. If Android still hides codes, reopen Textem notification access to refresh its listener.";
+                case WAITING_FOR_APPROVAL -> "Android companion association: waiting for your approval. No approved link is claimed.";
+                case NOT_LINKED -> "Android companion association: not linked. Codes may be hidden.";
+                case UNSUPPORTED -> "Android companion association requires Android 13 or newer and companion-device setup support.";
+                case UNAVAILABLE -> "Android companion association could not be verified. Retry the link; no code access is claimed.";
+            });
+        }
     }
     @Override protected void onResume() { super.onResume(); refresh(); handler.postDelayed(update, 1000); }
     @Override protected void onPause() { handler.removeCallbacksAndMessages(null); super.onPause(); }

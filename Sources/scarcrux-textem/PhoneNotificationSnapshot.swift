@@ -10,6 +10,7 @@ enum PhoneNotificationError: String, LocalizedError {
     case privateFile = "The local notification preview was refused because its storage is not private."
     case contentOff = "Local content samples are disabled on the phone. Enable that separate opt-in in the companion; notification access alone is not enough."
     case accessRequired = "Android notification access is missing or revoked. Approve the companion in Android settings; no messages were imported."
+    case redacted = "Android hid this notification's sensitive content before Textem received it. Notification access alone does not expose verification codes. An Android-approved companion association may permit access; recovery still needs a fresh-message check."
     case sourceRequired = "Google did not expose a usable conversation shortcut. Textem refused to guess a source from its title. The shared-image path remains available."
     case unsupported = "The latest notification exposes only an unsupported attachment or picture type. This is not a permission failure. Use Share → Save image for Mac for a graphic."
     case noContent = "The latest capture attempt exposed no usable individual Google notification preview. The previous Mac copy is unchanged; this does not prove message history is absent."
@@ -19,6 +20,7 @@ enum PhoneNotificationError: String, LocalizedError {
         switch value {
         case "OFF": .contentOff
         case "ACCESS_REQUIRED": .accessRequired
+        case "REDACTED": .redacted
         case "SOURCE_REQUIRED": .sourceRequired
         case "URI_ONLY_UNSUPPORTED", "IMAGE_UNSUPPORTED": .unsupported
         case "NO_CONTENT", "SUMMARY_SKIPPED", "CLEARED": .noContent
@@ -136,7 +138,7 @@ struct PhoneNotificationState: Decodable, Equatable {
         guard Set(object.keys) == ["schema", "state", "recorded_at_ms"],
               PhoneNotificationJSON.integer(object["schema"]), PhoneNotificationJSON.integer(object["recorded_at_ms"]),
               let value = try? JSONDecoder().decode(Self.self, from: data), value.schema == 1,
-              ["OFF", "ACCESS_REQUIRED", "OTHER_APP_IGNORED", "MALFORMED", "SUMMARY_SKIPPED", "SOURCE_REQUIRED", "UNAVAILABLE", "URI_ONLY_UNSUPPORTED", "IMAGE_UNSUPPORTED", "NO_CONTENT", "SAVED", "CLEARED"].contains(value.state),
+              ["OFF", "ACCESS_REQUIRED", "OTHER_APP_IGNORED", "MALFORMED", "SUMMARY_SKIPPED", "SOURCE_REQUIRED", "UNAVAILABLE", "URI_ONLY_UNSUPPORTED", "IMAGE_UNSUPPORTED", "NO_CONTENT", "SAVED", "CLEARED", "REDACTED"].contains(value.state),
               Double(value.recordedAtMS) >= now.timeIntervalSince1970 * 1000 - 1_800_000,
               Double(value.recordedAtMS) <= now.timeIntervalSince1970 * 1000 + 300_000 else { throw PhoneNotificationError.invalid }
         return value

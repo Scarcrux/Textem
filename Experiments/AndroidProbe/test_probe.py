@@ -389,6 +389,8 @@ class NotificationContentReadbackTests(unittest.TestCase):
     def test_state_is_fixed_safe_and_current(self):
         state=dict(schema=1,state='URI_ONLY_UNSUPPORTED',recorded_at_ms=1000000)
         self.assertEqual(validate_content_state(json.dumps(state).encode(),now_ms=1000000)['state'],'URI_ONLY_UNSUPPORTED')
+        state['state']='REDACTED'
+        self.assertEqual(validate_content_state(json.dumps(state).encode(),now_ms=1000000)['state'],'REDACTED')
         for key,value in [('state','PRIVATE_ERROR'),('schema',True),('recorded_at_ms',-1000000),('text','PRIVATE_BODY')]:
             invalid=state.copy();invalid[key]=value
             with self.assertRaises(InvalidReport):validate_content_state(json.dumps(invalid).encode(),now_ms=1000000)

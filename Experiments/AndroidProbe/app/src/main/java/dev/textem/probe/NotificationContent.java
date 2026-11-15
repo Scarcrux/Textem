@@ -87,6 +87,12 @@ final class NotificationContent {
                     row.put("text", bounded(text, 4000)); row.put("truncated", text.length() > 4000); messages.put(row);
                 }
             }
+            // Android may replace OTP-bearing content before delivering it to
+            // an untrusted listener. This is an OS placeholder, not recovery.
+            for (int index = 0; index < messages.length(); index++) {
+                if (messages.getJSONObject(index).getString("text").trim()
+                        .equals("Sensitive notification content hidden")) return new Result("REDACTED", null);
+            }
             CharSequence title = n.extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE);
             if (title == null || title.length() == 0) title = n.extras.getCharSequence(Notification.EXTRA_TITLE);
             String imageState = "ABSENT"; Bitmap picture = null;

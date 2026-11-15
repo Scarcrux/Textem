@@ -1,5 +1,32 @@
 # Textem read-only Android probe
 
+## Verification-code redaction (v0.10)
+
+A real posted dummy-code notification on the test phone was delivered to the companion
+as Android's "Sensitive notification content hidden" placeholder. Notification
+access alone did not expose the OTP. The new `REDACTED` state reports this cause
+and refuses to publish the placeholder as a recovered preview.
+
+In **Automatic recovery setup**, **Link Textem Mac (Android approval)** opens
+Android's normal Bluetooth companion-device chooser (Android13+). Open Bluetooth
+settings on the Mac to make it discoverable, select that actual Mac on the phone,
+and approve Android's association request. No self-managed/system-only permission,
+watch/computer role, root command or protection-disable toggle is used. Only
+association IDs created by this flow and still confirmed by Android are claimed
+as linked. **Remove Textem Mac companion link** removes those associations.
+
+Android documents trusted companion associations as exempt from OTP notification
+redaction. This remains a handset test requirement, not a guarantee: association
+is not a transport connection or proof of code access. An existing listener may
+need notification access reopened to refresh Android's cached trust. A fresh
+posted unredacted code, explicit Mac source/account link and actual OS field fill
+are separate remaining checks. Synthetic tests never create owner associations
+or write test codes into the Mac's production vault.
+
+References: [Android OTP hardening](https://developer.android.com/about/versions/15/behavior-changes-all#otp-fraud),
+[companion pairing](https://developer.android.com/develop/connectivity/bluetooth/companion-device-pairing),
+and [AOSP listener trust](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/notification/NotificationManagerService.java).
+
 Separate local experiment, **not** an Android messaging replacement or a new
 Google Messages paired computer. The Mac's Shared Phone Images panel can import
 one explicitly saved graphic from companion v0.7 onward.

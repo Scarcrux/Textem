@@ -102,7 +102,7 @@ struct PhoneNotificationTests {
         }
         #expect(count == 1)
         for (stateValue, expected): (String, PhoneNotificationError) in [("OFF", .contentOff), ("ACCESS_REQUIRED", .accessRequired),
-                ("SOURCE_REQUIRED", .sourceRequired), ("MALFORMED", .malformed), ("NO_CONTENT", .noContent)] {
+                ("SOURCE_REQUIRED", .sourceRequired), ("REDACTED", .redacted), ("MALFORMED", .malformed), ("NO_CONTENT", .noContent)] {
             #expect(throws: expected) {
                 try PhoneImageADBClient.readNotification { _, _ in try state(value, value: stateValue) }
             }

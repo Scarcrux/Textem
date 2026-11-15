@@ -49,6 +49,16 @@ final class NotificationContentChecks {
         i.phase("content text round trip and cap are actual previews, not full messages");
         i.check(body.state.equals("SAVED") && body.document.length() == 13 && !body.document.getBoolean("complete"));
         i.check(body.document.getJSONArray("messages").getJSONObject(0).getString("text").equals("PRIVATE_TEXT"));
+        i.phase("Android sensitive-content placeholders are not recovered messages");
+        Notification redacted = base(owner);
+        redacted.extras.putCharSequence(Notification.EXTRA_TEXT, "Sensitive notification content hidden");
+        NotificationContent.Result blockedContent = inspect(owner, redacted);
+        i.check(blockedContent.state.equals("REDACTED") && blockedContent.document == null);
+        Notification redactedStyle = new Notification.Builder(owner, "synthetic-content").setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setShortcutId("PRIVATE_SHORTCUT").setStyle(new Notification.MessagingStyle("Synthetic user")
+                .addMessage(new Notification.MessagingStyle.Message("Sensitive notification content hidden", 1700000000000L, "Synthetic sender"))).build();
+        if (Build.VERSION.SDK_INT >= 30) i.check(inspect(owner, redactedStyle).state.equals("REDACTED"));
+        i.check(inspect(owner, text).state.equals("SAVED"));
         i.check(!body.document.toString().contains("PRIVATE_SHORTCUT") && !body.document.toString().contains("secret"));
         text.extras.putString(Notification.EXTRA_TITLE, "ANOTHER_TITLE");
         i.check(inspect(owner, text).document.getString("source_key").equals(key));

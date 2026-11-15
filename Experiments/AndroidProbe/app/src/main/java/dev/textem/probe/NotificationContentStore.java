@@ -72,7 +72,7 @@ final class NotificationContentStore {
     }
     static synchronized void status(Context c, String value) {
         if (!Arrays.asList("OFF", "ACCESS_REQUIRED", "OTHER_APP_IGNORED", "MALFORMED", "SUMMARY_SKIPPED", "SOURCE_REQUIRED",
-                "UNAVAILABLE", "URI_ONLY_UNSUPPORTED", "IMAGE_UNSUPPORTED", "NO_CONTENT", "SAVED", "CLEARED").contains(value)) return;
+                "UNAVAILABLE", "URI_ONLY_UNSUPPORTED", "IMAGE_UNSUPPORTED", "NO_CONTENT", "SAVED", "CLEARED", "REDACTED").contains(value)) return;
         try {
             JSONObject j = new JSONObject(); j.put("schema", 1); j.put("state", value); j.put("recorded_at_ms", System.currentTimeMillis());
             write(c, STATE, j.toString().getBytes(StandardCharsets.UTF_8));
