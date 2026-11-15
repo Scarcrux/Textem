@@ -17,14 +17,20 @@ final class NotificationCandidates {
         final StatusBarNotification item;
         final NotificationReadiness.Report report;
         final String absentState;
+        final java.util.List<StatusBarNotification> content;
         Selection(StatusBarNotification item, NotificationReadiness.Report report, String absentState) {
+            this(item, report, absentState, java.util.Collections.emptyList());
+        }
+        Selection(StatusBarNotification item, NotificationReadiness.Report report, String absentState, java.util.List<StatusBarNotification> content) {
             this.item = item; this.report = report; this.absentState = absentState;
+            this.content = content;
         }
     }
     static Selection active(StatusBarNotification[] items) {
         StatusBarNotification selected = null;
         NotificationReadiness.Report selectedReport = null, fallback = null;
         boolean summary = false; int inspected = 0;
+        java.util.ArrayList<StatusBarNotification> content = new java.util.ArrayList<>();
         if (items != null) for (StatusBarNotification item : items) {
             if (item == null || !NotificationReadiness.PACKAGE.equals(item.getPackageName())) continue;
             if (++inspected > 20) {
@@ -34,12 +40,13 @@ final class NotificationCandidates {
             NotificationReadiness.Report report = NotificationReadiness.inspect(item.getPackageName(), item::getNotification, true, true);
             if (report.state.equals("SUMMARY_SKIPPED")) { summary = true; continue; }
             if (fallback == null) fallback = report;
-            if (hasSource(item) && report.state.equals("SHAPES_PRESENT")
-                    && (selected == null || item.getPostTime() > selected.getPostTime())) {
-                selected = item; selectedReport = report;
+            if (hasSource(item) && report.state.equals("SHAPES_PRESENT")) {
+                content.add(item);
+                if (selected == null || item.getPostTime() > selected.getPostTime()) { selected = item; selectedReport = report; }
             }
         }
-        if (selected != null) return new Selection(selected, selectedReport, null);
+        content.sort(java.util.Comparator.comparingLong(StatusBarNotification::getPostTime));
+        if (selected != null) return new Selection(selected, selectedReport, null, content);
         if (fallback != null) return new Selection(null, fallback, fallback.shortcutIds == 0 && fallback.notifications > 0
             ? "SOURCE_REQUIRED" : fallback.state.equals("MALFORMED") ? "MALFORMED" : "NO_CONTENT");
         NotificationReadiness.Report empty = new NotificationReadiness.Report();

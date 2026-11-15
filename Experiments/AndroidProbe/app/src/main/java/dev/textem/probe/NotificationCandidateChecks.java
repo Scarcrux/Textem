@@ -7,7 +7,7 @@ import android.service.notification.StatusBarNotification;
 
 /** Real framework notifications through the production selector, synthetic only. */
 final class NotificationCandidateChecks {
-    private static StatusBarNotification item(Context c, String shortcut, int uid, long time, String pkg, boolean summary) {
+    static StatusBarNotification item(Context c, String shortcut, int uid, long time, String pkg, boolean summary) {
         Notification n = new Notification.Builder(c, "synthetic-content").setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentText("Synthetic preview").setShortcutId(shortcut).build();
         if (summary) n.flags |= Notification.FLAG_GROUP_SUMMARY;

@@ -8,8 +8,8 @@ android {
         applicationId 'dev.textem.probe'
         minSdk 26
         targetSdk 35
-        versionCode 11
-        versionName '0.11-probe'
+        versionCode 12
+        versionName '0.12-probe'
         testInstrumentationRunner 'dev.textem.probe.ProbeInstrumentation'
     }
     compileOptions {

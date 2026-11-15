@@ -63,14 +63,14 @@ public final class CaptureSetupActivity extends Activity {
             CaptureState.record(this, report, "STATE"); refresh();
         });
         button(root, "Clear readiness diagnostics", "capture-clear", () -> { CaptureState.clear(this); refresh(); });
-        label(root, "Optional local content sample: separately saves the latest Google notification title, up to ten text previews and one available picture. This replaces the previous sample, not a message archive. Images may be partial; URI attachments are not opened. No automatic web-thread mapping or full cards/history. No uploads.", 16);
+        label(root, "Optional local content previews: saves the latest Google notification sample and a bounded journal (up to four snapshots per source, 32 total, 8 MiB, seven days). Each sample has up to ten text previews and one available picture. Disable clears the journal; Delete also clears the latest sample. Images may be partial; URI attachments are not opened. Mac thread links require explicit confirmation. No full cards/history or uploads.", 16);
         button(root, "Enable local content samples", "content-enable", () -> {
             if (!CaptureState.enabled(this) || !CaptureState.access(this)) {
                 status.setText("Enable readiness checks and approve Android notification access first."); return;
             }
             NotificationContentStore.enabled(this, true); CaptureListener.sampleCurrent(); refresh();
         });
-        button(root, "Disable content samples (keep last sample)", "content-disable", () -> {
+        button(root, "Disable content samples (clear journal, keep latest)", "content-disable", () -> {
             NotificationContentStore.enabled(this, false); NotificationContentStore.status(this, "OFF"); refresh();
         });
         button(root, "Delete saved notification content", "content-clear", () -> { NotificationContentStore.clear(this); refresh(); });

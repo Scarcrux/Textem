@@ -35,4 +35,6 @@
     <!-- ADB-only fixture/UI automation in this local debug probe; no message reads. -->
     <instrumentation android:name=".ProbeAutomation" android:targetPackage="dev.textem.probe"
         android:label="Textem synthetic checks" />
+    <instrumentation android:name=".JournalInstrumentation" android:targetPackage="dev.textem.probe"
+        android:label="Textem journal checks without UI" />
 </manifest>

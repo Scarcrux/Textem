@@ -1,0 +1,176 @@
+import AppKit
+import SwiftUI
+
+@MainActor final class PhoneConversationModel: ObservableObject {
+    let context: PhoneImageConversation
+    let directory: URL
+    @Published private(set) var record: PhoneConversationStore.Record?
+    @Published private(set) var candidate: PhoneNotificationSnapshot?
+    @Published private(set) var candidates: [PhoneNotificationSnapshot] = []
+    @Published private(set) var busy = false
+    @Published var automatic = true
+    @Published var status = "Google did not provide this conversation to the web client. Link a captured phone preview to recover supported content here."
+    var validate: @MainActor (PhoneImageConversation) async -> Bool = { _ in false }
+    private let fetch: @Sendable (String) async throws -> PhoneNotificationJournal
+    private let endpoint: @MainActor () -> String
+    private var generation = UUID()
+    private var stopped = false
+    init(context: PhoneImageConversation, directory: URL = PhoneConversationStore.directory,
+         endpoint: @escaping @MainActor () -> String = { UserDefaults.standard.string(forKey: "phoneImageEndpoint") ?? "" },
+         fetch: @escaping @Sendable (String) async throws -> PhoneNotificationJournal = { try await PhoneImageADBClient.shared.fetchNotificationJournal(endpoint: $0) }) {
+        self.context = context; self.directory = directory; self.endpoint = endpoint; self.fetch = fetch
+        reload()
+        if record != nil { status = "Saved phone previews for this account and conversation. Full history is not established." }
+    }
+    func reload() {
+        do { record = try PhoneConversationStore.record(for: context, in: directory) }
+        catch { record = nil; status = error.localizedDescription }
+    }
+    func cancel() { stopped = true; generation = UUID(); busy = false; candidate = nil; candidates = [] }
+    func chooseSource(_ key: String) { guard !busy else { return }; candidate = candidates.first { PhoneConversationStore.sourceKey($0) == key } }
+    func read() async {
+        guard !stopped, !busy else { return }
+        let id = UUID(); generation = id; busy = true
+        defer { if generation == id { busy = false } }
+        do {
+            guard await validate(context), generation == id, !Task.isCancelled else { return }
+            let journal = try await fetch(endpoint())
+            guard generation == id, !Task.isCancelled, await validate(context), generation == id, !Task.isCancelled else { return }
+            if let record {
+                let matching = journal.samples.filter { record.sourceKey == PhoneConversationStore.sourceKey($0) }
+                guard !matching.isEmpty else {
+                    status = "The phone journal contains another source. Saved previews remain available; nothing was assigned here."; return
+                }
+                for sample in matching { try PhoneConversationStore.ingest(sample, for: context, in: directory) }; reload()
+                status = "Captured previews refreshed. This is partial notification content, not complete conversation history."
+                if journal.dropped > 0 { status += " The bounded phone journal has discarded \(journal.dropped) older capture(s)." }
+            } else {
+                let latest = journal.samples.sorted { $0.capturedAtMS > $1.capturedAtMS }
+                var seen = Set<String>()
+                candidates = latest.filter { seen.insert(PhoneConversationStore.sourceKey($0)).inserted }
+                candidate = candidates.first
+                status = "Check the phone source and preview below. Link only if they belong to this conversation."
+            }
+        } catch {
+            guard generation == id, !Task.isCancelled else { return }
+            status = "Couldn’t refresh phone previews. Saved content is retained. " + error.localizedDescription
+        }
+    }
+    func link() async {
+        guard !stopped, !busy, let sample = candidate else { return }
+        let id = UUID(); generation = id; busy = true
+        defer { if generation == id { busy = false } }
+        guard await validate(context), generation == id, !Task.isCancelled, candidate == sample else { return }
+        do {
+            try PhoneConversationStore.link(sample, to: context, in: directory)
+            candidate = nil; candidates = []; reload()
+            status = "Phone source linked to this account and conversation. Captured previews refresh while this pane is open."
+        } catch { status = error.localizedDescription }
+    }
+    func unlink() {
+        generation = UUID(); busy = false; candidate = nil; candidates = []
+        do {
+            try PhoneConversationStore.unlink(context, in: directory); reload()
+            status = "Source unlinked and this conversation’s cached previews deleted. Phone originals and shared images are unchanged."
+        } catch { status = error.localizedDescription }
+    }
+    func run() async {
+        while !stopped && !Task.isCancelled {
+            if record != nil && automatic { await read() }
+            do { try await Task.sleep(for: .seconds(15)) } catch { return }
+        }
+    }
+}
+
+struct PhoneConversationView: View {
+    @ObservedObject var model: PhoneConversationModel
+    var onClose: () -> Void
+    var onImages: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PhonePanelHeader(symbol: "iphone.and.arrow.forward", title: "Phone conversation previews",
+                subtitle: model.context.label, onClose: onClose, closeLabel: "Close phone conversation previews").padding(20)
+            Divider()
+            VStack(alignment: .leading, spacing: 10) {
+                Text(model.status).font(.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button(model.record == nil ? "Read phone preview" : "Refresh previews") { Task { await model.read() } }
+                        .disabled(model.busy)
+                    if model.busy { ProgressView().controlSize(.small) }
+                    Button("Shared graphics", action: onImages)
+                }
+                if model.record != nil {
+                    Toggle("Refresh captured previews while open", isOn: $model.automatic).font(.caption)
+                    Button("Unlink source and delete cached previews", role: .destructive) { model.unlink() }.disabled(model.busy)
+                }
+                Text("Requires companion v0.12 and an authorized USB or Wireless debugging connection. Captures may omit older messages, attachments and card actions.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }.padding(20)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let candidate = model.candidate {
+                        Text("Confirm phone source").font(.headline)
+                        Picker("Captured phone source", selection: Binding(get: { PhoneConversationStore.sourceKey(candidate) }, set: { model.chooseSource($0) })) {
+                            ForEach(model.candidates, id: \.sourceKey) { sample in
+                                Text(verbatim: sample.title.isEmpty ? "Unnamed phone source" : sample.title).tag(PhoneConversationStore.sourceKey(sample))
+                            }
+                        }.disabled(model.busy)
+                        Text(verbatim: candidate.title.isEmpty ? "Unnamed phone source" : candidate.title).font(.subheadline)
+                        PhoneConversationSampleView(sample: candidate)
+                        Button("This belongs here — link and refresh previews") { Task { await model.link() } }.disabled(model.busy)
+                    } else if let record = model.record {
+                        ForEach(Array(record.samples.enumerated()), id: \.offset) { _, sample in PhoneConversationSampleView(sample: sample) }
+                    } else {
+                        Text("No phone source linked").font(.headline)
+                        Text("Read a phone preview, check its source and content, then explicitly link it here. Textem will not guess from a sender name.")
+                            .foregroundStyle(.secondary)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
+            }
+        }.background(Color(nsColor: .windowBackgroundColor))
+            .task { await model.run() }.onDisappear { model.cancel() }
+    }
+}
+
+struct PhoneConversationSampleView: View {
+    let sample: PhoneNotificationSnapshot
+    static func linkedText(_ text: String) -> AttributedString {
+        var result = AttributedString(text)
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return result }
+        for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let url = match.url, url.scheme?.lowercased() == "https", url.host != nil,
+                  url.user == nil, url.password == nil, let range = Range(match.range, in: text),
+                  let start = AttributedString.Index(range.lowerBound, within: result),
+                  let end = AttributedString.Index(range.upperBound, within: result) else { continue }
+            result[start..<end].link = url
+        }
+        return result
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Captured \(Date(timeIntervalSince1970: Double(sample.capturedAtMS) / 1000).formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(Array(sample.messages.enumerated()), id: \.offset) { _, message in
+                if !message.text.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(Self.linkedText(message.text)).textSelection(.enabled)
+                        if message.truncated { Text("Preview shortened by the capture limit").font(.caption) }
+                    }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                }
+            }
+            if let data = sample.image?.data, let image = NSImage(data: data) {
+                Image(nsImage: image).resizable().scaledToFit().frame(maxHeight: 400)
+                    .accessibilityLabel("Captured phone notification picture")
+                Text("Notification-level picture; individual message attachment is not established.").font(.caption).foregroundStyle(.secondary)
+            }
+            if sample.uriAttachments > 0 || ["UNSUPPORTED", "UNAVAILABLE"].contains(sample.imageState) {
+                Text("Some referenced graphics could not be recovered. Use Shared graphics for an explicit image import.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Text("Partial notification preview · direction and complete history are not established.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}

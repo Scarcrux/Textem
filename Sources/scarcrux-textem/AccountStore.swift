@@ -79,7 +79,10 @@ final class AccountStore {
                 completion(nil)
                 return
             }
-            do { try NativeAutoFillCoordinator.shared.removeAccount(id) }
+            do {
+                try PhoneConversationStore.removeAccount(id)
+                try NativeAutoFillCoordinator.shared.removeAccount(id)
+            }
             catch { completion(error); return }
             self.accounts.remove(at: index)
             if self.activeID == id { self.activeID = self.accounts[0].id }

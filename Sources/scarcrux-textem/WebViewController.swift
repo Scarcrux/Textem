@@ -127,6 +127,7 @@ final class WebViewController: NSViewController {
     private var browsingPhoneImageLibrary = false
     private var currentImageConversation: PhoneImageConversation?
     private var displayedImageConversationKey: String?
+    private var phoneConversationModel: PhoneConversationModel?
     private var displayedLinkPreviewDocument: LinkPreviewDocument?
     private var dismissedPhoneOnlyConversation: String?
     private struct RecoverySelection {
@@ -354,6 +355,11 @@ final class WebViewController: NSViewController {
         let selection = RecoverySelection(
             conversation: conversation, conversationID: conversationID)
         currentPhoneOnlySelection = selection
+        if let context = currentImageConversation,
+           dismissedPhoneOnlyConversation != normalized,
+           (try? PhoneConversationStore.record(for: context)) != nil {
+            showPhoneConversation(context); return
+        }
         if let context = currentImageConversation, dismissedPhoneOnlyConversation != normalized,
            let images = try? PhoneImageStore.images(for: context), !images.isEmpty {
             showConversationImages(context); return
@@ -363,7 +369,8 @@ final class WebViewController: NSViewController {
            let document = try? LinkPreviewStore.loadAutomatically(for: context) {
             showLinkPreviewFallback(document)
         } else if dismissedPhoneOnlyConversation != normalized {
-            hideLinkPreviewFallback()
+            if let context = currentImageConversation { showPhoneConversation(context) }
+            else { hideLinkPreviewFallback() }
         }
         if Self.experimentalAutomaticRecoveryEnabled {
             requestPhoneOnlyRecovery(selection)
@@ -569,14 +576,29 @@ final class WebViewController: NSViewController {
         if let phoneImagesModel { return phoneImagesModel }
         let model = PhoneImagesModel()
         model.validateConversation = { [weak self] context in
-            guard let self, context.accountID == self.accountID,
-                  self.webView.url?.scheme == "https", self.webView.url?.host == "messages.google.com",
-                  self.currentImageConversation?.key == context.key else { return false }
-            let route = try? await self.webView.evaluateJavaScript(WebBridge.phoneImageRouteScript) as? String
-            return route == context.route && self.currentImageConversation?.key == context.key
-                && self.webView.url?.scheme == "https" && self.webView.url?.host == "messages.google.com"
+            await self?.validatePhoneConversation(context) ?? false
         }
         phoneImagesModel = model; return model
+    }
+
+    private func validatePhoneConversation(_ context: PhoneImageConversation) async -> Bool {
+        guard context.accountID == accountID, context.key != nil,
+              webView.url?.scheme == "https", webView.url?.host == "messages.google.com",
+              currentImageConversation?.key == context.key else { return false }
+        let route = try? await webView.evaluateJavaScript(WebBridge.phoneImageRouteScript) as? String
+        return route == context.route && currentImageConversation?.key == context.key
+            && webView.url?.scheme == "https" && webView.url?.host == "messages.google.com"
+    }
+
+    private func showPhoneConversation(_ context: PhoneImageConversation) {
+        guard phoneConversationModel?.context.key != context.key else { return }
+        let model = PhoneConversationModel(context: context)
+        model.validate = { [weak self] context in await self?.validatePhoneConversation(context) ?? false }
+        let host = NSHostingView(rootView: PhoneConversationView(model: model,
+            onClose: { [weak self] in self?.dismissPhoneImages() },
+            onImages: { [weak self] in self?.showPhoneImages() }))
+        installLinkPreviewHost(host)
+        phoneConversationModel = model
     }
 
     private func dismissPhoneImages() {
@@ -614,6 +636,7 @@ final class WebViewController: NSViewController {
     }
 
     private func hideLinkPreviewFallback() {
+        phoneConversationModel?.cancel(); phoneConversationModel = nil
         showingPhoneImages = false
         browsingPhoneImageLibrary = false; displayedImageConversationKey = nil
         linkPreviewHost?.removeFromSuperview()
@@ -885,6 +908,7 @@ final class WebViewController: NSViewController {
     // Detach the web view before this controller is replaced (account switch)
     // so it stops loading, drops the bridge handler, and can deallocate.
     func teardown() {
+        phoneConversationModel?.cancel(); phoneConversationModel = nil
         bridgeReady = false
         recoveryStatusTask?.cancel()
         recoveryStatusTask = nil

@@ -1,5 +1,23 @@
 # Textem read-only Android probe
 
+## Conversation preview journal (v0.12)
+
+Approved local content capture now also writes a private bounded notification
+journal: four snapshots per source, 32 total, eight MiB total, seven days at the
+next write. Unchanged content is not duplicated or re-aged. Disabling capture or
+content capture clears the journal; deleting content also clears the latest
+sample. Distinct conversation events no longer cancel one another in the capture
+worker. This journal is partial notification content, not a complete RCS archive.
+
+The Mac can explicitly bind a chosen phone source to a verified account/route,
+cache previews, and refresh while that conversation pane is open. Existing code
+AutoFill still reads the separate latest sample and has independent authorization.
+See [the recovery design](../PhoneRecovery/README.md) for setup and release gates.
+
+`JournalInstrumentation` tests the real extractor/journal with synthetic content
+in an isolated cache. It launches no activity, sends no UI input and performs no
+SMS/MMS-provider queries. It never changes the owner's capture opt-in.
+
 ## Conversation sampling (v0.11)
 
 Some Google Messages notifications have no conversation shortcut. They are not

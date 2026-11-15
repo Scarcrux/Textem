@@ -16,7 +16,7 @@ import org.json.JSONObject;
 final class CaptureState {
     static final String FILE = "notification-summary.json";
     static boolean enabled(Context c) { return c.getSharedPreferences("notification-capture", 0).getBoolean("enabled", false); }
-    static void enabled(Context c, boolean enabled) { c.getSharedPreferences("notification-capture", 0).edit().putBoolean("enabled", enabled).apply(); }
+    static void enabled(Context c, boolean enabled) { c.getSharedPreferences("notification-capture", 0).edit().putBoolean("enabled", enabled).apply(); if (!enabled) NotificationContentStore.enabled(c, false); }
     static ComponentName component(Context c) { return new ComponentName(c, CaptureListener.class); }
     static boolean access(Context c) {
         try {

@@ -40,6 +40,14 @@ final class DesignSnapshotTests: XCTestCase {
             directory: scratch.appendingPathComponent("notification"), persistEndpoint: false,
             fetch: { _ in throw PhoneNotificationError.privateFile }, revokeCodes: { _ in })
         let images = PhoneImagesModel(directory: scratch.appendingPathComponent("images"))
+        let context = PhoneImageConversation(accountID: UUID(), route: "synthetic-route", label: "Example delivery")
+        let preview = try PhoneNotificationTests().fixture(picture: true)
+        let recoveredDirectory = scratch.appendingPathComponent("recovered")
+        try PhoneConversationStore.link(preview, to: context, in: recoveredDirectory)
+        let recovered = PhoneConversationModel(context: context, directory: recoveredDirectory,
+            endpoint: { "" }, fetch: { _ in throw PhoneImageError.noDevice })
+        let unlinked = PhoneConversationModel(context: context, directory: scratch.appendingPathComponent("unlinked"),
+            endpoint: { "" }, fetch: { _ in throw PhoneImageError.noDevice })
 
         let retrying = LoadErrorView(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
         retrying.present(message: "The Internet connection appears to be offline. Retrying in 4 seconds.", isRetrying: true)
@@ -55,6 +63,10 @@ final class DesignSnapshotTests: XCTestCase {
                        "phone-notification-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: PhoneImagesView(model: images, onClose: {}).frame(width: 760, height: 640)),
                        "phone-images-\(suffix)", appearance, output)
+            try render(NSHostingView(rootView: PhoneConversationView(model: unlinked, onClose: {}, onImages: {}).frame(width: 760, height: 900)),
+                       "phone-conversation-empty-\(suffix)", appearance, output)
+            try render(NSHostingView(rootView: PhoneConversationView(model: recovered, onClose: {}, onImages: {}).frame(width: 760, height: 900)),
+                       "phone-conversation-recovered-\(suffix)", appearance, output)
             try render(retrying, "load-retrying-\(suffix)", appearance, output, fitting: false)
             try render(failed, "load-failed-\(suffix)", appearance, output, fitting: false)
             try render(find, "find-bar-\(suffix)", appearance, output, fitting: false)
