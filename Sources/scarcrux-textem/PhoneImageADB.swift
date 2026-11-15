@@ -117,6 +117,40 @@ final class PhoneImageADBClient: @unchecked Sendable {
             return supported && !serial.isEmpty && !serial.hasPrefix("emulator-") && serial.utf8.count <= 256 ? serial : nil
         }
     }
+    /// Multiple transports may reach one physical phone. Compare only bounded
+    /// per-boot identifiers in memory; never keep a persistent hardware identity.
+    static func selectAuthorizedDevice(_ data: Data,
+                                      verifyTLS: (String) throws -> Void,
+                                      readBootID: (String) throws -> Data) throws -> String {
+        guard data.count <= 32768 else { throw PhoneImageError.ambiguousDevices }
+        let devices = authorizedDevices(data)
+        guard !devices.isEmpty else { throw PhoneImageError.noDevice }
+        if devices.count == 1 { return devices[0] }
+        guard devices.count <= 4 else { throw PhoneImageError.ambiguousDevices }
+        var identity: String?
+        for serial in devices {
+            // Do not query identity metadata over a legacy plaintext IP link.
+            if validEndpoint(serial) { try verifyTLS(serial) }
+            let raw: Data
+            do { raw = try readBootID(serial) }
+            catch { throw PhoneImageError.ambiguousDevices }
+            guard raw.count <= 64, let text = String(data: raw, encoding: .utf8) else {
+                throw PhoneImageError.ambiguousDevices
+            }
+            let boot = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard boot.range(of: #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#,
+                             options: .regularExpression) != nil,
+                  identity == nil || identity == boot else { throw PhoneImageError.ambiguousDevices }
+            identity = boot
+        }
+        if let text = String(data: data, encoding: .utf8) {
+            for line in text.split(separator: "\n") where line.contains(" usb:") {
+                let candidates = authorizedDevices(Data((String(line) + "\n").utf8))
+                if let usb = candidates.first, devices.contains(usb) { return usb }
+            }
+        }
+        return devices[0]
+    }
     /// AOSP advertises the encrypted listener as this exact service, distinct from legacy adb.
     /// Some vendor builds do not expose service.adb.tls.port to the shell.
     static func tlsService(_ data: Data, endpoint: String) -> String? {
@@ -171,8 +205,11 @@ final class PhoneImageADBClient: @unchecked Sendable {
             _ = try? PhoneImageCommand.run(executable, base + ["connect", endpoint])
             serial = endpoint
         } else {
-            let devices = Self.authorizedDevices(try PhoneImageCommand.run(executable, base + ["devices", "-l"], maximum: 32768))
-            guard devices.count == 1 else { throw PhoneImageError.noDevice }; serial = devices[0]
+            let listing = try PhoneImageCommand.run(executable, base + ["devices", "-l"], maximum: 32768)
+            serial = try Self.selectAuthorizedDevice(listing, verifyTLS: { try PhoneImageTLS.verify(endpoint: $0) }) {
+                try PhoneImageCommand.run(executable, base + ["-s", $0, "shell", "cat", "/proc/sys/kernel/random/boot_id"],
+                                          maximum: 64, timeout: 3)
+            }
         }
         var device = base + ["-s", serial]
         func connected() -> Bool {

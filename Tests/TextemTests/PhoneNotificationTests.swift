@@ -177,4 +177,13 @@ struct PhoneNotificationTests {
         model.snapshot = try fixture(picture: true); #expect(try orangeSamples() > 100)
         model.snapshot = try fixture(); #expect(try orangeSamples() == 0)
     }
+    @Test func phoneAmbiguityIsNamedWithoutChangingSavedPreview() async throws {
+        let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let previous = try fixture(); try PhoneNotificationStore.save(previous, in: root)
+        let model = PhoneNotificationModel(directory: root, persistEndpoint: false) { _ in throw PhoneImageError.ambiguousDevices }
+        model.endpoint = ""; await model.readFromPhone()
+        #expect(model.status == PhoneImageError.ambiguousDevices.localizedDescription)
+        #expect(!model.busy && model.snapshot == previous)
+        #expect(try PhoneNotificationStore.load(in: root) == previous)
+    }
 }

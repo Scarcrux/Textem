@@ -7,9 +7,12 @@ textem_version="${VERSION:-0.1.0}"
 [[ "$textem_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 textem_reference_app="${TEXTEM_REFERENCE_APP:-/Applications/Textem.app}"
 textem_release_root="$PWD/.build.nosync/native-autofill-release-$BUILD_NUMBER"
+textem_jobs="${COMMANDEM_SWIFT_JOBS:-4}"
+[[ "$textem_jobs" =~ ^[1-9][0-9]?$ ]]
 bash Experiments/NativeAutoFill/project.sh
 mkdir -p "$textem_release_root"
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+  -jobs "$textem_jobs" \
   -project .build.nosync/native-autofill-project/TextemNativeCodes.xcodeproj \
   -scheme TextemNativeCodes -configuration Release -destination 'generic/platform=macOS' \
   -derivedDataPath "$textem_release_root/derived" -archivePath "$textem_release_root/Textem.xcarchive" \

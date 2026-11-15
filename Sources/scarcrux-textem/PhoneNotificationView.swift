@@ -43,7 +43,7 @@ final class PhoneNotificationModel: ObservableObject {
         } catch {
             guard requestID == id else { return }
             if let error = error as? PhoneNotificationError { status = error.localizedDescription }
-            else if let error = error as? PhoneImageError, [.adbMissing, .noDevice, .tlsRequired].contains(error) { status = error.localizedDescription }
+            else if let error = error as? PhoneImageError, [.adbMissing, .noDevice, .ambiguousDevices, .tlsRequired].contains(error) { status = error.localizedDescription }
             else { status = "Phone transfer failed or timed out. Check the connection and companion. The previous Mac sample is unchanged." }
         }
     }

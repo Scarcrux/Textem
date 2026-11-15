@@ -126,6 +126,50 @@ struct PhoneImageTests {
             try PhoneImageCommand.run(URL(fileURLWithPath: "/bin/sleep"), ["2"], timeout: 0.05)
         }
     }
+    @Test func equivalentTransportsPreferUSBOnlyAfterSameBootProof() throws {
+        let listing = Data("192.168.2.3:44001 device\nfixture-usb device usb:1-1 model:Fixture\n".utf8)
+        let boot = Data("00000000-0000-4000-8000-000000000001\n".utf8)
+        var events: [String] = []
+        let selected = try PhoneImageADBClient.selectAuthorizedDevice(listing, verifyTLS: { _ in events.append("TLS") }) {
+            events.append($0 == "fixture-usb" ? "USB" : "wireless"); return boot
+        }
+        #expect(selected == "fixture-usb" && events == ["TLS", "wireless", "USB"])
+        var probes = 0
+        let single = try PhoneImageADBClient.selectAuthorizedDevice(Data("fixture-usb device usb:1-1\n".utf8),
+            verifyTLS: { _ in probes += 1 }, readBootID: { _ in probes += 1; return boot })
+        #expect(single == "fixture-usb" && probes == 0)
+        let aliases = Data("adb-fixture._adb-tls-connect._tcp device\nfixture-usb device usb:1-1\nemulator-5554 device\nother unauthorized\noffline-phone offline\n".utf8)
+        #expect(try PhoneImageADBClient.selectAuthorizedDevice(aliases, verifyTLS: { _ in }, readBootID: { _ in boot }) == "fixture-usb")
+    }
+    @Test func ambiguousTransportIdentityTLSAndCapsFailClosed() throws {
+        let listing = Data("192.168.2.3:44001 device\nfixture-usb device usb:1-1\n".utf8)
+        let boot = Data("00000000-0000-4000-8000-000000000001\n".utf8)
+        for invalid in [Data("00000000-0000-4000-8000-000000000002".utf8), Data("null".utf8),
+                        Data("00000000-0000-0000-0000-000000000000".utf8), Data(repeating: 0, count: 65)] {
+            #expect(throws: PhoneImageError.ambiguousDevices) {
+                try PhoneImageADBClient.selectAuthorizedDevice(listing, verifyTLS: { _ in }, readBootID: { $0 == "fixture-usb" ? invalid : boot })
+            }
+        }
+        #expect(throws: PhoneImageError.ambiguousDevices) {
+            try PhoneImageADBClient.selectAuthorizedDevice(listing, verifyTLS: { _ in }, readBootID: { _ in throw PhoneImageError.connection })
+        }
+        var queries = 0
+        #expect(throws: PhoneImageError.tlsRequired) {
+            try PhoneImageADBClient.selectAuthorizedDevice(listing, verifyTLS: { _ in throw PhoneImageError.tlsRequired },
+                readBootID: { _ in queries += 1; return boot })
+        }
+        #expect(queries == 0)
+        let many = Data((0..<5).map { "fixture-\($0) device usb:1-\($0)" }.joined(separator: "\n").utf8)
+        for bad in [many, Data(repeating: 0, count: 32769)] {
+            #expect(throws: PhoneImageError.ambiguousDevices) {
+                try PhoneImageADBClient.selectAuthorizedDevice(bad, verifyTLS: { _ in queries += 1 }, readBootID: { _ in queries += 1; return boot })
+            }
+        }
+        #expect(queries == 0)
+        #expect(throws: PhoneImageError.noDevice) {
+            try PhoneImageADBClient.selectAuthorizedDevice(Data("other unauthorized\n".utf8), verifyTLS: { _ in }, readBootID: { _ in boot })
+        }
+    }
     @Test func exactTLSAdvertisementDiscriminates() {
         let endpoint = "192.168.2.3:44444"
         let record = "adb-example (2)\t_adb-tls-connect._tcp\t\(endpoint)\n"
