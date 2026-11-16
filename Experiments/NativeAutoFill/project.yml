@@ -1,4 +1,8 @@
 name: TextemNativeCodes
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
 options:
   deploymentTarget:
     macOS: '13.0'
@@ -42,10 +46,13 @@ targets:
       - path: Sources/scarcrux-textem
       - path: Resources/AppIcon.icns
         buildPhase: resources
+      - path: .build.nosync/sparkle-resources/Sparkle-LICENSE
+        buildPhase: resources
     dependencies:
       - target: NativeAutoFillCore
       - target: TextemCodeProvider
         embed: true
+      - package: Sparkle
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.scarcrux.textem

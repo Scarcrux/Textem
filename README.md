@@ -74,6 +74,14 @@ make notarize NOTARY_PROFILE=<notarytool-profile>          # notarize app + fina
 submits and staples the final DMG. The app runs under the hardened runtime with
 no extra entitlements.
 
+## App updates
+
+Sparkle provides **Textem → Check for Updates…** and an optional automatic-check
+toggle in **Settings → Updates**. Automatic checks default off; installation
+requires approval. Signed feed/archive staging is documented in
+[the update guide](Experiments/Updates/README.md). The first published update
+channel and end-to-end install remain separate release gates.
+
 ## Signing in (important)
 
 QR-code pairing is no longer available in the US; Google Messages for web now

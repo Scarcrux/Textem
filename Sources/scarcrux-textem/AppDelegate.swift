@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
     private var windowController: MainWindowController?
     private var statusItemController: StatusItemController?
     private var settingsWindowController: SettingsWindowController?
@@ -11,6 +11,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NativeAutoFillCoordinator.shared.start()
         NSApp.mainMenu = MainMenu.build(appName: "Textem")
+        AppUpdates.shared.start()
+        if ProcessInfo.processInfo.arguments.contains("--check-app-updates") {
+            try? UpdateDiagnostics.save(UpdateDiagnostics.collect(AppUpdates.shared))
+        }
         NSApp.servicesMenu = NSApp.mainMenu?.items.first?.submenu?.item(withTitle: "Services")?.submenu
         NSApp.windowsMenu = NSApp.mainMenu?.item(withTitle: "Window")?.submenu
         NSApp.helpMenu = NSApp.mainMenu?.item(withTitle: "Help")?.submenu
@@ -95,6 +99,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showSignInHelp(_ sender: Any?) {
         showOnboarding()
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) { AppUpdates.shared.check() }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        menuItem.action == #selector(checkForUpdates(_:)) ? AppUpdates.shared.canCheck : true
     }
 
     @objc func sendTestNotification(_ sender: Any?) {

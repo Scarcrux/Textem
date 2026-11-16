@@ -119,6 +119,20 @@ do {
             let reference = try Data(contentsOf: URL(fileURLWithPath: "Resources/AppIcon.icns"))
             let icon = try? Data(contentsOf: bundle.appendingPathComponent("Contents/Resources/AppIcon.icns"))
             try require(AppIconPolicy.accepts(iconFile: info["CFBundleIconFile"] as? String, data: icon, reference: reference), "app icon missing, corrupt or different from source")
+            let framework = bundle.appendingPathComponent("Contents/Frameworks/Sparkle.framework")
+            let license = try Data(contentsOf: URL(fileURLWithPath: ".build/artifacts/sparkle/Sparkle/LICENSE"))
+            try require(try Data(contentsOf: bundle.appendingPathComponent("Contents/Resources/Sparkle-LICENSE")) == license, "updater license missing or changed")
+            try require(framework.resolvingSymlinksInPath().path.hasPrefix(bundle.resolvingSymlinksInPath().path + "/"), "updater framework escaped app bundle")
+            let frameworkInfo = try object(Data(contentsOf: framework.appendingPathComponent("Resources/Info.plist")))
+            try require(frameworkInfo["CFBundleShortVersionString"] as? String == "2.10.0", "updater framework version mismatch")
+            let frameworkSignature = try signing(framework)
+            try require(frameworkSignature[kSecCodeInfoTeamIdentifier as String] as? String == DeveloperIDPolicy.team, "updater framework team mismatch")
+            for arch in ["arm64", "x86_64"] { _ = try run("/usr/bin/lipo", ["-verify_arch", arch, framework.appendingPathComponent("Sparkle").path]) }
+            let sourceInfo = try object(Data(contentsOf: URL(fileURLWithPath: "Resources/Info.plist")))
+            for key in ["SUFeedURL", "SUPublicEDKey", "SURequireSignedFeed", "SUVerifyUpdateBeforeExtraction", "SUEnableAutomaticChecks", "SUAllowsAutomaticUpdates", "SUEnableSystemProfiling"] {
+                try require((info[key] as? NSObject)?.isEqual(sourceInfo[key]) == true, "updater policy differs from source")
+            }
+            print("updater_framework_signature_team_version_arches_and_policy=PASS")
         }
         guard let binary = info["CFBundleExecutable"] as? String, !binary.contains("/") else { throw Refused.check("invalid executable") }
         for arch in ["arm64", "x86_64"] { _ = try run("/usr/bin/lipo", ["-verify_arch", arch, bundle.appendingPathComponent("Contents/MacOS/" + binary).path]) }

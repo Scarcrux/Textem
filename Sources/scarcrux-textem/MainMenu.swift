@@ -15,6 +15,7 @@ enum MainMenu {
         }
         let app = section(appName)
         command(app, "About \(appName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:)))
+        command(app, "Check for Updates…", #selector(AppDelegate.checkForUpdates(_:)))
         app.addItem(.separator())
         command(app, "Settings…", #selector(AppDelegate.showSettings(_:)), ",")
         app.addItem(.separator())

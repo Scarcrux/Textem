@@ -6,8 +6,9 @@ let package = Package(
     platforms: [
         .macOS(.v13),
     ],
+    dependencies: [.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0")],
     targets: [
-        .executableTarget(name: "scarcrux-textem", dependencies: ["NativeAutoFillCore"]),
+        .executableTarget(name: "scarcrux-textem", dependencies: ["NativeAutoFillCore", .product(name: "Sparkle", package: "Sparkle")]),
         .target(name: "NativeAutoFillCore", path: "Experiments/NativeAutoFill/Core"),
         .target(name: "NativeAutoFillProvider", dependencies: ["NativeAutoFillCore"],
                 path: "Experiments/NativeAutoFill/Provider"),

@@ -9,6 +9,9 @@ APP        := Textem
 BUNDLE_ID  := com.scarcrux.textem
 CONFIG     := release
 SWIFT      ?= xcrun --toolchain XcodeDefault swift
+SWIFT_JOBS ?= $(if $(COMMANDEM_SWIFT_JOBS),$(COMMANDEM_SWIFT_JOBS),4)
+SPARKLE_ARTIFACT = $(ARCH_BUILD_ROOT)/$(firstword $(ARCHS))/artifacts/sparkle/Sparkle
+SPARKLE_FRAMEWORK = $(SPARKLE_ARTIFACT)/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework
 ARCHS      ?= arm64 x86_64
 DEPLOYMENT_TARGET ?= 13.0
 BIN        := scarcrux-textem
@@ -45,13 +48,13 @@ icloud-heal:
 
 build: icloud-heal
 	@set -e; for arch in $(ARCHS); do \
-	  $(SWIFT) build -c $(CONFIG) \
+	  $(SWIFT) build --jobs $(SWIFT_JOBS) -c $(CONFIG) \
 	    --triple "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
 	    --scratch-path "$(ARCH_BUILD_ROOT)/$$arch"; \
 	done
 	@mkdir -p $(dir $(UNIVERSAL_BIN))
 	@set -e; bins=""; for arch in $(ARCHS); do \
-	  bin_dir="$$($(SWIFT) build -c $(CONFIG) \
+	  bin_dir="$$($(SWIFT) build --jobs $(SWIFT_JOBS) -c $(CONFIG) \
 	    --triple "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
 	    --scratch-path "$(ARCH_BUILD_ROOT)/$$arch" --show-bin-path)"; \
 	  bins="$$bins $$bin_dir/$(BIN)"; \
@@ -61,6 +64,11 @@ bundle: build
 	@rm -rf $(APP_BUNDLE)
 	@mkdir -p $(CONTENTS)/MacOS $(CONTENTS)/Resources
 	@cp $(UNIVERSAL_BIN) $(CONTENTS)/MacOS/$(APP)
+	@mkdir -p $(CONTENTS)/Frameworks
+	@ditto "$(SPARKLE_FRAMEWORK)" "$(CONTENTS)/Frameworks/Sparkle.framework"
+	@cp "$(SPARKLE_ARTIFACT)/LICENSE" "$(CONTENTS)/Resources/Sparkle-LICENSE"
+	@# SwiftPM's package-framework path is local to the build machine.
+	@install_name_tool -add_rpath '@executable_path/../Frameworks' $(CONTENTS)/MacOS/$(APP)
 	@cp Resources/Info.plist $(CONTENTS)/Info.plist
 	@cp Resources/AppIcon.icns $(CONTENTS)/Resources/AppIcon.icns
 	@/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" $(CONTENTS)/Info.plist

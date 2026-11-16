@@ -36,6 +36,9 @@ final class DesignSnapshotTests: XCTestCase {
 
         let codes = NativeAutoFillCoordinator(
             vault: CodeVault(storage: MemoryStorage()), publisher: NoPublisher(), available: true)
+        let updates = AppUpdatesTests.fixture()
+        let unavailableUpdates = AppUpdates(configuration: { throw AppUpdateConfiguration.Invalid.key })
+        unavailableUpdates.start()
         let notification = PhoneNotificationModel(
             directory: scratch.appendingPathComponent("notification"), persistEndpoint: false,
             fetch: { _ in throw PhoneNotificationError.privateFile }, revokeCodes: { _ in })
@@ -64,7 +67,9 @@ final class DesignSnapshotTests: XCTestCase {
                        "saved-conversation-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: SavedPhoneConversationsView(model: emptySaved, onClose: {}).frame(width: 760, height: 900)),
                        "saved-conversation-empty-\(suffix)", appearance, output)
-            try render(NSHostingView(rootView: SettingsView(nativeCodes: codes)), "settings-\(suffix)", appearance, output)
+            try render(NSHostingView(rootView: SettingsView(nativeCodes: codes, updates: updates)), "settings-\(suffix)", appearance, output)
+            try render(NSHostingView(rootView: SettingsView(nativeCodes: codes, updates: updates)), "settings-scrolled-\(suffix)", appearance, output, scrollToBottom: true)
+            try render(NSHostingView(rootView: SettingsView(nativeCodes: codes, updates: unavailableUpdates)), "settings-updates-unavailable-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: CompanionConnectionView(model: connection, onChanged: {}, onClose: {})),
                        "phone-connection-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: OnboardingView(onDone: {})), "onboarding-\(suffix)", appearance, output)
@@ -91,7 +96,7 @@ final class DesignSnapshotTests: XCTestCase {
     }
 
     private func render(_ view: NSView, _ name: String, _ appearance: NSAppearance,
-                        _ output: URL, fitting: Bool = true) throws {
+                        _ output: URL, fitting: Bool = true, scrollToBottom: Bool = false) throws {
         view.removeFromSuperview()
         if fitting { view.frame = NSRect(origin: .zero, size: view.fittingSize) }
         let backdrop = Backdrop(frame: view.frame)
@@ -103,6 +108,19 @@ final class DesignSnapshotTests: XCTestCase {
         backdrop.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        if scrollToBottom {
+            func scrollViews(_ node: NSView) -> [NSScrollView] {
+                (node as? NSScrollView).map { [$0] } ?? node.subviews.flatMap(scrollViews)
+            }
+            let scroll = try XCTUnwrap(scrollViews(view).first { scroll in
+                (scroll.documentView?.bounds.height ?? 0) > scroll.contentView.bounds.height
+            }, "Settings must scroll within the bounded window")
+            let document = try XCTUnwrap(scroll.documentView)
+            let y = document.isFlipped ? document.bounds.maxY - scroll.contentView.bounds.height : document.bounds.minY
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
         let bitmap = try XCTUnwrap(backdrop.bitmapImageRepForCachingDisplay(in: backdrop.bounds))
         backdrop.cacheDisplay(in: backdrop.bounds, to: bitmap)
         let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))

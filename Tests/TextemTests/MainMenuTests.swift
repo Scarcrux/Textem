@@ -14,7 +14,7 @@ import XCTest
         XCTAssertEqual(root.items.map(\.title), ["Textem", "File", "Edit", "View", "Accounts", "Phone", "Window", "Help"])
         let app = try XCTUnwrap(root.items.first?.submenu)
         XCTAssertEqual(app.items.filter { !$0.isSeparatorItem }.map(\.title),
-            ["About Textem", "Settings…", "Services", "Hide Textem", "Hide Others", "Show All", "Quit Textem"])
+            ["About Textem", "Check for Updates…", "Settings…", "Services", "Hide Textem", "Hide Others", "Show All", "Quit Textem"])
         for (group, title) in [("File", "New Conversation"), ("Edit", "Copy Latest Code"), ("Edit", "Find…"),
                                ("View", "Reload"), ("Phone", "Shared Phone Images…"), ("Window", "Always on Top"), ("Help", "Sign-in Help…")] {
             XCTAssertNotNil(root.item(withTitle: group)?.submenu?.item(withTitle: title))
@@ -23,6 +23,8 @@ import XCTest
         let saved = try XCTUnwrap(root.item(withTitle: "Phone")?.submenu?.item(withTitle: "Saved Conversation Previews…"))
         XCTAssertEqual(saved.action, #selector(AppDelegate.showSavedPhoneConversations(_:)))
         XCTAssertTrue(AppDelegate().responds(to: try XCTUnwrap(saved.action)))
+        XCTAssertEqual(app.item(withTitle: "Check for Updates…")?.action, #selector(AppDelegate.checkForUpdates(_:)))
+        XCTAssertTrue(AppDelegate().responds(to: #selector(AppDelegate.checkForUpdates(_:))))
     }
     func testEveryExistingCommandAndResponderRouteIsPreserved() {
         let items = commands(MainMenu.build(appName: "Textem"))

@@ -14,9 +14,11 @@ struct SettingsView: View {
     @AppStorage("hideAvatars") private var hideAvatars = false
     @State private var launchAtLogin = LoginItem.isEnabled
     @StateObject private var nativeCodes: NativeAutoFillCoordinator
+    @StateObject private var updates: AppUpdates
 
-    init(nativeCodes: NativeAutoFillCoordinator = .shared) {
+    init(nativeCodes: NativeAutoFillCoordinator = .shared, updates: AppUpdates = .shared) {
         _nativeCodes = StateObject(wrappedValue: nativeCodes)
+        _updates = StateObject(wrappedValue: updates)
     }
 
     // Notify the live web view to re-apply privacy CSS after a toggle.
@@ -64,6 +66,17 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Automatically check for updates", isOn: Binding(
+                    get: { updates.automaticChecks }, set: { updates.setAutomaticChecks($0) }
+                )).disabled(!updates.started)
+                Button("Check for Updates…") { updates.check() }.disabled(!updates.canCheck)
+            } header: {
+                Text("Updates")
+            } footer: {
+                footer(updates.status)
+            }
+
+            Section {
                 Toggle("Mute notifications", isOn: notifying($notificationsMuted))
                 Toggle("Hide sender and message preview", isOn: notifying($hideNotificationPreview))
             } header: {
@@ -106,8 +119,9 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480)
-        .fixedSize(horizontal: false, vertical: true)
+        // The extra update controls make the intrinsic form taller than a
+        // laptop's usable screen. Bound the window; grouped Form scrolls.
+        .frame(width: 480, height: min(760, max(400, (NSScreen.main?.visibleFrame.height ?? 900) - 80)))
     }
 
     // A setting whose name alone doesn't say what it does gets one line of
