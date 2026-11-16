@@ -20,6 +20,9 @@ import XCTest
             XCTAssertNotNil(root.item(withTitle: group)?.submenu?.item(withTitle: title))
         }
         XCTAssertNotNil(root.item(withTitle: "Help")?.submenu?.item(withTitle: "Diagnostics")?.submenu?.item(withTitle: "Send Test Notification"))
+        let saved = try XCTUnwrap(root.item(withTitle: "Phone")?.submenu?.item(withTitle: "Saved Conversation Previews…"))
+        XCTAssertEqual(saved.action, #selector(AppDelegate.showSavedPhoneConversations(_:)))
+        XCTAssertTrue(AppDelegate().responds(to: try XCTUnwrap(saved.action)))
     }
     func testEveryExistingCommandAndResponderRouteIsPreserved() {
         let items = commands(MainMenu.build(appName: "Textem"))

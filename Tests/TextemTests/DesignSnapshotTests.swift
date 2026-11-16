@@ -49,6 +49,8 @@ final class DesignSnapshotTests: XCTestCase {
         let unlinked = PhoneConversationModel(context: context, directory: scratch.appendingPathComponent("unlinked"),
             endpoint: { "" }, fetch: { _ in throw PhoneImageError.noDevice })
         let connection = CompanionConnectionModel(load: { nil }, save: { _ in })
+        let saved = SavedPhoneConversationsModel(accountID: context.accountID, directory: recoveredDirectory)
+        let emptySaved = SavedPhoneConversationsModel(accountID: UUID(), directory: recoveredDirectory)
 
         let retrying = LoadErrorView(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
         retrying.present(message: "The Internet connection appears to be offline. Retrying in 4 seconds.", isRetrying: true)
@@ -58,6 +60,10 @@ final class DesignSnapshotTests: XCTestCase {
 
         for (suffix, name) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let appearance = try XCTUnwrap(NSAppearance(named: name))
+            try render(NSHostingView(rootView: SavedPhoneConversationsView(model: saved, onClose: {}).frame(width: 760, height: 900)),
+                       "saved-conversation-\(suffix)", appearance, output)
+            try render(NSHostingView(rootView: SavedPhoneConversationsView(model: emptySaved, onClose: {}).frame(width: 760, height: 900)),
+                       "saved-conversation-empty-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: SettingsView(nativeCodes: codes)), "settings-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: CompanionConnectionView(model: connection, onChanged: {}, onClose: {})),
                        "phone-connection-\(suffix)", appearance, output)

@@ -22,6 +22,8 @@ enum PhoneRecoveryCheck {
     struct Pane: Codable, Sendable {
         var visible = false
         var routeValidated = false
+        var savedLibrary = false
+        var accountValidated = false
         var savedPreviews = 0
         var decodedPictures = 0
         var pairedRefreshAt: Date?

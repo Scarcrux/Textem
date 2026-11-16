@@ -128,6 +128,7 @@ final class WebViewController: NSViewController {
     private var currentImageConversation: PhoneImageConversation?
     private var displayedImageConversationKey: String?
     private var phoneConversationModel: PhoneConversationModel?
+    private var savedPhoneConversationsModel: SavedPhoneConversationsModel?
     private var displayedLinkPreviewDocument: LinkPreviewDocument?
     private var dismissedPhoneOnlyConversation: String?
     private struct RecoverySelection {
@@ -337,7 +338,7 @@ final class WebViewController: NSViewController {
         let imageConversation = PhoneImageConversation(accountID: accountID, route: conversationID, label: conversation)
         currentImageConversation = visible && routeConfirmed && imageConversation.key != nil ? imageConversation : nil
         phoneImagesModel?.setConversation(currentImageConversation)
-        if browsingPhoneImageLibrary { return }
+        if browsingPhoneImageLibrary || savedPhoneConversationsModel != nil { return }
         guard visible else {
             // The native relay temporarily becomes Google's one active
             // computer. Keep the recovery pane and route while it works; the
@@ -592,6 +593,21 @@ final class WebViewController: NSViewController {
 
     func phoneRecoveryPaneEvidence() async -> PhoneRecoveryCheck.Pane {
         var evidence = PhoneRecoveryCheck.Pane()
+        if let model = savedPhoneConversationsModel,
+           let host = linkPreviewHost as? NSHostingView<SavedPhoneConversationsView>,
+           host.rootView.model === model, host.window?.isVisible == true,
+           host.window?.occlusionState.contains(.visible) == true, !host.isHiddenOrHasHiddenAncestor,
+           host.bounds.width > 100, host.bounds.height > 100 {
+            evidence.visible = true; evidence.savedLibrary = true
+            evidence.accountValidated = model.accountID == accountID
+                && model.selected?.accountKey == PhoneConversationStore.accountKey(accountID)
+            guard evidence.accountValidated else { return evidence }
+            evidence.savedPreviews = model.selected?.samples.count ?? 0
+            evidence.decodedPictures = model.selected?.samples.filter { sample in
+                guard let data = sample.image?.data else { return false }; return NSImage(data: data) != nil
+            }.count ?? 0
+            return evidence
+        }
         guard let model = phoneConversationModel, let host = linkPreviewHost as? NSHostingView<PhoneConversationView>,
               host.rootView.model === model, host.window?.isVisible == true,
               host.window?.occlusionState.contains(.visible) == true, !host.isHiddenOrHasHiddenAncestor,
@@ -617,6 +633,14 @@ final class WebViewController: NSViewController {
             onImages: { [weak self] in self?.showPhoneImages() }))
         installLinkPreviewHost(host)
         phoneConversationModel = model
+    }
+
+    func showSavedPhoneConversations() {
+        let model = SavedPhoneConversationsModel(accountID: accountID)
+        let host = NSHostingView(rootView: SavedPhoneConversationsView(model: model,
+            onClose: { [weak self] in self?.hideLinkPreviewFallback() }))
+        installLinkPreviewHost(host)
+        savedPhoneConversationsModel = model
     }
 
     private func dismissPhoneImages() {
@@ -655,6 +679,7 @@ final class WebViewController: NSViewController {
 
     private func hideLinkPreviewFallback() {
         phoneConversationModel?.cancel(); phoneConversationModel = nil
+        savedPhoneConversationsModel = nil
         showingPhoneImages = false
         browsingPhoneImageLibrary = false; displayedImageConversationKey = nil
         linkPreviewHost?.removeFromSuperview()

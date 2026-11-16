@@ -307,6 +307,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showMainWindow()
     }
 
+    @objc func showSavedPhoneConversations(_ sender: Any?) {
+        windowController?.webViewController.showSavedPhoneConversations()
+        showMainWindow()
+    }
+
     private var phoneNotificationWindow: PhoneNotificationWindowController?
     @objc func showPhoneNotification(_ sender: Any?) {
         if phoneNotificationWindow == nil { phoneNotificationWindow = PhoneNotificationWindowController() }

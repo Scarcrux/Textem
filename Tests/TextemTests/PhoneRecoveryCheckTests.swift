@@ -62,6 +62,13 @@ struct PhoneRecoveryCheckTests {
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: reportDirectory)
         #expect(throws: PhoneNotificationError.privateFile) { try PhoneRecoveryCheck.save(.init(), in: link) }
     }
+    @Test func offlineSavedLibraryEvidenceNeverClaimsLiveRouteOrRefresh() async throws {
+        let pair = try CompanionConnectionTests().pairing()
+        let result = await PhoneRecoveryCheck.collect(load: { pair }, fetch: { _ in throw URLError(.cannotConnectToHost) },
+            records: { [] }, pane: { .init(visible: true, savedLibrary: true, accountValidated: true, savedPreviews: 2, decodedPictures: 1) })
+        #expect(result.state == .unavailable && result.pane.savedLibrary && result.pane.accountValidated)
+        #expect(result.pane.savedPreviews == 2 && !result.pane.routeValidated && result.pane.pairedRefreshAt == nil)
+    }
     @Test func pairedRefreshEvidenceRequiresMatchingIngestAndIsClearedOnConnectionChange() async throws {
         let root = try PhoneImageTests().temporary()
         defer { try? FileManager.default.removeItem(at: root) }

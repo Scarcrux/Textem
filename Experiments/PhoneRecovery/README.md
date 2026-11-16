@@ -6,14 +6,15 @@ paths keep their behavior. A linked notification source takes priority on reopen
 
 ## Current path
 
-- Android companion v0.12 captures only content already exposed to its approved
+- Android companion v0.14 captures only content already exposed to its approved
   notification listener. Its private atomic journal retains up to four snapshots
   per source, 32 overall, eight MiB overall, and seven days at the next write.
   Count/byte/age eviction is reported as `dropped`; this is not proof of lossless
   notification delivery. The worker queue is bounded and reports unavailable on
   overflow. Distinct sources no longer cancel each other's queued capture.
 - In a selected, verified phone-only web route, **Read phone preview** reads the
-  journal over the existing authenticated developer transport. Select a source,
+  journal over the explicitly paired local HTTPS connection (or a separately
+  configured developer transport). Select a source,
   inspect its actual preview, and confirm **This belongs here — link and refresh
   previews**. Brand/title matching never creates a link.
 - The binding includes an account/route digest and installation/source digest.
@@ -29,7 +30,12 @@ paths keep their behavior. A linked notification source takes priority on reopen
   publication. Transfers verify the current route before and after fetching.
 - The private Mac cache retains up to four snapshots per linked conversation,
   20 links, 16 MiB overall. A full library refuses further writes and preserves
-  existing content. Reopening reads the cache without requiring the phone.
+  existing content. **Phone → Saved Conversation Previews…** opens a read-only,
+  account-scoped cache in the conversation surface, even after restarting Textem
+  while Google is stuck trying to reach the phone. This path requires neither
+  Google navigation nor the phone. Labels identify library entries for display;
+  they never establish routes or create links. Live linking and refresh still
+  require a verified Google route.
 - Text stays literal, with explicit HTTPS links. Supported PNGs are validated and
   rendered as notification-level pictures; missing references explain the limit.
   **Shared graphics** opens the existing explicit image library.
@@ -40,9 +46,13 @@ paths keep their behavior. A linked notification source takes priority on reopen
 
 ## Release gates still open
 
-This is developer-connected partial preview recovery. It does not retrieve past
+This is partial preview recovery. The signed app has verified paired HTTPS
+delivery and refresh into a bound pane, plus visible offline retention. Cold
+offline rendering through the new saved library remains a separate live gate.
+It does not retrieve past
 RCS history from Google, continuously sync a complete inbox, reproduce full
-business cards/actions, or remove the need for a production companion transport.
+business cards/actions, or establish background/event reliability merely from a
+successful connection.
 The libgm helper remains disabled in normal launches. No additional pairing,
 permissions or competing Google relay is started by selecting a conversation.
 
