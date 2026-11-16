@@ -8,6 +8,8 @@ import SwiftUI
     @Published private(set) var candidate: PhoneNotificationSnapshot?
     @Published private(set) var candidates: [PhoneNotificationSnapshot] = []
     @Published private(set) var busy = false
+    private(set) var lastSuccessfulRefresh: Date?
+    private(set) var lastRefreshTransport: PhoneJournalTransport = .unknown
     @Published var automatic = true
     @Published var status = "Google did not provide this conversation to the web client. Link a captured phone preview to recover supported content here."
     var validate: @MainActor (PhoneImageConversation) async -> Bool = { _ in false }
@@ -29,6 +31,7 @@ import SwiftUI
     func cancel() { stopped = true; generation = UUID(); busy = false; candidate = nil; candidates = [] }
     func connectionChanged() {
         generation = UUID(); busy = false; candidate = nil; candidates = []
+        lastSuccessfulRefresh = nil; lastRefreshTransport = .unknown
         status = "Phone connection changed. Saved previews are retained; refresh to check the connection."
     }
     func chooseSource(_ key: String) { guard !busy else { return }; candidate = candidates.first { PhoneConversationStore.sourceKey($0) == key } }
@@ -46,6 +49,7 @@ import SwiftUI
                     status = "The phone journal contains another source. Saved previews remain available; nothing was assigned here."; return
                 }
                 for sample in matching { try PhoneConversationStore.ingest(sample, for: context, in: directory) }; reload()
+                lastSuccessfulRefresh = Date(); lastRefreshTransport = journal.transport
                 status = "Captured previews refreshed. This is partial notification content, not complete conversation history."
                 if journal.dropped > 0 { status += " The bounded phone journal has discarded \(journal.dropped) older capture(s)." }
             } else {
@@ -73,6 +77,7 @@ import SwiftUI
     }
     func unlink() {
         generation = UUID(); busy = false; candidate = nil; candidates = []
+        lastSuccessfulRefresh = nil; lastRefreshTransport = .unknown
         do {
             try PhoneConversationStore.unlink(context, in: directory); reload()
             status = "Source unlinked and this conversation’s cached previews deleted. Phone originals and shared images are unchanged."

@@ -19,6 +19,7 @@ import org.json.JSONObject;
 
 /** Explicitly started LAN channel. No Google session, ADB, send API or history scan. */
 final class CompanionServer {
+    static final String SERVICE_TYPE = "_textem-phone._tcp.";
     private static final String TLS_KEY = "textem-companion-tls-v1", TOKEN_KEY = "textem-companion-token-v1";
     // start() stores only getApplicationContext(); fixture instances never enter
     // this field and are closed by their instrument, so no Activity is retained.
@@ -35,6 +36,8 @@ final class CompanionServer {
     });
     private volatile boolean running = true;
     private volatile SSLSocket current;
+    private android.net.nsd.NsdManager discovery;
+    private android.net.nsd.NsdManager.RegistrationListener registration;
     private volatile String fixtureFailure = "none";
     private final StringBuffer fixtureProgress = new StringBuffer();
     String fixtureProgress() { if (!syntheticFixture) throw new SecurityException(); return fixtureProgress.toString(); }
@@ -64,6 +67,27 @@ final class CompanionServer {
         if (active == null || !active.allowed()) throw new IllegalStateException();
         return new JSONObject(active.descriptor.toString());
     }
+    static java.net.InetAddress localAddress(Context c) throws Exception {
+        android.net.ConnectivityManager manager = c.getSystemService(android.net.ConnectivityManager.class);
+        android.net.Network network = manager.getActiveNetwork();
+        android.net.NetworkCapabilities caps = manager.getNetworkCapabilities(network);
+        android.net.LinkProperties link = manager.getLinkProperties(network);
+        if (caps == null || link == null || !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+                || caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) throw new IOException();
+        java.util.ArrayList<InetAddress> found = new java.util.ArrayList<>();
+        for (android.net.LinkAddress item : link.getLinkAddresses()) {
+            InetAddress address = item.getAddress();
+            if (address instanceof Inet4Address && address.isSiteLocalAddress()) found.add(address);
+        }
+        if (found.size() != 1) throw new IOException(); return found.get(0);
+    }
+    static synchronized void reconcile(Context c) throws Exception {
+        InetAddress address;
+        try { address = localAddress(c); }
+        catch (Exception unavailable) { stop(false, c); throw unavailable; }
+        if (active != null && active.allowed() && address.equals(active.listener.getInetAddress())) return;
+        stop(false, c); start(c);
+    }
     // Only a private, fixed cache directory may host a synthetic loopback
     // instrument. It has separate keys/preferences and never enters `active`.
     static CompanionServer fixture(Context c, java.util.function.BooleanSupplier access) throws Exception {
@@ -78,9 +102,13 @@ final class CompanionServer {
         running = false; try { listener.close(); } catch (IOException ignored) { }
         try { if (current != null) current.close(); } catch (IOException ignored) { }
         deadlines.shutdownNow();
+        if (discovery != null && registration != null) {
+            try { discovery.unregisterService(registration); } catch (RuntimeException ignored) { }
+        }
     }
     static synchronized boolean stop(boolean revoke, Context context) {
         if (active != null) { active.close(); active = null; }
+        if (revoke) CompanionResume.requested(context, false);
         return !revoke || revokeToken(context, false);
     }
     private static boolean revokeToken(Context context, boolean fixture) {
@@ -119,14 +147,7 @@ final class CompanionServer {
     }
     private CompanionServer(Context c, boolean synthetic, java.util.function.BooleanSupplier access) throws Exception {
         context = c; syntheticFixture = synthetic; fixtureAccess = access;
-        List<InetAddress> addresses = new ArrayList<>();
-        for (NetworkInterface iface : Collections.list(NetworkInterface.getNetworkInterfaces())) {
-            if (!iface.isUp() || iface.isLoopback() || iface.isVirtual()) continue;
-            for (InetAddress address : Collections.list(iface.getInetAddresses()))
-                if (address instanceof Inet4Address && address.isSiteLocalAddress() && !address.isLoopbackAddress()) addresses.add(address);
-        }
-        if (synthetic) { addresses.clear(); addresses.add(InetAddress.getByName("127.0.0.1")); }
-        if (addresses.size() != 1) throw new IOException("Connect to one private local network before starting.");
+        List<InetAddress> addresses = Collections.singletonList(synthetic ? InetAddress.getByName("127.0.0.1") : localAddress(c));
         final String tlsAlias = TLS_KEY + (synthetic ? "-fixture" : "");
         KeyStore keys = KeyStore.getInstance("AndroidKeyStore"); keys.load(null);
         if (!keys.containsAlias(tlsAlias)) {
@@ -172,7 +193,23 @@ final class CompanionServer {
             descriptor.put("host", addresses.get(0).getHostAddress()); descriptor.put("port", listener.getLocalPort());
             descriptor.put("certificate_sha256", hex(MessageDigest.getInstance("SHA-256").digest(certificate.getEncoded())));
             descriptor.put("token", token); descriptor.put("install_id", NotificationContentStore.identity(c).install);
+            if (!synthetic) advertise(descriptor.getString("certificate_sha256"));
         } catch (Exception failure) { listener.close(); throw failure; }
+    }
+    private void advertise(String pin) {
+        discovery = context.getSystemService(android.net.nsd.NsdManager.class);
+        registration = new android.net.nsd.NsdManager.RegistrationListener() {
+            public void onRegistrationFailed(android.net.nsd.NsdServiceInfo service, int error) { }
+            public void onUnregistrationFailed(android.net.nsd.NsdServiceInfo service, int error) { }
+            public void onServiceUnregistered(android.net.nsd.NsdServiceInfo service) { }
+            public void onServiceRegistered(android.net.nsd.NsdServiceInfo service) {
+                if (!running) try { discovery.unregisterService(this); } catch (RuntimeException ignored) { }
+            }
+        };
+        android.net.nsd.NsdServiceInfo service = new android.net.nsd.NsdServiceInfo();
+        service.setServiceName("Textem-" + pin.substring(0, 12)); service.setServiceType(SERVICE_TYPE); service.setPort(listener.getLocalPort());
+        try { discovery.registerService(service, android.net.nsd.NsdManager.PROTOCOL_DNS_SD, registration); }
+        catch (RuntimeException unavailable) { /* Pinned saved-address access remains available. */ }
     }
     private boolean allowed() {
         return running && CaptureState.enabled(context) && (syntheticFixture ? fixtureAccess.getAsBoolean() : CaptureState.access(context)) && NotificationContentStore.enabled(context);

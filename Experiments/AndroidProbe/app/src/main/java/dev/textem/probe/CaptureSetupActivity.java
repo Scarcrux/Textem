@@ -69,7 +69,7 @@ public final class CaptureSetupActivity extends Activity {
             CaptureState.record(this, report, "STATE"); refresh();
         });
         button(root, "Clear readiness diagnostics", "capture-clear", () -> { CaptureState.clear(this); refresh(); });
-        label(root, "Optional local content previews: saves the latest Google notification sample and a bounded journal (up to four snapshots per source, 32 total, 8 MiB, seven days). Each sample has up to ten text previews and one available picture. Disable clears the journal; Delete also clears the latest sample. Images may be partial; URI attachments are not opened. Mac thread links require explicit confirmation. No full cards/history or uploads.", 16);
+        label(root, "Optional local content previews: saves the latest Google notification sample and a bounded journal (up to four snapshots per source, 32 total, 8 MiB, seven days). Each sample has up to ten text previews and one available picture. Disable clears the journal; Delete also clears the latest sample. Granted private Google image URIs may be copied with byte, size and time limits; other references remain unavailable. Mac thread links require explicit confirmation. No full cards/history or uploads.", 16);
         button(root, "Enable local content samples", "content-enable", () -> {
             if (!CaptureState.enabled(this) || !CaptureState.access(this)) {
                 status.setText("Enable readiness checks and approve Android notification access first."); return;
@@ -81,7 +81,7 @@ public final class CaptureSetupActivity extends Activity {
         });
         button(root, "Delete saved notification content", "content-clear", () -> { NotificationContentStore.clear(this); refresh(); });
         label(root, "Local Mac connection", 20);
-        label(root, "Start this connection to read captured previews on your Mac without USB or Android debugging. Both devices must be on the same private network. A persistent Android service shows when it is running. After a phone restart, start it again. Network address changes require an updated connection file. This is partial notification content, not full conversation history.", 16);
+        label(root, "Start this connection to read captured previews on your Mac without USB or Android debugging. Both devices must share private Wi-Fi. Start also enables resume after Android service interruption, phone restart and app updates, until you tap Stop or revoke access. The running notification has a Stop control. The Mac rediscovers the same pinned phone after network address changes. Android Force Stop still requires you to start again. This is partial notification content, not full conversation history.", 16);
         connectionStatus = label(root, "", 16); connectionStatus.setTag("connection-status");
         button(root, "Start local connection", "connection-start", () -> {
             if (!CaptureState.enabled(this) || !CaptureState.access(this) || !NotificationContentStore.enabled(this)) {
@@ -104,9 +104,11 @@ public final class CaptureSetupActivity extends Activity {
         });
         label(root, "The connection file is a secret. Transfer it privately to your Mac, import it under Phone connection in the preview pane, then delete the transferred copy. Anyone with this file and local-network access can read captured previews until you revoke it.", 16);
         button(root, "Stop local connection", "connection-stop", () -> {
+            CompanionResume.requested(this, false);
             stopService(new Intent(this, CompanionConnectionService.class)); CompanionServer.stop(false, this); refresh();
         });
         button(root, "Revoke exported connection files", "connection-revoke", () -> {
+            CompanionResume.requested(this, false);
             stopService(new Intent(this, CompanionConnectionService.class));
             connectionNotice(CompanionServer.stop(true, this) ? "Stopped and revoked. Previously exported files no longer authorize access." : "Stopped, but credential deletion could not be verified. Retry Revoke before restarting.");
         });

@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to your explicitly paired Textem phone to read captured conversation previews on your private network.</string>
+	<key>NSBonjourServices</key>
+	<array><string>_textem-phone._tcp</string></array>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>LSApplicationCategoryType</key>

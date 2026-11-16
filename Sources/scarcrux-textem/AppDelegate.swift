@@ -63,6 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         )
         NotificationManager.shared.requestAuthorization()
+        if ProcessInfo.processInfo.arguments.contains("--check-phone-connection") {
+            Task { await runPhoneConnectionCheck(present: false) }
+        }
         if ProcessInfo.processInfo.environment["TEXTEM_REPLY_INSPECT"] == "1" {
             NotificationManager.shared.inspectLatestNotifiedThread()
         }
@@ -270,6 +273,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             showMainWindow()
         } catch {
             presentInfo(error.localizedDescription)
+        }
+    }
+
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        do {
+            guard try PhoneRecoveryCheck.consumeRequest(filenames) else { sender.reply(toOpenOrPrint: .failure); return }
+            sender.reply(toOpenOrPrint: .success)
+            Task { await runPhoneConnectionCheck(present: false) }
+        } catch { sender.reply(toOpenOrPrint: .failure) }
+    }
+
+    @objc func checkPhoneConnection(_ sender: Any?) {
+        Task { await runPhoneConnectionCheck(present: true) }
+    }
+    private func runPhoneConnectionCheck(present: Bool) async {
+        let report = await PhoneRecoveryCheck.collect(discover: { await CompanionDiscovery.resolve(fingerprint: $0) }, pane: { [weak self] in
+            await self?.windowController?.webViewController.phoneRecoveryPaneEvidence() ?? PhoneRecoveryCheck.Pane()
+        })
+        do { try PhoneRecoveryCheck.save(report) }
+        catch { if present { presentInfo("Couldn’t save the private connection check.") }; return }
+        if present {
+            if report.state == .connected {
+                presentInfo("Phone connection working. Received \(report.previews) captured previews from \(report.sources) sources, including \(report.pictures) pictures. This does not establish complete history.")
+            } else {
+                presentInfo(report.state.message + " Saved previews remain available. Check Phone connection in the preview pane and that the phone connection is running.")
+            }
         }
     }
 

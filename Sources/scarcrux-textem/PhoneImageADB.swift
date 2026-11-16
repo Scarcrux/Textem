@@ -284,10 +284,11 @@ final class PhoneImageADBClient: @unchecked Sendable {
     }
     func fetchNotificationJournal(endpoint: String) async throws -> PhoneNotificationJournal {
         let (executable, device) = try await connectedDevice(endpoint: endpoint)
-        return try Self.readNotificationJournal { name, maximum in
+        let journal = try Self.readNotificationJournal { name, maximum in
             try PhoneImageCommand.run(executable, device + ["exec-out", "run-as", "dev.textem.probe", "/system/bin/head",
                 "-c", String(maximum + 1), "files/" + name], maximum: maximum)
         }
+        return PhoneNotificationJournal(samples: journal.samples, dropped: journal.dropped, transport: .developerADB)
     }
     static func readNotificationJournal(read: (String, Int) throws -> Data) throws -> PhoneNotificationJournal {
         let first = try read("notification-content-state.json", 4096)

@@ -20,6 +20,7 @@ import org.json.JSONObject;
 
 /** Bounded notification preview, never a complete message/history claim. */
 final class NotificationContent {
+    interface MediaReader { Bitmap read(android.net.Uri uri, String mime) throws Exception; }
     static final int MAX_BYTES = 2 * 1024 * 1024, IMAGE_BYTES = 1024 * 1024;
     static final class Result {
         final String state; final JSONObject document;
@@ -47,11 +48,23 @@ final class NotificationContent {
     static Result inspect(Context context, String packageName, Supplier<Notification> supplier,
                           boolean enabled, boolean access, String install, byte[] secret, int uid,
                           String origin, boolean synthetic) {
+        return inspect(context, packageName, supplier, enabled, access, install, secret, uid, origin, synthetic,
+            (uri, mime) -> synthetic ? null : NotificationMedia.read(context, uri, mime));
+    }
+    static Result mediaFixture(Context context, Supplier<Notification> supplier, MediaReader reader) {
+        if (!context.getFilesDir().equals(new java.io.File(context.getCacheDir(), "notification-content-controls"))) throw new SecurityException();
+        return inspect(context, NotificationReadiness.PACKAGE, supplier, true, true,
+            "57b2dd91-cfa8-4193-9a38-e2d6d6470625", new byte[32], 0, "POSTED", true, reader);
+    }
+    private static Result inspect(Context context, String packageName, Supplier<Notification> supplier,
+                          boolean enabled, boolean access, String install, byte[] secret, int uid,
+                          String origin, boolean synthetic, MediaReader reader) {
         if (!enabled) return new Result("OFF", null);
         if (!access) return new Result("ACCESS_REQUIRED", null);
         if (!NotificationReadiness.PACKAGE.equals(packageName)) return new Result("OTHER_APP_IGNORED", null);
         if (!Arrays.asList("POSTED", "ACTIVE_SCAN").contains(origin)) return new Result("MALFORMED", null);
         Bitmap scaled = null;
+        Bitmap recovered = null;
         try {
             Notification n = supplier.get();
             if (n == null || n.extras == null) return new Result("MALFORMED", null);
@@ -61,6 +74,7 @@ final class NotificationContent {
             java.util.UUID.fromString(install);
             String key = source(secret, uid, shortcut);
             boolean truncated = false; int uris = 0;
+            android.net.Uri candidate = null; String candidateMime = null;
             JSONArray messages = new JSONArray();
             Parcelable[] raw = n.extras.getParcelableArray(Notification.EXTRA_MESSAGES);
             if (raw != null) {
@@ -77,7 +91,12 @@ final class NotificationContent {
                     row.put("timestamp_ms", timestamp >= 0 && timestamp <= System.currentTimeMillis() + 300000 ? timestamp : 0);
                     row.put("text", bounded(text, 4000)); row.put("truncated", text != null && text.length() > 4000);
                     messages.put(row);
-                    if (m.getDataUri() != null) uris++;
+                    if (m.getDataUri() != null) {
+                        uris++;
+                        if (NotificationMedia.eligible(m.getDataUri(), m.getDataMimeType())) {
+                            candidate = m.getDataUri(); candidateMime = m.getDataMimeType();
+                        }
+                    }
                 }
             } else {
                 CharSequence text = n.extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
@@ -109,10 +128,21 @@ final class NotificationContent {
                         if (drawable instanceof BitmapDrawable) picture = ((BitmapDrawable) drawable).getBitmap();
                         else imageState = "UNSUPPORTED";
                     } else if (picture == null) imageState = "UNSUPPORTED";
-                    if (icon.getType() == Icon.TYPE_URI || icon.getType() == Icon.TYPE_URI_ADAPTIVE_BITMAP) uris++;
+                    if (icon.getType() == Icon.TYPE_URI || icon.getType() == Icon.TYPE_URI_ADAPTIVE_BITMAP) {
+                        uris++;
+                        if (candidate == null && NotificationMedia.eligible(icon.getUri(), "image/*")) {
+                            candidate = icon.getUri(); candidateMime = "image/*";
+                        }
+                    }
                 } else if (value != null) return new Result("MALFORMED", null);
             }
             JSONObject image = null;
+            if (picture == null && candidate != null) {
+                try {
+                    recovered = reader.read(candidate, candidateMime); picture = recovered;
+                    if (recovered == null) imageState = "UNAVAILABLE";
+                } catch (Exception unavailable) { imageState = "UNAVAILABLE"; }
+            }
             if (picture != null) {
                 try {
                 if (picture.isRecycled() || picture.getWidth() <= 0 || picture.getHeight() <= 0) return new Result("MALFORMED", null);
@@ -138,6 +168,8 @@ final class NotificationContent {
                 } else imageState = "UNAVAILABLE";
                 } catch (RuntimeException unavailable) { image = null; imageState = "UNAVAILABLE"; }
             }
+            // A reference is resolved only after its bounded PNG was produced.
+            if (recovered != null && image != null) uris--;
             boolean textPresent = false;
             for (int index = 0; index < messages.length(); index++) textPresent |= !messages.getJSONObject(index).getString("text").isEmpty();
             if (!textPresent && image == null) return new Result(uris > 0 ? "URI_ONLY_UNSUPPORTED"
@@ -152,6 +184,6 @@ final class NotificationContent {
             document.put("uri_attachments", uris); document.put("complete", false);
             return new Result("SAVED", document);
         } catch (Exception malformed) { return new Result("MALFORMED", null); }
-        finally { if (scaled != null) scaled.recycle(); }
+        finally { if (scaled != null) scaled.recycle(); if (recovered != null) recovered.recycle(); }
     }
 }

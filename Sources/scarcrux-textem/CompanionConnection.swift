@@ -46,7 +46,7 @@ struct CompanionPairing: Sendable, CustomStringConvertible, CustomDebugStringCon
     private static func hexKey(_ value: String) -> Bool {
         value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
-    private static func privateAddress(_ value: String) -> Bool {
+    static func privateAddress(_ value: String) -> Bool {
         let parts = value.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 4 else { return false }
         let numbers = parts.compactMap { UInt8($0) }
@@ -108,7 +108,7 @@ struct CompanionHTTPSJournalClient: Sendable {
               response.mimeType == "application/json" else { throw CompanionConnectionError.invalidReply }
         let journal = try PhoneNotificationJournal.parse(data)
         guard journal.samples.allSatisfy({ $0.installID == pairing.installID }) else { throw CompanionConnectionError.wrongPhone }
-        return journal
+        return PhoneNotificationJournal(samples: journal.samples, dropped: journal.dropped, transport: .pairedHTTPS)
     }
 
     func fetch(pairing: CompanionPairing) async throws -> PhoneNotificationJournal {

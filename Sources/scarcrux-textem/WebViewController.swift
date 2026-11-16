@@ -590,6 +590,24 @@ final class WebViewController: NSViewController {
             && webView.url?.scheme == "https" && webView.url?.host == "messages.google.com"
     }
 
+    func phoneRecoveryPaneEvidence() async -> PhoneRecoveryCheck.Pane {
+        var evidence = PhoneRecoveryCheck.Pane()
+        guard let model = phoneConversationModel, let host = linkPreviewHost as? NSHostingView<PhoneConversationView>,
+              host.rootView.model === model, host.window?.isVisible == true,
+              host.window?.occlusionState.contains(.visible) == true, !host.isHiddenOrHasHiddenAncestor,
+              host.bounds.width > 100, host.bounds.height > 100 else { return evidence }
+        evidence.visible = true
+        evidence.routeValidated = await validatePhoneConversation(model.context)
+        guard evidence.routeValidated else { return evidence }
+        evidence.savedPreviews = model.record?.samples.count ?? 0
+        if model.lastRefreshTransport == .pairedHTTPS { evidence.pairedRefreshAt = model.lastSuccessfulRefresh }
+        evidence.decodedPictures = model.record?.samples.filter { sample in
+            guard let data = sample.image?.data else { return false }
+            return NSImage(data: data) != nil
+        }.count ?? 0
+        return evidence
+    }
+
     private func showPhoneConversation(_ context: PhoneImageConversation) {
         guard phoneConversationModel?.context.key != context.key else { return }
         let model = PhoneConversationModel(context: context)

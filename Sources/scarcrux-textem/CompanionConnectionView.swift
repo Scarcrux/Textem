@@ -60,7 +60,7 @@ struct CompanionConnectionView: View {
             Text("Phone connection").font(.title2.bold())
             Text("On your phone, open Textem → Automatic recovery setup → Start local connection. Export its connection file privately to this Mac, then import it here.")
                 .fixedSize(horizontal: false, vertical: true)
-            Text("This connects captured notification previews over encrypted local Wi-Fi. It does not recover full history. Start the phone connection explicitly after a phone restart. If its network address changes, export and import an updated file.")
+            Text("This connects captured notification previews over encrypted local Wi-Fi. It does not recover full history. Start in the phone companion enables automatic resume until Stop or revocation. Textem rediscovers the same pinned phone after address changes; discovery never grants trust.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text(model.status).font(.callout).fixedSize(horizontal: false, vertical: true)
             HStack {

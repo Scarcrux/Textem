@@ -76,6 +76,8 @@ enum MainMenu {
         help.addItem(.separator())
         let diagnostics = NSMenuItem(title: "Diagnostics", action: nil, keyEquivalent: "")
         diagnostics.submenu = NSMenu(title: "Diagnostics")
+        command(diagnostics.submenu!, "Check Phone Connection…", #selector(AppDelegate.checkPhoneConnection(_:)))
+        diagnostics.submenu?.addItem(.separator())
         command(diagnostics.submenu!, "Send Test Notification", #selector(AppDelegate.sendTestNotification(_:)))
         help.addItem(diagnostics)
         return main

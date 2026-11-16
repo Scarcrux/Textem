@@ -1,8 +1,13 @@
 import Foundation
 
+enum PhoneJournalTransport: String, Sendable { case unknown, pairedHTTPS, developerADB }
 struct PhoneNotificationJournal: Sendable {
     let samples: [PhoneNotificationSnapshot]
     let dropped: Int
+    let transport: PhoneJournalTransport
+    init(samples: [PhoneNotificationSnapshot], dropped: Int, transport: PhoneJournalTransport = .unknown) {
+        self.samples = samples; self.dropped = dropped; self.transport = transport
+    }
     static let maximumBytes = 8 * 1024 * 1024
     static func parse(_ data: Data, now: Date = Date()) throws -> Self {
         let oldest = now.timeIntervalSince1970 * 1000 - 7 * 86_400_000

@@ -157,11 +157,14 @@ public class ProbeAutomation extends Instrumentation {
             phase("APK manifest limits services to system-bound capture and private local connection");
             PackageManager pm = getTargetContext().getPackageManager();
             PackageInfo info = pm.getPackageInfo(getTargetContext().getPackageName(),
-                PackageManager.GET_PERMISSIONS | PackageManager.GET_SERVICES | PackageManager.GET_PROVIDERS);
+                PackageManager.GET_PERMISSIONS | PackageManager.GET_SERVICES | PackageManager.GET_PROVIDERS | PackageManager.GET_RECEIVERS);
             check(new java.util.HashSet<>(Arrays.asList(info.requestedPermissions)).equals(new java.util.HashSet<>(Arrays.asList(
                 Manifest.permission.READ_SMS, Manifest.permission.INTERNET, Manifest.permission.CHANGE_NETWORK_STATE,
-                Manifest.permission.FOREGROUND_SERVICE, Manifest.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE, Manifest.permission.POST_NOTIFICATIONS))));
+                Manifest.permission.FOREGROUND_SERVICE, Manifest.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE, Manifest.permission.POST_NOTIFICATIONS,
+                Manifest.permission.ACCESS_NETWORK_STATE, Manifest.permission.RECEIVE_BOOT_COMPLETED))));
             check(info.services != null && info.services.length == 2 && info.providers == null);
+            check(info.receivers != null && info.receivers.length == 1 && !info.receivers[0].exported
+                && info.receivers[0].name.equals("dev.textem.probe.CompanionResumeReceiver"));
             for (android.content.pm.ServiceInfo service : info.services) {
                 check(!service.exported);
                 if (service.name.equals("dev.textem.probe.CaptureListener")) check("android.permission.BIND_NOTIFICATION_LISTENER_SERVICE".equals(service.permission));
@@ -260,9 +263,12 @@ public class ProbeAutomation extends Instrumentation {
             ShareProbeChecks.run(this);
             NotificationReadinessChecks.run(this);
             NotificationContentChecks.run(this);
+            NotificationMediaChecks.run(this);
             NotificationCandidateChecks.run(this);
             CompanionLinkChecks.run(this);
+            CompanionResumeChecks.run(this);
             if (requireDeniedPermission()) {
+                CompanionDiscoveryChecks.run(this);
                 phase("local connection setup renders without starting or requesting permission");
                 CaptureSetupActivity setup = (CaptureSetupActivity) startActivitySync(new Intent(getTargetContext(), CaptureSetupActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 runOnMainSync(() -> {

@@ -1,5 +1,40 @@
 # Textem read-only Android probe
 
+## Granted notification media and durable connection (v0.14)
+
+Captured MessagingStyle image URIs and explicit picture-icon URIs can now supply
+one picture when no embedded bitmap exists. The reader reuses the share reader's
+exact Google private-provider allowlist and actual OS URI-read-grant check. It
+does not fetch web links, open unknown/exported providers, read avatars, retain
+URI strings or request broad storage/media permissions. Reads are capped at six
+MiB/five seconds, decoded dimensions are bounded and downsampled to 2048, and
+the existing one-MiB PNG publication limit remains. Unavailable pictures retain
+text; `uri_attachments` counts unresolved references after successful recovery.
+The capture opt-ins/access are rechecked during reads and before publication.
+
+An explicit **Start local connection** in v0.14 enables durable resume until
+Stop, revoke or permission/opt-in removal. A v0.13 token or Bluetooth association
+alone does not opt into resume. The service uses Android sticky restart and a
+non-exported boot/package-update receiver under Android's
+[foreground-service lifecycle rules](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start).
+It waits for active private IPv4 Wi-Fi rather than using cellular/VPN-only
+networks. Android Force Stop still requires an explicit restart.
+
+Local DNS-SD advertises only `Textem-` plus a public certificate-pin prefix.
+The Mac tries its saved endpoint, then bounded local discovery after a connection
+failure. Discovery never supplies trust: the imported full certificate pin must
+validate before the token is transmitted. Tokens and source identities are never
+advertised. Successful endpoints are cached in process memory; changing address
+does not require replacing the phone credentials or thread links.
+
+The signed Mac app's **Help → Diagnostics → Check Phone Connection…** uses its
+own Keychain and HTTPS client and writes a private content-free report. The
+explicit `--check-phone-connection` launch argument runs the same check without
+an alert. It neither selects conversations nor mutates links/cache. Reported
+network success and visible route-validated pane evidence are separate fields.
+This is an instrument for live testing, not proof of UI rendering or history by
+its existence. New incoming Google picture capture still needs real evidence.
+
 ## Explicit local phone connection (v0.13)
 
 The optional **Automatic recovery setup → Start local connection** service
@@ -25,13 +60,14 @@ access on each read. The one HTTPS route reads only the bounded notification
 journal; it does not read SMS/MMS providers or send messages. Header, transfer
 size and time limits apply. No credentials, source text or pictures are logged.
 
-**Stop** ends the listener but retains credentials. Restarting reuses the port,
+In v0.13, **Stop** ends the listener but retains credentials. Restarting reuses the port,
 certificate and encrypted token. **Revoke** stops it and invalidates old exported
 files. **Disconnect** on the Mac retains cached previews and prevents debugging
 fallback, but cannot remotely revoke copies of an exported file. Phone restart
 requires an explicit Start; network-address changes require a new export/import.
-Discovery, automatic background restart, long-running capture reliability and
-complete history are not established by this implementation.
+The v0.14 section above supersedes manual restart/address-update requirements.
+Long-running capture reliability and complete history still require separate
+evidence; implementing resume/discovery alone does not prove them.
 
 Before first pairing, an existing developer ADB setup remains available. A
 configured, inaccessible, revoked or malformed paired connection never silently
@@ -163,7 +199,8 @@ blocked permission, missing thread, or empty cursor into a claim that RCS is abs
 ## Build
 
 Requirements: JDK 17+, Android SDK platform 35 and build tools, Internet access
-for initial build dependencies. This does **not** give the APK Internet access.
+for initial build dependencies. Runtime local-network access is described above;
+the build requires no Google session or messaging credentials.
 
 ```sh
 export JAVA_HOME=/path/to/jdk17

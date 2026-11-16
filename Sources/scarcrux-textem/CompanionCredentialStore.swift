@@ -36,7 +36,7 @@ struct CompanionCredentialStore: Sendable {
 struct CompanionJournalTransport: Sendable {
     var load: @Sendable () throws -> Data? = { try CompanionCredentialStore().load() }
     var network: @Sendable (CompanionPairing) async throws -> PhoneNotificationJournal = {
-        try await CompanionHTTPSJournalClient().fetch(pairing: $0)
+        try await CompanionPairedJournalClient().fetch(pairing: $0)
     }
     var developer: @Sendable (String) async throws -> PhoneNotificationJournal = {
         try await PhoneImageADBClient.shared.fetchNotificationJournal(endpoint: $0)
