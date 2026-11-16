@@ -11,6 +11,7 @@ import SwiftUI
     private(set) var lastSuccessfulRefresh: Date?
     private(set) var lastRefreshTransport: PhoneJournalTransport = .unknown
     @Published var automatic = true
+    @Published var showOriginalCaptures = false
     @Published var status = "Google did not provide this conversation to the web client. Link a captured phone preview to recover supported content here."
     var validate: @MainActor (PhoneImageConversation) async -> Bool = { _ in false }
     private let fetch: @Sendable (String) async throws -> PhoneNotificationJournal
@@ -22,7 +23,7 @@ import SwiftUI
          fetch: @escaping @Sendable (String) async throws -> PhoneNotificationJournal = { try await CompanionJournalTransport().fetch(developerEndpoint: $0) }) {
         self.context = context; self.directory = directory; self.endpoint = endpoint; self.fetch = fetch
         reload()
-        if record != nil { status = "Saved phone previews for this account and conversation. Full history is not established." }
+        if record != nil { status = "Saved phone previews for this account and conversation." }
     }
     func reload() {
         do { record = try PhoneConversationStore.record(for: context, in: directory) }
@@ -50,7 +51,7 @@ import SwiftUI
                 }
                 for sample in matching { try PhoneConversationStore.ingest(sample, for: context, in: directory) }; reload()
                 lastSuccessfulRefresh = Date(); lastRefreshTransport = journal.transport
-                status = "Captured previews refreshed. This is partial notification content, not complete conversation history."
+                status = "Phone previews updated."
                 if journal.dropped > 0 { status += " The bounded phone journal has discarded \(journal.dropped) older capture(s)." }
             } else {
                 let latest = journal.samples.sorted { $0.capturedAtMS > $1.capturedAtMS }
@@ -99,24 +100,17 @@ struct PhoneConversationView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PhonePanelHeader(symbol: "iphone.and.arrow.forward", title: "Phone conversation previews",
-                subtitle: model.context.label, onClose: onClose, closeLabel: "Close phone conversation previews").padding(20)
+                subtitle: model.context.label, onClose: onClose, closeLabel: "Close phone conversation previews",
+                trailingActions: AnyView(headerActions)).padding(.horizontal, 20).padding(.vertical, 14)
             Divider()
-            VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                if model.busy { ProgressView().controlSize(.small) }
                 Text(model.status).font(.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Button(model.record == nil ? "Read phone preview" : "Refresh previews") { Task { await model.read() } }
-                        .disabled(model.busy)
-                    if model.busy { ProgressView().controlSize(.small) }
-                    Button("Shared graphics", action: onImages)
-                    Button("Phone connection…") { connection = CompanionConnectionModel() }
+                Spacer(minLength: 0)
+                if model.record == nil {
+                    Button("Read phone preview") { Task { await model.read() } }.disabled(model.busy)
                 }
-                if model.record != nil {
-                    Toggle("Refresh captured previews while open", isOn: $model.automatic).font(.caption)
-                    Button("Unlink source and delete cached previews", role: .destructive) { model.unlink() }.disabled(model.busy)
-                }
-                Text("Use a paired local phone connection, or the existing developer debugging setup. Captures may omit older messages, attachments and card actions.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }.padding(20)
+            }.padding(.horizontal, 20).padding(.vertical, 10)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -131,7 +125,7 @@ struct PhoneConversationView: View {
                         PhoneConversationSampleView(sample: candidate)
                         Button("This belongs here — link and refresh previews") { Task { await model.link() } }.disabled(model.busy)
                     } else if let record = model.record {
-                        ForEach(Array(record.samples.enumerated()), id: \.offset) { _, sample in PhoneConversationSampleView(sample: sample) }
+                        PhonePreviewListView(samples: record.samples, showOriginalCaptures: model.showOriginalCaptures)
                     } else {
                         Text("No phone source linked").font(.headline)
                         Text("Read a phone preview, check its source and content, then explicitly link it here. Textem will not guess from a sender name.")
@@ -144,6 +138,30 @@ struct PhoneConversationView: View {
                 if let connection { CompanionConnectionView(model: connection, onChanged: model.connectionChanged, onClose: { self.connection = nil }) }
             }
             .task { await model.run() }.onDisappear { model.cancel() }
+    }
+    private var headerActions: some View {
+        HStack(spacing: 8) {
+            if model.record != nil {
+                Button { Task { await model.read() } } label: {
+                    Image(systemName: "arrow.clockwise").frame(width: 28, height: 28)
+                }.buttonStyle(.plain).disabled(model.busy)
+                    .help("Refresh phone previews").accessibilityLabel("Refresh phone previews")
+            }
+            Menu {
+                Button("Phone connection…") { connection = CompanionConnectionModel() }
+                Button("Shared graphics", action: onImages)
+                if model.record != nil {
+                    Divider()
+                    Toggle("Refresh while open", isOn: $model.automatic)
+                    Toggle("Show original captures", isOn: $model.showOriginalCaptures)
+                    Divider()
+                    Button("Unlink source and delete cached previews", role: .destructive) { model.unlink() }.disabled(model.busy)
+                }
+            } label: {
+                Image(systemName: "ellipsis").frame(width: 28, height: 28)
+            }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help("Conversation options").accessibilityLabel("Conversation options")
+        }
     }
 }
 
@@ -167,18 +185,10 @@ struct PhoneConversationSampleView: View {
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(Array(sample.messages.enumerated()), id: \.offset) { _, message in
                 if !message.text.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(Self.linkedText(message.text)).textSelection(.enabled)
-                        if message.truncated { Text("Preview shortened by the capture limit").font(.caption) }
-                    }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                    PhonePreviewMessageView(message: message, capturedAtMS: sample.capturedAtMS)
                 }
             }
-            if let data = sample.image?.data, let image = NSImage(data: data) {
-                Image(nsImage: image).resizable().scaledToFit().frame(maxHeight: 400)
-                    .accessibilityLabel("Captured phone notification picture")
-                Text("Notification-level picture; individual message attachment is not established.").font(.caption).foregroundStyle(.secondary)
-            }
+            PhonePreviewPictureView(sample: sample)
             if sample.uriAttachments > 0 || ["UNSUPPORTED", "UNAVAILABLE"].contains(sample.imageState) {
                 Text("Some referenced graphics could not be recovered. Use Shared graphics for an explicit image import.")
                     .font(.caption).foregroundStyle(.secondary)

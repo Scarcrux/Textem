@@ -8,6 +8,7 @@ struct PhonePanelHeader: View {
     let subtitle: String
     var onClose: (() -> Void)? = nil
     var closeLabel = "Close"
+    var trailingActions: AnyView? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -21,6 +22,7 @@ struct PhonePanelHeader: View {
                 Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer()
+            if let trailingActions { trailingActions }
             if let onClose {
                 Button(action: onClose) {
                     Image(systemName: "xmark.circle.fill")

@@ -27,6 +27,9 @@ enum PhoneRecoveryCheck {
         var savedPreviews = 0
         var decodedPictures = 0
         var pairedRefreshAt: Date?
+        var retainedMessageRows = 0
+        var displayedMessages = 0
+        var showingOriginalCaptures = false
     }
     struct Report: Encodable, Sendable {
         let schema = 1
@@ -40,6 +43,8 @@ enum PhoneRecoveryCheck {
         var dropped = 0
         var cacheReadable = false
         var savedConversations = 0
+        var cachedMessageRows = 0
+        var projectedMessageRows = 0
         var matchingSavedSources = 0
         var discoveryAttempted = false
         var discoveryCandidates = 0
@@ -57,7 +62,14 @@ enum PhoneRecoveryCheck {
         var report = Report()
         report.pane = await pane()
         let stored = try? records()
-        if let stored { report.cacheReadable = true; report.savedConversations = stored.count }
+        if let stored {
+            report.cacheReadable = true; report.savedConversations = stored.count
+            for record in stored {
+                let presentation = PhonePreviewPresentation(samples: record.samples)
+                report.cachedMessageRows += presentation.originalMessageCount
+                report.projectedMessageRows += presentation.messages.count
+            }
+        }
         do {
             let saved: Data?
             do { saved = try load() } catch { report.state = .keychainUnavailable; return report }

@@ -54,6 +54,17 @@ final class DesignSnapshotTests: XCTestCase {
         let connection = CompanionConnectionModel(load: { nil }, save: { _ in })
         let saved = SavedPhoneConversationsModel(accountID: context.accountID, directory: recoveredDirectory)
         let emptySaved = SavedPhoneConversationsModel(accountID: UUID(), directory: recoveredDirectory)
+        let overlapDirectory = scratch.appendingPathComponent("overlap")
+        let overlapSamples = try PhonePreviewPresentationTests().overlapSamples()
+        try PhoneConversationStore.link(overlapSamples[0], to: context, in: overlapDirectory)
+        try PhoneConversationStore.ingest(overlapSamples[1], for: context, in: overlapDirectory)
+        let overlap = PhoneConversationModel(context: context, directory: overlapDirectory,
+            endpoint: { "" }, fetch: { _ in throw PhoneImageError.noDevice })
+        overlap.automatic = false
+        let originals = PhoneConversationModel(context: context, directory: overlapDirectory,
+            endpoint: { "" }, fetch: { _ in throw PhoneImageError.noDevice })
+        originals.automatic = false; originals.showOriginalCaptures = true
+        let savedOverlap = SavedPhoneConversationsModel(accountID: context.accountID, directory: overlapDirectory)
 
         let retrying = LoadErrorView(frame: NSRect(x: 0, y: 0, width: 640, height: 400))
         retrying.present(message: "The Internet connection appears to be offline. Retrying in 4 seconds.", isRetrying: true)
@@ -63,6 +74,14 @@ final class DesignSnapshotTests: XCTestCase {
 
         for (suffix, name) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let appearance = try XCTUnwrap(NSAppearance(named: name))
+            try render(NSHostingView(rootView: PhoneConversationView(model: overlap, onClose: {}, onImages: {}).frame(width: 760, height: 900)),
+                       "phone-overlap-\(suffix)", appearance, output)
+            try render(NSHostingView(rootView: PhoneConversationView(model: overlap, onClose: {}, onImages: {}).frame(width: 430, height: 720)),
+                       "phone-overlap-narrow-\(suffix)", appearance, output)
+            try render(NSHostingView(rootView: PhoneConversationView(model: originals, onClose: {}, onImages: {}).frame(width: 760, height: 900)),
+                       "phone-original-captures-\(suffix)", appearance, output)
+            try render(NSHostingView(rootView: SavedPhoneConversationsView(model: savedOverlap, onClose: {}).frame(width: 760, height: 900)),
+                       "saved-overlap-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: SavedPhoneConversationsView(model: saved, onClose: {}).frame(width: 760, height: 900)),
                        "saved-conversation-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: SavedPhoneConversationsView(model: emptySaved, onClose: {}).frame(width: 760, height: 900)),

@@ -603,6 +603,10 @@ final class WebViewController: NSViewController {
                 && model.selected?.accountKey == PhoneConversationStore.accountKey(accountID)
             guard evidence.accountValidated else { return evidence }
             evidence.savedPreviews = model.selected?.samples.count ?? 0
+            let presentation = PhonePreviewPresentation(samples: model.selected?.samples ?? [])
+            evidence.retainedMessageRows = presentation.originalMessageCount
+            evidence.showingOriginalCaptures = model.showOriginalCaptures
+            evidence.displayedMessages = model.showOriginalCaptures ? presentation.originalMessageCount : presentation.messages.count
             evidence.decodedPictures = model.selected?.samples.filter { sample in
                 guard let data = sample.image?.data else { return false }; return NSImage(data: data) != nil
             }.count ?? 0
@@ -616,6 +620,10 @@ final class WebViewController: NSViewController {
         evidence.routeValidated = await validatePhoneConversation(model.context)
         guard evidence.routeValidated else { return evidence }
         evidence.savedPreviews = model.record?.samples.count ?? 0
+        let presentation = PhonePreviewPresentation(samples: model.record?.samples ?? [])
+        evidence.retainedMessageRows = presentation.originalMessageCount
+        evidence.showingOriginalCaptures = model.showOriginalCaptures
+        evidence.displayedMessages = model.showOriginalCaptures ? presentation.originalMessageCount : presentation.messages.count
         if model.lastRefreshTransport == .pairedHTTPS { evidence.pairedRefreshAt = model.lastSuccessfulRefresh }
         evidence.decodedPictures = model.record?.samples.filter { sample in
             guard let data = sample.image?.data else { return false }

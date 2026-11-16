@@ -26,7 +26,7 @@ paths keep their behavior. A linked notification source takes priority on reopen
   closed. The separate latest-notification/AutoFill reader retains its stricter
   `SAVED`-only and 30-minute freshness rules.
   Only the confirmed source is refreshed every 15 seconds while its pane is open.
-  Pause with the toggle. Route/account changes or closing the pane cancel pending
+  Pause with the toggle in the conversation’s options menu (…). Route/account changes or closing the pane cancel pending
   publication. Transfers verify the current route before and after fetching.
 - The private Mac cache retains up to four snapshots per linked conversation,
   20 links, 16 MiB overall. A full library refuses further writes and preserves
@@ -38,7 +38,17 @@ paths keep their behavior. A linked notification source takes priority on reopen
   require a verified Google route.
 - Text stays literal, with explicit HTTPS links. Supported PNGs are validated and
   rendered as notification-level pictures; missing references explain the limit.
-  **Shared graphics** opens the existing explicit image library.
+  **Shared graphics** in the options menu opens the existing explicit image library.
+- Normal live and saved views combine overlapping observations only when source,
+  installation, nonzero message time, text and truncation state match. Repeated
+  occurrences within a capture are retained, as are unknown-time messages and
+  same-text messages at different times. Original snapshots and picture
+  observations remain intact. **Show original captures** in the options menu
+  exposes every saved observation. This presentation does not establish full
+  history, individual picture attachments or message direction.
+- Refresh is in the header; connection setup, shared graphics, automatic refresh,
+  original captures and unlinking are in the options menu. Unlinked source
+  inspection still requires the same explicit route-validated confirmation.
 - Unlink deletes this conversation's preview cache. Removing an account deletes
   its preview records. This mapping does not authorize code AutoFill. Turning off
   phone capture/content or deleting saved notification content clears the phone

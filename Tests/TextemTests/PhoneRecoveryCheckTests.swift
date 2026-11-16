@@ -4,6 +4,14 @@ import Testing
 
 @Suite("Signed-app phone connection checks", .serialized) @MainActor
 struct PhoneRecoveryCheckTests {
+    @Test func cachedProjectionCountsDoNotClaimAVisibleOrLivePane() async throws {
+        let samples = try PhonePreviewPresentationTests().overlapSamples()
+        let record = PhoneConversationStore.Record(accountKey: String(repeating: "1", count: 64),
+            conversationKey: String(repeating: "2", count: 64), sourceKey: PhoneConversationStore.sourceKey(samples[0]), samples: samples)
+        let report = await PhoneRecoveryCheck.collect(load: { nil }, records: { [record] })
+        #expect(report.cacheReadable && report.cachedMessageRows == 5 && report.projectedMessageRows == 3)
+        #expect(report.state == .unpaired && !report.pane.visible && report.pane.pairedRefreshAt == nil)
+    }
     @Test func connectionAndVisiblePaneAreSeparateClaimsWithoutContent() async throws {
         let pair = try CompanionConnectionTests().pairing()
         let sample = try PhoneNotificationTests().fixture(picture: true)

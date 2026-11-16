@@ -7,6 +7,7 @@ import SwiftUI
     let directory: URL
     @Published private(set) var records: [PhoneConversationStore.Record] = []
     @Published var selectedKey: String?
+    @Published var showOriginalCaptures = false
     @Published private(set) var error: String?
     var selected: PhoneConversationStore.Record? {
         records.first { $0.conversationKey == selectedKey }
@@ -40,10 +41,11 @@ struct SavedPhoneConversationsView: View {
         VStack(alignment: .leading, spacing: 0) {
             PhonePanelHeader(symbol: "tray.full", title: "Saved conversation previews",
                 subtitle: "On this Mac · current account", onClose: onClose,
-                closeLabel: "Close saved conversation previews").padding(20)
+                closeLabel: "Close saved conversation previews", trailingActions: AnyView(headerActions))
+                .padding(.horizontal, 20).padding(.vertical, 14)
             Divider()
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Available without the phone or Google’s conversation screen. These are partial captured previews; full history is not established.")
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Saved on this Mac and available offline.")
                     .font(.caption).foregroundStyle(.secondary)
                 if !model.records.isEmpty {
                     Picker("Conversation", selection: $model.selectedKey) {
@@ -52,8 +54,7 @@ struct SavedPhoneConversationsView: View {
                         }
                     }
                 }
-                Button("Reload saved previews") { model.reload() }
-            }.padding(20)
+            }.padding(.horizontal, 20).padding(.vertical, 10)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -61,9 +62,7 @@ struct SavedPhoneConversationsView: View {
                         Text("Saved previews couldn’t be opened").font(.headline)
                         Text(error).textSelection(.enabled)
                     } else if let record = model.selected {
-                        ForEach(Array(record.samples.enumerated()), id: \.offset) { _, sample in
-                            PhoneConversationSampleView(sample: sample)
-                        }
+                        PhonePreviewListView(samples: record.samples, showOriginalCaptures: model.showOriginalCaptures)
                     } else {
                         Text("No saved previews for this account").font(.headline)
                         Text("When the phone is connected, open a phone-only conversation and explicitly link its captured source. Saved previews will then be available here offline.")
@@ -72,5 +71,20 @@ struct SavedPhoneConversationsView: View {
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
             }
         }.background(Color(nsColor: .windowBackgroundColor))
+    }
+    private var headerActions: some View {
+        HStack(spacing: 8) {
+            Button { model.reload() } label: {
+                Image(systemName: "arrow.clockwise").frame(width: 28, height: 28)
+            }.buttonStyle(.plain).help("Reload saved previews").accessibilityLabel("Reload saved previews")
+            if model.selected != nil {
+                Menu {
+                    Toggle("Show original captures", isOn: $model.showOriginalCaptures)
+                } label: {
+                    Image(systemName: "ellipsis").frame(width: 28, height: 28)
+                }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .help("Preview options").accessibilityLabel("Preview options")
+            }
+        }
     }
 }
