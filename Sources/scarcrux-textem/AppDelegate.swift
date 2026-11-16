@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var windowController: MainWindowController?
     private var statusItemController: StatusItemController?
     private var settingsWindowController: SettingsWindowController?
@@ -11,6 +11,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NativeAutoFillCoordinator.shared.start()
         NSApp.mainMenu = MainMenu.build(appName: "Textem")
+        NSApp.servicesMenu = NSApp.mainMenu?.items.first?.submenu?.item(withTitle: "Services")?.submenu
+        NSApp.windowsMenu = NSApp.mainMenu?.item(withTitle: "Window")?.submenu
+        NSApp.helpMenu = NSApp.mainMenu?.item(withTitle: "Help")?.submenu
+        if let accounts = NSApp.mainMenu?.item(withTitle: "Accounts")?.submenu {
+            accounts.delegate = self
+            menuNeedsUpdate(accounts)
+        }
 
         let controller = MainWindowController()
         windowController = controller
@@ -166,6 +173,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowController?.webViewController.quickReply(
             text, conversationID: conversationID)
     }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu.title == "Accounts" else { return }
+        let store = AccountStore.shared
+        MainMenu.populateAccounts(menu, accounts: store.accounts, activeID: store.activeID, canAdd: store.canAddAccounts)
+    }
+
+    @objc func switchAccountFromMenu(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let id = UUID(uuidString: raw) else { return }
+        _ = switchAccount(id)
+    }
+    @objc func addAccountFromMenu(_ sender: Any?) { addAccount() }
+    @objc func renameAccountFromMenu(_ sender: Any?) { renameAccount() }
+    @objc func removeAccountFromMenu(_ sender: Any?) { removeAccount() }
 
     private func addAccount() {
         guard AccountStore.shared.canAddAccounts else {

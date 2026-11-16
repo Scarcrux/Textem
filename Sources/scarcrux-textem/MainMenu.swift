@@ -1,86 +1,96 @@
 import AppKit
 
-// Single-menu layout. macOS mandates the bold app menu (it owns Quit/Hide by
-// convention and can't be removed), so rather than scatter Edit/View across
-// extra top-level menus we fold everything the app needs — reload + the
-// editing commands for composing messages — into that one menu. Key
-// equivalents work regardless of which menu holds them.
 enum MainMenu {
     static func build(appName: String) -> NSMenu {
-        let mainMenu = NSMenu()
+        let main = NSMenu()
+        func section(_ title: String) -> NSMenu {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let menu = NSMenu(title: title); item.submenu = menu; main.addItem(item)
+            return menu
+        }
+        func command(_ menu: NSMenu, _ title: String, _ action: Selector, _ key: String = "",
+                     _ modifiers: NSEvent.ModifierFlags = [.command]) {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+        }
+        let app = section(appName)
+        command(app, "About \(appName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:)))
+        app.addItem(.separator())
+        command(app, "Settings…", #selector(AppDelegate.showSettings(_:)), ",")
+        app.addItem(.separator())
+        let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        services.submenu = NSMenu(title: "Services"); app.addItem(services)
+        app.addItem(.separator())
+        command(app, "Hide \(appName)", #selector(NSApplication.hide(_:)), "h")
+        command(app, "Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option])
+        command(app, "Show All", #selector(NSApplication.unhideAllApplications(_:)))
+        app.addItem(.separator())
+        command(app, "Quit \(appName)", #selector(NSApplication.terminate(_:)), "q")
 
-        let appItem = NSMenuItem()
-        mainMenu.addItem(appItem)
-        let appMenu = NSMenu()
-        appItem.submenu = appMenu
+        let file = section("File")
+        command(file, "New Conversation", #selector(WebViewController.compose(_:)), "n")
+        file.addItem(.separator())
+        command(file, "Close Window", #selector(NSWindow.performClose(_:)), "w")
 
-        // App-action selectors are typed #selectors (no runtime target set, so
-        // they still route through the responder chain to the web VC / delegate).
-        // Standard order first (About, Settings), then what people do daily,
-        // then help, then the phone-companion tools in their own group so the
-        // everyday commands aren't buried among them.
-        appMenu.addItem(withTitle: "About \(appName)", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
-        appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
-        appMenu.addItem(.separator())
+        // Nil targets preserve the focused WKWebView composer's responder chain.
+        let edit = section("Edit")
+        command(edit, "Undo", Selector(("undo:")), "z")
+        command(edit, "Redo", Selector(("redo:")), "z", [.command, .shift])
+        edit.addItem(.separator())
+        command(edit, "Cut", #selector(NSText.cut(_:)), "x")
+        command(edit, "Copy", #selector(NSText.copy(_:)), "c")
+        command(edit, "Paste", #selector(NSText.paste(_:)), "v")
+        command(edit, "Select All", #selector(NSText.selectAll(_:)), "a")
+        edit.addItem(.separator())
+        command(edit, "Find…", #selector(WebViewController.performFind(_:)), "f")
+        command(edit, "Find Next", #selector(WebViewController.findNext(_:)), "g")
+        command(edit, "Find Previous", #selector(WebViewController.findPrevious(_:)), "g", [.command, .shift])
+        edit.addItem(.separator())
+        command(edit, "Copy Latest Code", #selector(WebViewController.copyLatestCode(_:)), "c", [.command, .shift])
 
-        appMenu.addItem(withTitle: "New Conversation", action: #selector(WebViewController.compose(_:)), keyEquivalent: "n")
-        let copyCode = appMenu.addItem(withTitle: "Copy Latest Code", action: #selector(WebViewController.copyLatestCode(_:)), keyEquivalent: "c")
-        copyCode.keyEquivalentModifierMask = [.command, .shift]
-        appMenu.addItem(.separator())
+        let view = section("View")
+        command(view, "Reload", #selector(WebViewController.reloadPage(_:)), "r")
+        command(view, "Reload from Origin", #selector(WebViewController.reloadFromOrigin(_:)), "r", [.command, .shift])
+        view.addItem(.separator())
+        command(view, "Zoom In", #selector(WebViewController.zoomIn(_:)), "+")
+        command(view, "Zoom Out", #selector(WebViewController.zoomOut(_:)), "-")
+        command(view, "Actual Size", #selector(WebViewController.zoomReset(_:)), "0")
 
-        appMenu.addItem(withTitle: "Sign-in Help…", action: #selector(AppDelegate.showSignInHelp(_:)), keyEquivalent: "")
-        appMenu.addItem(withTitle: "Send Test Notification", action: #selector(AppDelegate.sendTestNotification(_:)), keyEquivalent: "")
-        appMenu.addItem(.separator())
+        // The delegate refreshes this on opening; construction never reads accounts.
+        _ = section("Accounts")
 
-        appMenu.addItem(withTitle: "Phone-only Message Preview…", action: #selector(AppDelegate.showLinkPreviews(_:)), keyEquivalent: "")
-        appMenu.addItem(withTitle: "Shared Phone Images…", action: #selector(AppDelegate.showPhoneImages(_:)), keyEquivalent: "")
-        appMenu.addItem(withTitle: "Phone Notification Preview…", action: #selector(AppDelegate.showPhoneNotification(_:)), keyEquivalent: "")
-        appMenu.addItem(.separator())
+        let phone = section("Phone")
+        command(phone, "Phone-only Message Preview…", #selector(AppDelegate.showLinkPreviews(_:)))
+        command(phone, "Shared Phone Images…", #selector(AppDelegate.showPhoneImages(_:)))
+        command(phone, "Phone Notification Preview…", #selector(AppDelegate.showPhoneNotification(_:)))
 
-        // Page reload — needed for the pairing dance and general refresh.
-        appMenu.addItem(withTitle: "Reload", action: #selector(WebViewController.reloadPage(_:)), keyEquivalent: "r")
-        let hardReload = appMenu.addItem(withTitle: "Reload from Origin", action: #selector(WebViewController.reloadFromOrigin(_:)), keyEquivalent: "r")
-        hardReload.keyEquivalentModifierMask = [.command, .shift]
+        let window = section("Window")
+        command(window, "Minimize", #selector(NSWindow.performMiniaturize(_:)), "m")
+        command(window, "Zoom", #selector(NSWindow.performZoom(_:)))
+        command(window, "Always on Top", #selector(WebViewController.toggleAlwaysOnTop(_:)))
+        window.addItem(.separator())
+        command(window, "Bring All to Front", #selector(NSApplication.arrangeInFront(_:)))
 
-        appMenu.addItem(.separator())
+        let help = section("Help")
+        command(help, "Sign-in Help…", #selector(AppDelegate.showSignInHelp(_:)))
+        help.addItem(.separator())
+        let diagnostics = NSMenuItem(title: "Diagnostics", action: nil, keyEquivalent: "")
+        diagnostics.submenu = NSMenu(title: "Diagnostics")
+        command(diagnostics.submenu!, "Send Test Notification", #selector(AppDelegate.sendTestNotification(_:)))
+        help.addItem(diagnostics)
+        return main
+    }
 
-        // Editing commands — first-responder selectors (target nil) so they
-        // reach the focused web text field. Without these, ⌘C/⌘V in the
-        // message composer aren't reliable.
-        appMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        let redo = appMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
-        redo.keyEquivalentModifierMask = [.command, .shift]
-        appMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        appMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        appMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        appMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-
-        appMenu.addItem(.separator())
-
-        // Find in page.
-        appMenu.addItem(withTitle: "Find…", action: #selector(WebViewController.performFind(_:)), keyEquivalent: "f")
-        let findNext = appMenu.addItem(withTitle: "Find Next", action: #selector(WebViewController.findNext(_:)), keyEquivalent: "g")
-        findNext.keyEquivalentModifierMask = [.command]
-        let findPrev = appMenu.addItem(withTitle: "Find Previous", action: #selector(WebViewController.findPrevious(_:)), keyEquivalent: "g")
-        findPrev.keyEquivalentModifierMask = [.command, .shift]
-
-        appMenu.addItem(.separator())
-
-        // Zoom (⌘+ / ⌘- / ⌘0) and always-on-top, routed via the responder chain.
-        appMenu.addItem(withTitle: "Zoom In", action: #selector(WebViewController.zoomIn(_:)), keyEquivalent: "+")
-        appMenu.addItem(withTitle: "Zoom Out", action: #selector(WebViewController.zoomOut(_:)), keyEquivalent: "-")
-        appMenu.addItem(withTitle: "Actual Size", action: #selector(WebViewController.zoomReset(_:)), keyEquivalent: "0")
-        appMenu.addItem(withTitle: "Always on Top", action: #selector(WebViewController.toggleAlwaysOnTop(_:)), keyEquivalent: "")
-
-        appMenu.addItem(.separator())
-
-        appMenu.addItem(withTitle: "Hide \(appName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        let hideOthers = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
-        hideOthers.keyEquivalentModifierMask = [.command, .option]
-        appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-
-        return mainMenu
+    static func populateAccounts(_ menu: NSMenu, accounts: [Account], activeID: UUID, canAdd: Bool) {
+        menu.removeAllItems(); menu.autoenablesItems = false
+        for account in accounts {
+            let item = menu.addItem(withTitle: account.name, action: #selector(AppDelegate.switchAccountFromMenu(_:)), keyEquivalent: "")
+            item.representedObject = account.id.uuidString
+            item.state = account.id == activeID ? .on : .off
+        }
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Add Account…", action: #selector(AppDelegate.addAccountFromMenu(_:)), keyEquivalent: "").isEnabled = canAdd
+        menu.addItem(withTitle: "Rename Current Account…", action: #selector(AppDelegate.renameAccountFromMenu(_:)), keyEquivalent: "").isEnabled = !accounts.isEmpty
+        menu.addItem(withTitle: "Remove Current Account…", action: #selector(AppDelegate.removeAccountFromMenu(_:)), keyEquivalent: "").isEnabled = accounts.count > 1
     }
 }
