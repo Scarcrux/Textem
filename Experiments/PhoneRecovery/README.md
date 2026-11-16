@@ -17,6 +17,13 @@ paths keep their behavior. A linked notification source takes priority on reopen
   inspect its actual preview, and confirm **This belongs here — link and refresh
   previews**. Brand/title matching never creates a link.
 - The binding includes an account/route digest and installation/source digest.
+- Journal retrieval accepts a fresh, stable `SAVED` or `SOURCE_REQUIRED` status:
+  the latter describes a latest unidentified event, not deletion of earlier
+  identified captures. Journal writes and captures may be up to seven days old;
+  expiry is measured against the current time without refreshing capture dates.
+  Permission/deletion states, malformed journals and transfer races still fail
+  closed. The separate latest-notification/AutoFill reader retains its stricter
+  `SAVED`-only and 30-minute freshness rules.
   Only the confirmed source is refreshed every 15 seconds while its pane is open.
   Pause with the toggle. Route/account changes or closing the pane cancel pending
   publication. Transfers verify the current route before and after fetching.

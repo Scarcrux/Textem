@@ -191,6 +191,87 @@ struct PhoneConversationTests {
             }
         }
     }
+    @Test func retainedJournalSurvivesLatestSourceFailureWithoutReaging() throws {
+        let fresh = try fixture()
+        let captured = fresh.capturedAtMS - 2 * 3_600_000
+        let retained = try PhoneNotificationSnapshot.parse(
+            PhoneNotificationTests().json(fresh, changing: "captured_at_ms", to: captured), requireFresh: false)
+        let bytes = try journal([retained], changes: ["written_at_ms": captured + 1])
+        for latestState in ["SAVED", "SOURCE_REQUIRED"] {
+            let status = try PhoneNotificationTests().state(fresh, value: latestState)
+            var reads: [String] = []
+            let result = try PhoneImageADBClient.readNotificationJournal { name, _ in
+                reads.append(name)
+                return name == "notification-journal.json" ? bytes : status
+            }
+            #expect(result.samples == [retained])
+            #expect(result.samples.first?.capturedAtMS == captured)
+            #expect(reads == ["notification-content-state.json", "notification-journal.json", "notification-content-state.json"])
+        }
+    }
+    @Test func journalReadStillHonorsPermissionDeletionAndTransactionGuards() throws {
+        let sample = try fixture()
+        let bytes = try journal([sample])
+        for denied in ["OFF", "ACCESS_REQUIRED", "CLEARED", "REDACTED", "UNAVAILABLE", "NO_CONTENT"] {
+            var reads = 0
+            #expect(throws: (any Error).self) {
+                try PhoneImageADBClient.readNotificationJournal { _, _ in
+                    reads += 1
+                    return try PhoneNotificationTests().state(sample, value: denied)
+                }
+            }
+            #expect(reads == 1)
+        }
+        let status = try PhoneNotificationTests().state(sample, value: "SOURCE_REQUIRED", offset: 1)
+        var reads = 0
+        #expect(throws: PhoneNotificationError.changed) {
+            try PhoneImageADBClient.readNotificationJournal { name, _ in
+                reads += 1
+                if reads == 3 { return try PhoneNotificationTests().state(sample, value: "CLEARED") }
+                return name == "notification-journal.json" ? bytes : status
+            }
+        }
+        #expect(reads == 3)
+        #expect(throws: PhoneNotificationError.invalid) {
+            try PhoneImageADBClient.readNotificationJournal { name, _ in
+                name == "notification-journal.json" ? Data("{}".utf8) : status
+            }
+        }
+        // The latest-only AutoFill path must still refuse SOURCE_REQUIRED.
+        var latestReads = 0
+        #expect(throws: PhoneNotificationError.sourceRequired) {
+            try PhoneImageADBClient.readNotification { _, _ in latestReads += 1; return status }
+        }
+        #expect(latestReads == 1)
+        var staleReads = 0
+        #expect(throws: PhoneNotificationError.invalid) {
+            try PhoneImageADBClient.readNotificationJournal { _, _ in
+                staleReads += 1
+                return try PhoneNotificationTests().state(sample, value: "SOURCE_REQUIRED", offset: -3_600_000)
+            }
+        }
+        #expect(staleReads == 1)
+    }
+    @Test func retainedJournalAgeIsMeasuredAgainstNowNotOnlyItsWriteTime() throws {
+        let fresh = try fixture(), now = Date()
+        let sixDays = fresh.capturedAtMS - 6 * 86_400_000
+        let retained = try PhoneNotificationSnapshot.parse(
+            PhoneNotificationTests().json(fresh, changing: "captured_at_ms", to: sixDays), requireFresh: false)
+        let bytes = try journal([retained], changes: ["written_at_ms": sixDays + 1])
+        #expect(try PhoneNotificationJournal.parse(bytes, now: now).samples == [retained])
+        #expect(throws: PhoneNotificationError.invalid) {
+            try PhoneNotificationJournal.parse(bytes, now: now.addingTimeInterval(2 * 86_400))
+        }
+        // A newer write cannot resurrect a sample that has aged past retention.
+        let expired = try PhoneNotificationSnapshot.parse(
+            PhoneNotificationTests().json(fresh, changing: "captured_at_ms", to: fresh.capturedAtMS - 8 * 86_400_000), requireFresh: false)
+        #expect(throws: PhoneNotificationError.invalid) {
+            try PhoneNotificationJournal.parse(journal([expired]))
+        }
+        #expect(throws: PhoneNotificationError.invalid) {
+            try PhoneNotificationJournal.parse(journal([fresh], changes: ["written_at_ms": fresh.capturedAtMS + 3_600_000]))
+        }
+    }
     @Test func journalSourcesRequireChoiceAndRefreshOnlyTheExplicitBinding() async throws {
         let root = try temp(); defer { try? FileManager.default.removeItem(at: root) }
         let a = try fixture(), b = try fixture(changes: ["source_key": String(repeating: "b", count: 64)])

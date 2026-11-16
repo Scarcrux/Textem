@@ -292,7 +292,11 @@ final class PhoneImageADBClient: @unchecked Sendable {
     static func readNotificationJournal(read: (String, Int) throws -> Data) throws -> PhoneNotificationJournal {
         let first = try read("notification-content-state.json", 4096)
         let state = try PhoneNotificationState.parse(first)
-        guard state.state == "SAVED" else { throw PhoneNotificationError.forState(state.state) }
+        // SOURCE_REQUIRED describes the latest unidentified event. The companion
+        // preserves earlier identified journal entries; it is not an opt-out.
+        // Keep fresh status and state/read/state checks, and refuse all actual
+        // permission/deletion states before reading any retained content.
+        guard ["SAVED", "SOURCE_REQUIRED"].contains(state.state) else { throw PhoneNotificationError.forState(state.state) }
         let bytes = try read("notification-journal.json", PhoneNotificationJournal.maximumBytes)
         let journal = try PhoneNotificationJournal.parse(bytes)
         guard first == (try read("notification-content-state.json", 4096)),
