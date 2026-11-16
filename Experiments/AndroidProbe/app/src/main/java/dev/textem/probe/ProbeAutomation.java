@@ -154,14 +154,22 @@ public class ProbeAutomation extends Instrumentation {
             check(!summary.contains("PRIVATE") && !summary.contains("example.invalid") && !summary.contains("999991"));
             check(summary.contains("web links: 1") && summary.contains("not a complete RCS history"));
 
-            phase("APK manifest keeps read permission and only a system-bound notification listener");
+            phase("APK manifest limits services to system-bound capture and private local connection");
             PackageManager pm = getTargetContext().getPackageManager();
             PackageInfo info = pm.getPackageInfo(getTargetContext().getPackageName(),
                 PackageManager.GET_PERMISSIONS | PackageManager.GET_SERVICES | PackageManager.GET_PROVIDERS);
-            check(Arrays.equals(info.requestedPermissions, new String[] {Manifest.permission.READ_SMS}));
-            check(info.services != null && info.services.length == 1 && info.providers == null);
-            check(info.services[0].name.equals("dev.textem.probe.CaptureListener") && !info.services[0].exported
-                && "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE".equals(info.services[0].permission));
+            check(new java.util.HashSet<>(Arrays.asList(info.requestedPermissions)).equals(new java.util.HashSet<>(Arrays.asList(
+                Manifest.permission.READ_SMS, Manifest.permission.INTERNET, Manifest.permission.CHANGE_NETWORK_STATE,
+                Manifest.permission.FOREGROUND_SERVICE, Manifest.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE, Manifest.permission.POST_NOTIFICATIONS))));
+            check(info.services != null && info.services.length == 2 && info.providers == null);
+            for (android.content.pm.ServiceInfo service : info.services) {
+                check(!service.exported);
+                if (service.name.equals("dev.textem.probe.CaptureListener")) check("android.permission.BIND_NOTIFICATION_LISTENER_SERVICE".equals(service.permission));
+                else {
+                    check(service.name.equals("dev.textem.probe.CompanionConnectionService"));
+                    if (android.os.Build.VERSION.SDK_INT >= 29) check(service.getForegroundServiceType() == android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+                }
+            }
             check((info.applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_ALLOW_BACKUP) == 0);
             check((info.applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_USES_CLEARTEXT_TRAFFIC) == 0);
 
@@ -254,6 +262,20 @@ public class ProbeAutomation extends Instrumentation {
             NotificationContentChecks.run(this);
             NotificationCandidateChecks.run(this);
             CompanionLinkChecks.run(this);
+            if (requireDeniedPermission()) {
+                phase("local connection setup renders without starting or requesting permission");
+                CaptureSetupActivity setup = (CaptureSetupActivity) startActivitySync(new Intent(getTargetContext(), CaptureSetupActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                runOnMainSync(() -> {
+                    View root = setup.findViewById(android.R.id.content);
+                    check((setup.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE) != 0);
+                    for (String tag : new String[]{"connection-start", "connection-export", "connection-stop", "connection-revoke"}) check(root.findViewWithTag(tag) != null);
+                    check(((TextView) root.findViewWithTag("connection-status")).getText().toString().contains("Stopped"));
+                    setup.finish();
+                });
+                boolean noListener = false;
+                try { CompanionServer.pairing(); } catch (IllegalStateException expected) { noListener = true; }
+                check(noListener);
+            }
             phase("no private provider calls and no permission changes during automation");
             check(ProviderSource.queryAttempts() == privateQueriesBefore);
             check(ProviderSource.mediaAttempts() == privateMediaBefore);

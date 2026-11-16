@@ -17,7 +17,7 @@ import SwiftUI
     private var stopped = false
     init(context: PhoneImageConversation, directory: URL = PhoneConversationStore.directory,
          endpoint: @escaping @MainActor () -> String = { UserDefaults.standard.string(forKey: "phoneImageEndpoint") ?? "" },
-         fetch: @escaping @Sendable (String) async throws -> PhoneNotificationJournal = { try await PhoneImageADBClient.shared.fetchNotificationJournal(endpoint: $0) }) {
+         fetch: @escaping @Sendable (String) async throws -> PhoneNotificationJournal = { try await CompanionJournalTransport().fetch(developerEndpoint: $0) }) {
         self.context = context; self.directory = directory; self.endpoint = endpoint; self.fetch = fetch
         reload()
         if record != nil { status = "Saved phone previews for this account and conversation. Full history is not established." }
@@ -27,6 +27,10 @@ import SwiftUI
         catch { record = nil; status = error.localizedDescription }
     }
     func cancel() { stopped = true; generation = UUID(); busy = false; candidate = nil; candidates = [] }
+    func connectionChanged() {
+        generation = UUID(); busy = false; candidate = nil; candidates = []
+        status = "Phone connection changed. Saved previews are retained; refresh to check the connection."
+    }
     func chooseSource(_ key: String) { guard !busy else { return }; candidate = candidates.first { PhoneConversationStore.sourceKey($0) == key } }
     func read() async {
         guard !stopped, !busy else { return }
@@ -86,6 +90,7 @@ struct PhoneConversationView: View {
     @ObservedObject var model: PhoneConversationModel
     var onClose: () -> Void
     var onImages: () -> Void
+    @State private var connection: CompanionConnectionModel?
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PhonePanelHeader(symbol: "iphone.and.arrow.forward", title: "Phone conversation previews",
@@ -98,12 +103,13 @@ struct PhoneConversationView: View {
                         .disabled(model.busy)
                     if model.busy { ProgressView().controlSize(.small) }
                     Button("Shared graphics", action: onImages)
+                    Button("Phone connection…") { connection = CompanionConnectionModel() }
                 }
                 if model.record != nil {
                     Toggle("Refresh captured previews while open", isOn: $model.automatic).font(.caption)
                     Button("Unlink source and delete cached previews", role: .destructive) { model.unlink() }.disabled(model.busy)
                 }
-                Text("Requires companion v0.12 and an authorized USB or Wireless debugging connection. Captures may omit older messages, attachments and card actions.")
+                Text("Use a paired local phone connection, or the existing developer debugging setup. Captures may omit older messages, attachments and card actions.")
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(20)
             Divider()
@@ -129,6 +135,9 @@ struct PhoneConversationView: View {
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
             }
         }.background(Color(nsColor: .windowBackgroundColor))
+            .sheet(isPresented: Binding(get: { connection != nil }, set: { if !$0 { connection = nil } })) {
+                if let connection { CompanionConnectionView(model: connection, onChanged: model.connectionChanged, onClose: { self.connection = nil }) }
+            }
             .task { await model.run() }.onDisappear { model.cancel() }
     }
 }

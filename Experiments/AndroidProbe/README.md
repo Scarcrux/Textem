@@ -1,5 +1,50 @@
 # Textem read-only Android probe
 
+## Explicit local phone connection (v0.13)
+
+The optional **Automatic recovery setup → Start local connection** service
+replaces ADB for conversation-preview reads after explicit setup. It is off by
+default. Enable notification checks, Android notification access and local
+content samples first. Starting also requires the running/stop notification.
+The foreground service follows Android's
+[connected-device service contract](https://developer.android.com/develop/background-work/services/fgs/service-types#connected-device).
+It does not start on boot or from the existing Bluetooth companion association.
+
+Both devices must share a private IPv4 network. Export a private `.textempair`
+file using Android's document picker, transfer it privately to the Mac, and
+import it with **Phone connection…** in the conversation preview pane. The file
+contains a random authorization secret: keep it private and delete transferred
+copies after import. No message content is included in the file. Mac credentials
+are stored in device-local Keychain; the phone encrypts its token with an
+AndroidKeyStore AES key and keeps a non-exportable TLS private key.
+
+The client pins the explicitly imported certificate before sending its token,
+refuses redirects/cookies, binds replies to a random request ID and checks the
+journal's phone identity. The phone checks current capture opt-ins and Android
+access on each read. The one HTTPS route reads only the bounded notification
+journal; it does not read SMS/MMS providers or send messages. Header, transfer
+size and time limits apply. No credentials, source text or pictures are logged.
+
+**Stop** ends the listener but retains credentials. Restarting reuses the port,
+certificate and encrypted token. **Revoke** stops it and invalidates old exported
+files. **Disconnect** on the Mac retains cached previews and prevents debugging
+fallback, but cannot remotely revoke copies of an exported file. Phone restart
+requires an explicit Start; network-address changes require a new export/import.
+Discovery, automatic background restart, long-running capture reliability and
+complete history are not established by this implementation.
+
+Before first pairing, an existing developer ADB setup remains available. A
+configured, inaccessible, revoked or malformed paired connection never silently
+falls back to ADB. Shared graphics and code AutoFill retain their existing paths.
+
+`CompanionInstrumentation` runs only synthetic loopback TLS with isolated cache,
+preferences and keystore aliases. It cannot open the production listener or read
+owner journals. Run it without opening activities or granting permissions:
+
+```sh
+adb -s EXPLICIT_TEST_DEVICE shell am instrument -w -r dev.textem.probe/.CompanionInstrumentation
+```
+
 ## Conversation preview journal (v0.12)
 
 Approved local content capture now also writes a private bounded notification
@@ -88,7 +133,8 @@ blocked permission, missing thread, or empty cursor into a claim that RCS is abs
   lookups remain explicitly unavailable; they do not hide the thread. These
   are **not** Google business/contact names; no Contacts permission or lookup is
   added. Try a short code, number, brand word or recognizable phrase in a preview.
-- No Internet permission, networking, Google credentials,
+- The v0.13 optional local connection adds Internet, connected-device foreground
+  service, network-state and notification permissions. No Google credentials,
   Google pairing, default-SMS role, root, Accessibility, sending, mark-read,
   deletion, or provider writes. No analytics or third-party runtime libraries.
   Notification access is optional and separately approved in Android from v0.8;
@@ -432,9 +478,9 @@ API30+; older devices report `UNAVAILABLE` rather than guessing Bundle fields.
 **Disable checks** stops payload inspection without changing Android's permission;
 revoke that permission in Android to remove system access. **Clear readiness
 diagnostics** deletes only the report, not the saved Mac image or phone messages.
-History, sharing and notification opt-in remain independent. The APK still has
-only READ_SMS in uses-permissions, plus one non-exported listener protected by
-Android's signature-level binding permission; no Internet or Accessibility.
+History, sharing and notification opt-in remain independent. The non-exported
+listener is protected by Android's signature-level binding permission. Version
+0.13 adds the explicit local connection described above; no Accessibility access.
 
 ```sh
 python3 -B probe.py --serial PHONE_CONNECTION notification-report

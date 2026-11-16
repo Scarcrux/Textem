@@ -18,6 +18,12 @@ public final class CaptureSetupActivity extends Activity {
     private final Handler handler = new Handler(android.os.Looper.getMainLooper());
     private TextView status;
     private TextView companionStatus;
+    private TextView connectionStatus;
+    private String connectionNotice = "";
+    private long connectionNoticeUntil;
+    private void connectionNotice(String value) {
+        connectionNotice = value; connectionNoticeUntil = android.os.SystemClock.elapsedRealtime() + 15000; refresh();
+    }
     CompanionLink companion;
     private final Runnable update = new Runnable() { public void run() { refresh(); handler.postDelayed(this, 1000); } };
     @Override public void onCreate(Bundle saved) {
@@ -34,7 +40,7 @@ public final class CaptureSetupActivity extends Activity {
         });
         label(root, "Textem · Automatic recovery setup", 24);
         label(root, "This readiness check counts what Google Messages notifications expose: text, picture objects and attachment addresses. It does NOT save message text, graphics, addresses or titles. Full automatic sync is not enabled yet.", 17);
-        label(root, "Android notification access is broad and can expose notifications from all apps. Textem ignores other packages before examining their payload. Only Google Messages shapes are inspected. No Internet, message sending, notification dismissal, mark-read, Accessibility or default messaging changes.", 16);
+        label(root, "Android notification access is broad and can expose notifications from all apps. Textem ignores other packages before examining their payload. Only Google Messages shapes are inspected. The optional local connection sends captured previews only to a Mac holding its connection file, over encrypted private-network HTTPS. No message sending, notification dismissal, mark-read, Accessibility or default messaging changes.", 16);
         status = label(root, "", 16); status.setTag("capture-status");
         companion = new CompanionLink(this);
         label(root, "Verification-code access", 20);
@@ -74,6 +80,36 @@ public final class CaptureSetupActivity extends Activity {
             NotificationContentStore.enabled(this, false); NotificationContentStore.status(this, "OFF"); refresh();
         });
         button(root, "Delete saved notification content", "content-clear", () -> { NotificationContentStore.clear(this); refresh(); });
+        label(root, "Local Mac connection", 20);
+        label(root, "Start this connection to read captured previews on your Mac without USB or Android debugging. Both devices must be on the same private network. A persistent Android service shows when it is running. After a phone restart, start it again. Network address changes require an updated connection file. This is partial notification content, not full conversation history.", 16);
+        connectionStatus = label(root, "", 16); connectionStatus.setTag("connection-status");
+        button(root, "Start local connection", "connection-start", () -> {
+            if (!CaptureState.enabled(this) || !CaptureState.access(this) || !NotificationContentStore.enabled(this)) {
+                connectionNotice("Enable checks, notification access and local content samples first."); return;
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 44);
+                connectionNotice("Allow the connection’s running/stop notification, then tap Start again. No connection has started."); return;
+            }
+            try { startForegroundService(new Intent(this, CompanionConnectionService.class).setAction("START")); }
+            catch (RuntimeException unavailable) { connectionNotice("Android could not start the connection. Keep this screen open and try again."); }
+        });
+        button(root, "Export private connection file…", "connection-export", () -> {
+            try {
+                CompanionServer.pairing();
+                Intent export = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("application/octet-stream").putExtra(Intent.EXTRA_TITLE, "Textem-phone.textempair");
+                startActivityForResult(export, 43);
+            } catch (Exception unavailable) { connectionNotice("Start the connection before exporting. Keep the file private: it grants preview access."); }
+        });
+        label(root, "The connection file is a secret. Transfer it privately to your Mac, import it under Phone connection in the preview pane, then delete the transferred copy. Anyone with this file and local-network access can read captured previews until you revoke it.", 16);
+        button(root, "Stop local connection", "connection-stop", () -> {
+            stopService(new Intent(this, CompanionConnectionService.class)); CompanionServer.stop(false, this); refresh();
+        });
+        button(root, "Revoke exported connection files", "connection-revoke", () -> {
+            stopService(new Intent(this, CompanionConnectionService.class));
+            connectionNotice(CompanionServer.stop(true, this) ? "Stopped and revoked. Previously exported files no longer authorize access." : "Stopped, but credential deletion could not be verified. Retry Revoke before restarting.");
+        });
         button(root, "Back", "capture-back", this::finish);
         // Status must be meaningful before the first lifecycle/handler pulse.
         refresh();
@@ -100,6 +136,8 @@ public final class CaptureSetupActivity extends Activity {
         catch (Exception absent) { }
         if (content.endsWith("REDACTED")) content += " — Android hid sensitive notification content; no code was recovered.";
         status.setText("Checks: " + state + "\n" + sample + "\nLocal content samples: " + content);
+        if (connectionStatus != null) connectionStatus.setText(CompanionConnectionService.state()
+            + (android.os.SystemClock.elapsedRealtime() < connectionNoticeUntil ? "\n" + connectionNotice : ""));
         if (companionStatus != null) {
             CompanionLink.State link = companion.state();
             companionStatus.setText(switch (link) {
@@ -113,4 +151,13 @@ public final class CaptureSetupActivity extends Activity {
     }
     @Override protected void onResume() { super.onResume(); refresh(); handler.postDelayed(update, 1000); }
     @Override protected void onPause() { handler.removeCallbacksAndMessages(null); super.onPause(); }
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request != 43 || result != RESULT_OK || data == null || data.getData() == null) return;
+        try (java.io.OutputStream out = getContentResolver().openOutputStream(data.getData(), "wt")) {
+            if (out == null) throw new java.io.IOException();
+            out.write(CompanionServer.pairing().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)); out.flush();
+            connectionNotice("Private connection file exported. Import it only on your Mac, then delete the transferred copy.");
+        } catch (Exception failure) { connectionNotice("Connection export failed. No successful export is claimed."); }
+    }
 }

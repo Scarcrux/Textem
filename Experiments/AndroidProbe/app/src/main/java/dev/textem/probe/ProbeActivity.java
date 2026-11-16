@@ -90,7 +90,7 @@ public final class ProbeActivity extends Activity {
         safeSummary = null;
         if (clearDiagnostics) ProbeDiagnostics.clear(this);
         base(fixtureHistory ? "SYNTHETIC history · no phone data" : "Textem · Read-only phone probe");
-        label("No Internet access. No sending, mark-read, deletion, Google pairing, or default-SMS changes. Only content-free diagnostic counters are saved locally for this paired Mac; Clear removes them.", 16);
+        label("The optional local connection in Automatic recovery setup uses encrypted private-network HTTPS. It stays off until you start it. No sending, mark-read, message deletion, Google pairing, or default-SMS changes. This provider probe saves content-free diagnostic counters; Clear removes them.", 16);
         label("SMS permission is broad: Android may expose SMS/MMS content across your phone. This probe shows at most 50 recent threads with participant addresses, dates and snippets for you to choose from, then samples only the thread you tap. No Contacts access or business-name lookup. Content stays on this screen/in memory; screenshots are blocked.", 16);
         status.setText(hasPermission() ? "SMS permission granted; no reads until you choose history."
             : "BLOCKED: SMS permission not granted. This does not mean your messages are absent.");
