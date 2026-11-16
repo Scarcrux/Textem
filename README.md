@@ -1,13 +1,13 @@
 # Textem
 
-A lightweight, **native** macOS client for [Google Messages for web](https://messages.google.com/web) —
+A lightweight macOS wrapper for [Google Messages for web](https://messages.google.com/web) —
 free and MIT-licensed. Textem hosts the Google Messages web client in a
 `WKWebView` and wraps it in real macOS chrome: dock unread badge, native
 notifications, menu-bar presence, launch-at-login, zoom, and more.
 
 It's a free/open alternative to the paid **Texty for Google Messages** and the
-no-longer-maintained Electron app **android-messages-desktop** — but native
-(Swift 6 / AppKit / system WebKit), so it's a few MB instead of a bundled
+no-longer-maintained Electron app **android-messages-desktop** — built on
+Swift 6 / AppKit and the system WebKit, so it's a few MB instead of a bundled
 Chromium.
 
 > Unofficial. Not affiliated with, endorsed by, or sponsored by Google.

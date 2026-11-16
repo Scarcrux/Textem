@@ -51,7 +51,7 @@ func draw(_ s: String, size: CGFloat, weight: NSFont.Weight, hex: UInt32, y: CGF
 }
 
 draw("Textem", size: 96, weight: .bold, hex: 0x14181f, y: 210)
-draw("Native Google Messages for macOS — free & open-source", size: 34, weight: .regular, hex: 0x5b6472, y: 140)
+draw("A macOS wrapper for Google Messages — free & open-source", size: 34, weight: .regular, hex: 0x5b6472, y: 140)
 
 img.unlockFocus()
 
