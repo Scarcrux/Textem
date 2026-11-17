@@ -102,6 +102,11 @@ import XCTest
         let root = try PhoneImageTests().temporary(); defer { try? FileManager.default.removeItem(at: root) }
         let context = PhoneHistoryTests().context
         try PhoneHistoryStore.link(PhoneHistoryTests().fixture(), to: context, in: root.appendingPathComponent("history"))
+        let other = PhoneImageConversation(accountID: context.accountID, route: "second-synthetic-conversation", label: "Example delivery")
+        let sample = try PhoneHistoryTests().fixture(["source_key": String(repeating: "b", count: 64),
+            "captured_at_ms": Int64(Date().timeIntervalSince1970 * 1000) - 86_400_000])
+        try PhoneHistoryStore.link(sample, to: other, in: root.appendingPathComponent("history"))
+        try PhoneConversationStore.link(PhoneNotificationTests().fixture(), to: context, in: root.appendingPathComponent("previews"))
         let (manifest, png) = try PhoneImageTests().fixture()
         _ = try PhoneImageStore.importImage(manifest: manifest, png: png, in: root.appendingPathComponent("pictures"))
         for variant in ["history", "empty", "pictures"] {

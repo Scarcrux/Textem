@@ -43,8 +43,8 @@ struct PhonePreviewListView: View {
         let presentation = PhonePreviewPresentation(samples: samples)
         VStack(alignment: .leading, spacing: 16) {
             if showOriginalCaptures {
-                Text("Original captures").font(.headline)
-                Text("Each capture is shown separately, including overlapping content.")
+                Text("All saved previews").font(.headline)
+                Text("Each saved preview is shown separately, including repeated messages.")
                     .font(.caption).foregroundStyle(.secondary)
                 ForEach(Array(samples.enumerated()), id: \.offset) { _, sample in
                     PhoneConversationSampleView(sample: sample)

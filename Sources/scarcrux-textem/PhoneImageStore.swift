@@ -72,7 +72,7 @@ struct ImportedPhoneImage: Codable, Equatable, Identifiable, Sendable {
     var filename: String { id.uuidString + ".png" }
 }
 
-/// Display label stays in memory. Only the account-scoped route digest is persisted.
+/// Image bindings persist only the account-scoped route digest; their label stays in memory.
 struct PhoneImageConversation: Equatable, Sendable {
     let accountID: UUID
     let route: String

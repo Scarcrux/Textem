@@ -35,7 +35,7 @@ import SwiftUI
         self.fetchHistory = fetchHistory
         reload()
         showHistory = history != nil
-        if history != nil { status = "Saved selected history for this account and conversation." }
+        if history != nil { status = "Saved messages for this conversation." }
         else if record != nil { status = "Saved phone previews for this account and conversation." }
     }
     func reload() {
@@ -114,17 +114,18 @@ import SwiftUI
                 guard let sample = samples.first(where: { $0.bindingKey == history.sourceKey }) else {
                     status = "The phone has no published snapshot for this linked history. Saved history is retained."; return
                 }
-                try PhoneHistoryStore.link(sample, to: context, in: historyDirectory); reload(); showHistory = true
-                status = "Selected history snapshot updated. Publish again on the phone for newer provider text."
+                let named = try PhoneHistoryStore.link(sample, to: context, in: historyDirectory); reload(); showHistory = true
+                status = named ? "Saved messages updated. Save the conversation again on your phone to get newer messages."
+                    : "Messages saved, but the conversation name couldn’t be saved."
             } else {
                 historyCandidates = samples.sorted { $0.capturedAtMS > $1.capturedAtMS }
                 historyCandidateKey = historyCandidates.first?.bindingKey
                 candidate = nil; candidates = []
-                status = "Compare the selected phone history below with this conversation before linking."
+                status = "Check that these messages belong to this conversation before saving them."
             }
         } catch {
             guard generation == id, !Task.isCancelled else { return }
-            status = "Couldn’t read selected phone history. Saved content is retained. " + error.localizedDescription
+            status = "Couldn’t read saved messages from your phone. Your saved messages are still available. " + error.localizedDescription
         }
     }
     func linkHistory() async {
@@ -133,16 +134,17 @@ import SwiftUI
         defer { if generation == id { busy = false } }
         guard await validate(context), generation == id, !Task.isCancelled, historyCandidate == sample else { return }
         do {
-            try PhoneHistoryStore.link(sample, to: context, in: historyDirectory)
+            let named = try PhoneHistoryStore.link(sample, to: context, in: historyDirectory)
             historyCandidates = []; historyCandidateKey = nil; reload(); showHistory = true
-            status = "Selected phone history saved for this account and conversation. Available offline in Saved Conversation Previews."
+            status = named ? "Messages saved for this conversation. You can read them in Offline Mode."
+                : "Messages saved, but the conversation name couldn’t be saved."
         } catch { status = error.localizedDescription }
     }
     func unlinkHistory() {
         generation = UUID(); busy = false; historyCandidates = []; historyCandidateKey = nil
         do {
             try PhoneHistoryStore.unlink(context, in: historyDirectory); reload(); showHistory = false
-            status = "Selected history unlinked and its Mac cache deleted."
+            status = "Saved messages removed from this Mac."
         } catch { status = error.localizedDescription }
     }
     func run() async {
@@ -175,19 +177,23 @@ struct PhoneConversationView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    if model.historyCandidates.isEmpty && model.candidate == nil && model.history != nil && model.record != nil {
+                        Picker("Messages", selection: $model.showHistory) {
+                            Text("Saved messages").tag(true)
+                            Text("Recent previews").tag(false)
+                        }.pickerStyle(.segmented).labelsHidden()
+                    }
                     if let selected = model.historyCandidate {
-                        Text("Confirm selected history").font(.headline)
-                        Text("Match the text to this conversation. Textem does not infer identity from a sender name.").font(.caption)
-                        Picker("Published phone history", selection: $model.historyCandidateKey) {
-                            ForEach(Array(model.historyCandidates.enumerated()), id: \.element.bindingKey) { index, sample in
-                                Text("Snapshot \(index + 1) · \(sample.messages.count) rows · \(Date(timeIntervalSince1970: Double(sample.capturedAtMS) / 1000).formatted())").tag(Optional(sample.bindingKey))
+                        Text("Confirm conversation").font(.headline)
+                        Picker("From your phone", selection: $model.historyCandidateKey) {
+                            ForEach(Array(model.historyCandidates.enumerated()), id: \.element.bindingKey) { _, sample in
+                                Text("\(sample.messages.count) messages · \(Date(timeIntervalSince1970: Double(sample.capturedAtMS) / 1000).formatted())").tag(Optional(sample.bindingKey))
                             }
                         }.disabled(model.busy)
-                        Button("This belongs here — link selected history") { Task { await model.linkHistory() } }.disabled(model.busy)
-                        Button("Cancel history selection") { model.dismissHistorySelection() }.disabled(model.busy)
+                        Button("Save messages to this conversation") { Task { await model.linkHistory() } }.disabled(model.busy)
+                        Button("Cancel") { model.dismissHistorySelection() }.disabled(model.busy)
                         PhoneHistoryView(snapshot: selected)
                     } else if model.history != nil && (model.showHistory || model.record == nil) {
-                        if model.record != nil { Toggle("Show selected history", isOn: $model.showHistory) }
                         if let history = model.history { PhoneHistoryView(snapshot: history.snapshot) }
                     } else if let candidate = model.candidate {
                         Text("Confirm phone source").font(.headline)
@@ -200,7 +206,6 @@ struct PhoneConversationView: View {
                         PhoneConversationSampleView(sample: candidate)
                         Button("This belongs here — link and refresh previews") { Task { await model.link() } }.disabled(model.busy)
                     } else if let record = model.record {
-                        if model.history != nil { Toggle("Show selected history", isOn: $model.showHistory) }
                         PhonePreviewListView(samples: record.samples, showOriginalCaptures: model.showOriginalCaptures)
                     } else {
                         Text("No phone source linked").font(.headline)
@@ -226,14 +231,14 @@ struct PhoneConversationView: View {
             Menu {
                 Button("Phone connection…") { connection = CompanionConnectionModel() }
                 Button("Shared graphics", action: onImages)
-                Button("Read selected phone history…") { Task { await model.readHistory() } }.disabled(model.busy)
+                Button("Read saved messages from phone…") { Task { await model.readHistory() } }.disabled(model.busy)
                 if model.history != nil {
-                    Button("Unlink selected history and delete its cache", role: .destructive) { model.unlinkHistory() }.disabled(model.busy)
+                    Button("Remove saved messages from this Mac", role: .destructive) { model.unlinkHistory() }.disabled(model.busy)
                 }
                 if model.record != nil {
                     Divider()
                     Toggle("Refresh while open", isOn: $model.automatic)
-                    Toggle("Show original captures", isOn: $model.showOriginalCaptures)
+                    Toggle("Show every saved preview", isOn: $model.showOriginalCaptures)
                     Divider()
                     Button("Unlink source and delete cached previews", role: .destructive) { model.unlink() }.disabled(model.busy)
                 }

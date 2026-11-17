@@ -99,6 +99,44 @@ struct PhoneHistoryTests {
         try FileManager.default.createSymbolicLink(at: file, withDestinationURL: directory.appendingPathComponent("absent"))
         #expect(throws: (any Error).self) { try PhoneHistoryStore.link(fixture(), to: context, in: directory) }
     }
+    @Test func privateNamesKeepLegacyHistoryFormatAndAreRemovedWithHistory() throws {
+        let directory = try root(); defer { try? FileManager.default.removeItem(at: directory) }
+        #expect(try PhoneHistoryStore.link(fixture(), to: context, in: directory))
+        let record = try #require(try PhoneHistoryStore.record(for: context, in: directory))
+        #expect(try PhoneHistoryStore.displayName(for: record, in: directory) == context.label)
+        let file = directory.appendingPathComponent(record.conversationKey + ".name.json")
+        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+        #expect(!file.lastPathComponent.contains(context.label))
+        let data = try Data(contentsOf: directory.appendingPathComponent("history.json"))
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(Set(object.keys) == ["schema", "records"])
+        let rows = try #require(object["records"] as? [[String: Any]])
+        #expect(Set(rows[0].keys) == ["accountKey", "conversationKey", "sourceKey", "snapshot"])
+        #expect(!String(decoding: data, as: UTF8.self).contains(context.route))
+        #expect(!String(decoding: data, as: UTF8.self).contains(context.label))
+        try PhoneHistoryStore.unlink(context, in: directory)
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        try PhoneHistoryStore.link(fixture(), to: context, in: directory)
+        try PhoneHistoryStore.removeAccount(context.accountID, in: directory)
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+    }
+    @Test func badNameMetadataCannotRenameAnotherAccountOrLoseSavedMessages() throws {
+        let directory = try root(); defer { try? FileManager.default.removeItem(at: directory) }
+        try PhoneHistoryStore.link(fixture(), to: context, in: directory)
+        let record = try #require(try PhoneHistoryStore.record(for: context, in: directory))
+        let file = directory.appendingPathComponent(record.conversationKey + ".name.json")
+        var fields = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        fields["accountKey"] = String(repeating: "f", count: 64)
+        try JSONSerialization.data(withJSONObject: fields).write(to: file)
+        #expect(throws: PhoneHistoryError.invalid) { try PhoneHistoryStore.displayName(for: record, in: directory) }
+        let model = SavedPhoneConversationsModel(accountID: context.accountID, directory: directory.appendingPathComponent("previews"), historyDirectory: directory)
+        #expect(model.conversations.first?.name == "Name unavailable")
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+        #expect(try !PhoneHistoryStore.link(fixture(), to: context, in: directory))
+        #expect(try PhoneHistoryStore.record(for: context, in: directory)?.snapshot.messages.count == 3)
+        #expect(throws: (any Error).self) { try PhoneHistoryStore.displayName(for: record, in: directory) }
+    }
     @Test func lateReplyAfterNavigationOrDisconnectCannotPersist() async throws {
         for disconnect in [false, true] {
             let directory = try root(); defer { try? FileManager.default.removeItem(at: directory) }

@@ -5,6 +5,63 @@ import Testing
 
 @Suite("Saved previews without a live Google route", .serialized) @MainActor
 struct SavedPhoneConversationsTests {
+    @Test func namedHistoryAndPreviewsShareOneConversationWithoutChangingIdentity() throws {
+        let root = try PhoneImageTests().temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let context = PhoneHistoryTests().context
+        let history = root.appendingPathComponent("history")
+        let sample = try PhoneHistoryTests().fixture()
+        try PhoneConversationStore.link(PhoneNotificationTests().fixture(), to: context, in: root)
+        #expect(try PhoneHistoryStore.link(sample, to: context, in: history))
+        let model = SavedPhoneConversationsModel(accountID: context.accountID, directory: root, historyDirectory: history)
+        #expect(model.conversations.count == 1)
+        let entry = try #require(model.conversations.first)
+        #expect(entry.name == context.label && entry.id == context.key && entry.messages == 3)
+        #expect(entry.savedAt == Date(timeIntervalSince1970: Double(sample.capturedAtMS) / 1000))
+        #expect(model.selectedHasBoth && model.showHistory)
+        let before = try Data(contentsOf: history.appendingPathComponent("history.json"))
+        model.showHistory = false; model.reload()
+        #expect(!model.showHistory && model.selected != nil)
+        #expect(try Data(contentsOf: history.appendingPathComponent("history.json")) == before)
+    }
+    @Test func legacyHistoryGetsOnlyItsExactlyAssociatedPreviewName() throws {
+        let root = try PhoneImageTests().temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let context = PhoneHistoryTests().context, history = root.appendingPathComponent("history")
+        try PhoneHistoryStore.link(PhoneHistoryTests().fixture(), to: context, in: history)
+        let key = try #require(context.key)
+        try FileManager.default.removeItem(at: history.appendingPathComponent(key + ".name.json"))
+        let unrelated = PhoneImageConversation(accountID: context.accountID, route: "unrelated-route", label: "Unrelated contact")
+        let wrong = try PhoneConversationTests().fixture(changes: ["title": "Wrong conversation"])
+        try PhoneConversationStore.link(wrong, to: unrelated, in: root)
+        let model = SavedPhoneConversationsModel(accountID: context.accountID, directory: root, historyDirectory: history)
+        #expect(model.conversations.first { $0.id == key }?.name == "Unnamed conversation")
+        let match = try PhoneConversationTests().fixture(changes: ["title": "Matched contact", "source_key": String(repeating: "b", count: 64)])
+        try PhoneConversationStore.link(match, to: context, in: root)
+        model.reload()
+        #expect(model.conversations.first { $0.id == key }?.name == "Matched contact")
+        let stranger = SavedPhoneConversationsModel(accountID: UUID(), directory: root, historyDirectory: history)
+        #expect(stranger.conversations.isEmpty)
+    }
+    @Test func equalNamesNeverMergeDistinctConversationKeys() throws {
+        let root = try PhoneImageTests().temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let first = PhoneHistoryTests().context
+        let second = PhoneImageConversation(accountID: first.accountID, route: "another-history-route", label: first.label)
+        let a = try PhoneHistoryTests().fixture()
+        let b = try PhoneHistoryTests().fixture(["source_key": String(repeating: "b", count: 64), "captured_at_ms": a.capturedAtMS - 60_000])
+        try PhoneHistoryStore.link(a, to: first, in: root)
+        try PhoneHistoryStore.link(b, to: second, in: root)
+        let model = SavedPhoneConversationsModel(accountID: first.accountID, directory: root.appendingPathComponent("previews"), historyDirectory: root)
+        #expect(model.conversations.count == 2 && Set(model.conversations.map(\.id)).count == 2)
+        #expect(Set(model.conversations.map(\.name)) == [first.label])
+        #expect(model.conversations.first?.id == first.key)
+        model.selectConversation(second.key)
+        #expect(model.selectedHistory?.snapshot == b && model.selectedKey == nil)
+        model.moveSelection(-1)
+        #expect(model.selectedHistory?.snapshot == a)
+        model.moveSelection(-1)
+        #expect(model.selectedHistory?.snapshot == a)
+        model.moveSelection(1)
+        #expect(model.selectedHistory?.snapshot == b)
+    }
     @Test func coldReopenIsReadOnlyAndScopedToAccountRatherThanTitle() throws {
         let root = try PhoneImageTests().temporary()
         defer { try? FileManager.default.removeItem(at: root) }

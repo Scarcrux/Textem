@@ -9,6 +9,14 @@ enum PhoneHistoryStore {
         let snapshot: PhoneHistorySnapshot
     }
     private struct Library: Codable { let schema: Int; let records: [Record] }
+    // Display metadata is separate so older builds can still read history.json.
+    // A name never establishes a source binding or grants navigation authority.
+    private struct Name: Codable {
+        let schema: Int
+        let accountKey: String
+        let conversationKey: String
+        let displayName: String
+    }
     private static let lock = NSRecursiveLock()
     static var directory: URL { PhoneConversationStore.directory.deletingLastPathComponent().appendingPathComponent("SelectedHistory") }
     static let maximumBytes = 16 * 1024 * 1024
@@ -51,8 +59,11 @@ enum PhoneHistoryStore {
     private static func write(_ records: [Record], in directory: URL) throws {
         let data = try JSONEncoder().encode(Library(schema: 1, records: records))
         guard data.count <= maximumBytes else { throw PhoneConversationError.full }
+        try writePrivate(data, filename: "history.json", in: directory)
+    }
+    private static func writePrivate(_ data: Data, filename: String, in directory: URL) throws {
         try check(directory, create: true)
-        let target = directory.appendingPathComponent("history.json")
+        let target = directory.appendingPathComponent(filename)
         if try exists(target) { _ = try PhoneImageStore.readPrivate(target, maximum: maximumBytes) }
         // Establish owner-only permissions before the first byte is written.
         let temporary = directory.appendingPathComponent(UUID().uuidString + ".tmp")
@@ -63,7 +74,39 @@ enum PhoneHistoryStore {
         try handle.write(contentsOf: data); try handle.synchronize()
         guard rename(temporary.path, target.path) == 0 else { throw PhoneNotificationError.privateFile }
     }
-    static func link(_ snapshot: PhoneHistorySnapshot, to context: PhoneImageConversation, in directory: URL = directory) throws {
+    static func cleanName(_ value: String) -> String? {
+        let name = String(String.UnicodeScalarView(value.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return !name.isEmpty && name.utf8.count <= 1024 ? name : nil
+    }
+    private static func nameFile(_ record: Record, in directory: URL) throws -> URL {
+        guard [record.accountKey, record.conversationKey].allSatisfy({ $0.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil }) else { throw PhoneHistoryError.invalid }
+        return directory.appendingPathComponent(record.conversationKey + ".name.json")
+    }
+    static func displayName(for record: Record, in directory: URL = directory) throws -> String? {
+        lock.lock(); defer { lock.unlock() }
+        guard try exists(directory) else { return nil }; try check(directory)
+        let file = try nameFile(record, in: directory)
+        guard try exists(file) else { return nil }
+        let data = try PhoneImageStore.readPrivate(file, maximum: 4096)
+        let fields = try PhoneNotificationJSON.object(data, maximum: 4096)
+        guard Set(fields.keys) == ["schema", "accountKey", "conversationKey", "displayName"],
+              PhoneNotificationJSON.integer(fields["schema"]),
+              let value = try? JSONDecoder().decode(Name.self, from: data), value.schema == 1,
+              value.accountKey == record.accountKey, value.conversationKey == record.conversationKey,
+              cleanName(value.displayName) == value.displayName else { throw PhoneHistoryError.invalid }
+        return value.displayName
+    }
+    private static func removeName(_ record: Record, in directory: URL) throws {
+        let file = try nameFile(record, in: directory)
+        if try exists(file) {
+            _ = try PhoneImageStore.readPrivate(file, maximum: 4096)
+            try FileManager.default.removeItem(at: file)
+        }
+    }
+    /// The returned flag concerns optional naming only. Message saving remains
+    /// successful if a display name cannot be written; callers disclose that.
+    @discardableResult static func link(_ snapshot: PhoneHistorySnapshot, to context: PhoneImageConversation, in directory: URL = directory) throws -> Bool {
         lock.lock(); defer { lock.unlock() }
         _ = try PhoneHistorySnapshot.parse(JSONEncoder().encode(snapshot))
         guard let key = context.key else { throw PhoneHistoryError.invalid }
@@ -79,15 +122,27 @@ enum PhoneHistoryStore {
         records.append(Record(accountKey: PhoneConversationStore.accountKey(context.accountID), conversationKey: key,
             sourceKey: snapshot.bindingKey, snapshot: snapshot))
         try write(records, in: directory)
+        guard let name = cleanName(context.label) else { return false }
+        do {
+            let value = Name(schema: 1, accountKey: PhoneConversationStore.accountKey(context.accountID), conversationKey: key, displayName: name)
+            try writePrivate(JSONEncoder().encode(value), filename: key + ".name.json", in: directory)
+            return true
+        } catch { return false }
     }
     static func unlink(_ context: PhoneImageConversation, in directory: URL = directory) throws {
         lock.lock(); defer { lock.unlock() }
         guard let key = context.key else { throw PhoneHistoryError.invalid }
-        try write(load(in: directory).filter { $0.conversationKey != key || $0.accountKey != PhoneConversationStore.accountKey(context.accountID) }, in: directory)
+        let records = try load(in: directory)
+        for record in records where record.conversationKey == key && record.accountKey == PhoneConversationStore.accountKey(context.accountID) {
+            try removeName(record, in: directory)
+        }
+        try write(records.filter { $0.conversationKey != key || $0.accountKey != PhoneConversationStore.accountKey(context.accountID) }, in: directory)
     }
     static func removeAccount(_ id: UUID, in directory: URL = directory) throws {
         lock.lock(); defer { lock.unlock() }
         guard try exists(directory) else { return }
-        try write(load(in: directory).filter { $0.accountKey != PhoneConversationStore.accountKey(id) }, in: directory)
+        let records = try load(in: directory)
+        for record in records where record.accountKey == PhoneConversationStore.accountKey(id) { try removeName(record, in: directory) }
+        try write(records.filter { $0.accountKey != PhoneConversationStore.accountKey(id) }, in: directory)
     }
 }
