@@ -81,6 +81,7 @@ final class AccountStore {
             }
             do {
                 try PhoneConversationStore.removeAccount(id)
+                try PhoneHistoryStore.removeAccount(id)
                 try NativeAutoFillCoordinator.shared.removeAccount(id)
             }
             catch { completion(error); return }

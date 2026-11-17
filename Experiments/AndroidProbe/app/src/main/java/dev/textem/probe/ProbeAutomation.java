@@ -267,6 +267,7 @@ public class ProbeAutomation extends Instrumentation {
             NotificationCandidateChecks.run(this);
             CompanionLinkChecks.run(this);
             CompanionResumeChecks.run(this);
+            SelectedHistoryChecks.run(this);
             if (requireDeniedPermission()) {
                 CompanionDiscoveryChecks.run(this);
                 phase("local connection setup renders without starting or requesting permission");

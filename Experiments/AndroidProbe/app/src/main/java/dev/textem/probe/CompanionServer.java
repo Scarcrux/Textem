@@ -239,7 +239,8 @@ final class CompanionServer {
                     String name = lines[i].substring(0, separator).trim().toLowerCase(Locale.ROOT);
                     if (headers.put(name, lines[i].substring(separator + 1).trim()) != null) duplicate = true; }
                 String id = headers.getOrDefault("x-textem-request-id", "");
-                boolean authorized = !duplicate && lines[0].equals("GET /v1/journal HTTP/1.1")
+                boolean history = lines[0].equals("GET /v1/selected-history HTTP/1.1");
+                boolean authorized = !duplicate && (history || lines[0].equals("GET /v1/journal HTTP/1.1"))
                     && id.matches("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
                     && MessageDigest.isEqual(("Bearer " + token).getBytes(StandardCharsets.US_ASCII),
                         headers.getOrDefault("authorization", "").getBytes(StandardCharsets.US_ASCII));
@@ -247,20 +248,23 @@ final class CompanionServer {
                 long revision = NotificationContentStore.revision(context);
                 if (authorized && allowed()) {
                     try {
-                        JSONObject journal = NotificationJournal.read(context);
-                        if (!journal.getString("kind").equals(syntheticFixture ? "SYNTHETIC_NOTIFICATION_JOURNAL" : "NOTIFICATION_JOURNAL")) throw new SecurityException();
+                        if (history && !syntheticFixture && !SelectedHistory.permission(context)) throw new SecurityException();
+                        JSONObject journal = history ? SelectedHistory.read(context) : NotificationJournal.read(context);
+                        String expected = history ? (syntheticFixture ? "SYNTHETIC_HISTORY_LIBRARY" : "PHONE_HISTORY_LIBRARY")
+                            : (syntheticFixture ? "SYNTHETIC_NOTIFICATION_JOURNAL" : "NOTIFICATION_JOURNAL");
+                        if (!journal.getString("kind").equals(expected)) throw new SecurityException();
                         body = journal.toString().getBytes(StandardCharsets.UTF_8);
                         status = body.length <= NotificationJournal.MAX_BYTES && allowed()
                             && NotificationContentStore.revision(context) == revision ? "200 OK" : "403 Forbidden";
                     } catch (Exception absent) { status = "404 Not Found"; }
                 }
                 if (!status.equals("200 OK")) body = new byte[0];
-                if (!allowed() || NotificationContentStore.revision(context) != revision) continue;
+                if (!allowed() || (history && !syntheticFixture && !SelectedHistory.permission(context)) || NotificationContentStore.revision(context) != revision) continue;
                 OutputStream out = socket.getOutputStream();
                 out.write(("HTTP/1.1 " + status + "\r\nContent-Type: application/json\r\nX-Textem-Request-ID: " +
                     (authorized ? id : "") + "\r\nContent-Length: " + body.length + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
                 for (int offset = 0; offset < body.length; offset += 16384) {
-                    if (!allowed() || NotificationContentStore.revision(context) != revision) throw new SecurityException();
+                    if (!allowed() || (history && !syntheticFixture && !SelectedHistory.permission(context)) || NotificationContentStore.revision(context) != revision) throw new SecurityException();
                     out.write(body, offset, Math.min(16384, body.length - offset));
                 }
                 out.flush();

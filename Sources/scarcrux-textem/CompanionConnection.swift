@@ -112,7 +112,13 @@ struct CompanionHTTPSJournalClient: Sendable {
     }
 
     func fetch(pairing: CompanionPairing) async throws -> PhoneNotificationJournal {
+        let (data, response, id) = try await fetchData(pairing: pairing, path: "/v1/journal", maximum: PhoneNotificationJournal.maximumBytes)
+        return try Self.validateReply(data, response: response, requestID: id, pairing: pairing)
+    }
+    func fetchData(pairing: CompanionPairing, path: String, maximum: Int) async throws -> (Data, HTTPURLResponse, UUID) {
         try Task.checkCancellation()
+        guard ["/v1/journal", "/v1/selected-history"].contains(path) else { throw CompanionConnectionError.invalidReply }
+
         let policy = CompanionCertificatePolicy(fingerprint: pairing.certificateSHA256)
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieStorage = nil; config.httpShouldSetCookies = false; config.urlCache = nil
@@ -121,19 +127,21 @@ struct CompanionHTTPSJournalClient: Sendable {
         let session = URLSession(configuration: config, delegate: policy, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         let id = UUID()
-        var request = URLRequest(url: pairing.endpoint, cachePolicy: .reloadIgnoringLocalCacheData)
+        var request = URLRequest(url: URL(string: "https://\(pairing.host):\(pairing.port)\(path)")!, cachePolicy: .reloadIgnoringLocalCacheData)
         request.setValue("Bearer " + pairing.token, forHTTPHeaderField: "Authorization")
         request.setValue(id.uuidString.lowercased(), forHTTPHeaderField: "X-Textem-Request-ID")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
             let (bytes, response) = try await session.bytes(for: request)
-            guard let response = response as? HTTPURLResponse, response.statusCode == 200 else { throw CompanionConnectionError.invalidReply }
+            guard let response = response as? HTTPURLResponse else { throw CompanionConnectionError.invalidReply }
+            if path == "/v1/selected-history", response.statusCode == 404 { throw PhoneHistoryError.notPublished }
+            guard response.statusCode == 200 else { throw CompanionConnectionError.invalidReply }
             var data = Data()
             for try await byte in bytes {
-                guard data.count < PhoneNotificationJournal.maximumBytes else { throw CompanionConnectionError.tooLarge }
+                guard data.count < maximum else { throw CompanionConnectionError.tooLarge }
                 data.append(byte)
             }
-            return try Self.validateReply(data, response: response, requestID: id, pairing: pairing)
+            return (data, response, id)
         } catch {
             if policy.rejectedCertificate { throw CompanionConnectionError.untrustedPhone }
             throw error

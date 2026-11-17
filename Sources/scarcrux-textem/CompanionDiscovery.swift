@@ -70,16 +70,25 @@ struct CompanionPairedJournalClient: Sendable {
     var network: @Sendable (CompanionPairing) async throws -> PhoneNotificationJournal = { try await CompanionHTTPSJournalClient().fetch(pairing: $0) }
     var discover: @Sendable (String) async -> [CompanionEndpoint] = { await CompanionDiscovery.resolve(fingerprint: $0) }
     var cache = CompanionEndpointCache.shared
+    func fetch(pairing: CompanionPairing) async throws -> PhoneNotificationJournal {
+        try await CompanionPairedClient(network: network, discover: discover, cache: cache).fetch(pairing: pairing)
+    }
+}
+
+struct CompanionPairedClient<Value: Sendable>: Sendable {
+    var network: @Sendable (CompanionPairing) async throws -> Value
+    var discover: @Sendable (String) async -> [CompanionEndpoint] = { await CompanionDiscovery.resolve(fingerprint: $0) }
+    var cache = CompanionEndpointCache.shared
     private func retryable(_ error: any Error) -> Bool {
         if let error = error as? URLError {
             return [.cannotConnectToHost, .cannotFindHost, .timedOut, .networkConnectionLost, .notConnectedToInternet].contains(error.code)
         }
         return (error as? CompanionConnectionError) == .untrustedPhone
     }
-    func fetch(pairing: CompanionPairing) async throws -> PhoneNotificationJournal {
+    func fetch(pairing: CompanionPairing) async throws -> Value {
         try Task.checkCancellation()
         let initial = await cache.get(pairing.certificateSHA256) ?? CompanionEndpoint(host: pairing.host, port: pairing.port)
-        func request(_ endpoint: CompanionEndpoint) async throws -> PhoneNotificationJournal {
+        func request(_ endpoint: CompanionEndpoint) async throws -> Value {
             guard CompanionPairing.privateAddress(endpoint.host), (1024...65535).contains(endpoint.port) else { throw CompanionConnectionError.invalidPairing }
             let candidate = CompanionPairing(host: endpoint.host, port: endpoint.port, certificateSHA256: pairing.certificateSHA256,
                 token: pairing.token, installID: pairing.installID)

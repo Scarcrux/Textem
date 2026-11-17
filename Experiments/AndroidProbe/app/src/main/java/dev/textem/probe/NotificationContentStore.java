@@ -16,7 +16,7 @@ final class NotificationContentStore {
     private static final java.util.Map<String, Long> revisions = new java.util.HashMap<>();
     static final String FILE = "notification-content.json", STATE = "notification-content-state.json";
     static boolean enabled(Context c) { return c.getSharedPreferences("notification-content", 0).getBoolean("enabled", false); }
-    static synchronized void enabled(Context c, boolean value) { advance(c); c.getSharedPreferences("notification-content", 0).edit().putBoolean("enabled", value).apply(); if (!value) NotificationJournal.clear(c); }
+    static synchronized void enabled(Context c, boolean value) { advance(c); c.getSharedPreferences("notification-content", 0).edit().putBoolean("enabled", value).apply(); if (!value) { NotificationJournal.clear(c); SelectedHistory.clear(c); } }
     static synchronized long revision(Context c) { return revisions.getOrDefault(c.getFilesDir().getAbsolutePath(), 0L); }
     private static void advance(Context c) { revisions.put(c.getFilesDir().getAbsolutePath(), revision(c) + 1); }
     static final class Identity {
@@ -90,5 +90,5 @@ final class NotificationContentStore {
         } catch (Exception absent) { }
         status(c, "SOURCE_REQUIRED");
     }
-    static synchronized void clear(Context c) { advance(c); file(c, FILE).delete(); NotificationJournal.clear(c); status(c, "CLEARED"); }
+    static synchronized void clear(Context c) { advance(c); file(c, FILE).delete(); NotificationJournal.clear(c); SelectedHistory.clear(c); status(c, "CLEARED"); }
 }

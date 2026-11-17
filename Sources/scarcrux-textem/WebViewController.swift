@@ -358,7 +358,7 @@ final class WebViewController: NSViewController {
         currentPhoneOnlySelection = selection
         if let context = currentImageConversation,
            dismissedPhoneOnlyConversation != normalized,
-           (try? PhoneConversationStore.record(for: context)) != nil {
+           ((try? PhoneConversationStore.record(for: context)) != nil || (try? PhoneHistoryStore.record(for: context)) != nil) {
             showPhoneConversation(context); return
         }
         if let context = currentImageConversation, dismissedPhoneOnlyConversation != normalized,
@@ -599,8 +599,14 @@ final class WebViewController: NSViewController {
            host.window?.occlusionState.contains(.visible) == true, !host.isHiddenOrHasHiddenAncestor,
            host.bounds.width > 100, host.bounds.height > 100 {
             evidence.visible = true; evidence.savedLibrary = true
+            let selectedAccount = model.showHistory ? model.selectedHistory?.accountKey : model.selected?.accountKey
             evidence.accountValidated = model.accountID == accountID
-                && model.selected?.accountKey == PhoneConversationStore.accountKey(accountID)
+                && selectedAccount == PhoneConversationStore.accountKey(accountID)
+            if evidence.accountValidated && model.showHistory {
+                evidence.selectedHistory = model.selectedHistory != nil
+                evidence.historyRows = model.selectedHistory?.snapshot.messages.count ?? 0
+                return evidence
+            }
             guard evidence.accountValidated else { return evidence }
             evidence.savedPreviews = model.selected?.samples.count ?? 0
             let presentation = PhonePreviewPresentation(samples: model.selected?.samples ?? [])
@@ -619,6 +625,10 @@ final class WebViewController: NSViewController {
         evidence.visible = true
         evidence.routeValidated = await validatePhoneConversation(model.context)
         guard evidence.routeValidated else { return evidence }
+        if model.historyCandidate == nil, model.history != nil, model.showHistory || model.record == nil {
+            evidence.selectedHistory = true; evidence.historyRows = model.history?.snapshot.messages.count ?? 0
+            return evidence
+        }
         evidence.savedPreviews = model.record?.samples.count ?? 0
         let presentation = PhonePreviewPresentation(samples: model.record?.samples ?? [])
         evidence.retainedMessageRows = presentation.originalMessageCount

@@ -1,5 +1,30 @@
 # Textem read-only Android probe
 
+## Explicit selected history transfer (v0.15)
+
+In **Choose a history thread**, inspect the actual selected text, then tap
+**Make this history available to paired Mac**. This explicit action captures
+only that public SMS/MMS provider thread. The Mac's conversation options menu
+has **Read selected phone history…**; compare the returned text and confirm
+before linking it to the current account and conversation. This is a source
+association, not another Google pairing. Existing phone connection credentials
+are reused. **Saved Conversation Previews…** also opens linked history offline.
+
+History uses a separate format/cache and `/v1/selected-history` HTTPS route.
+Requests read only already-published snapshots; they cannot choose a thread ID
+or trigger a provider query. Phone identifiers are HMAC-derived, participant
+addresses are not transferred, and tokens/content never enter diagnostics.
+SMS permission, capture opt-ins and channel authorization are checked; disabling
+local content or deleting captures clears published history. A seven-day transfer
+window applies. Mac caches persist until unlink or account removal.
+
+Coverage is explicit: up to 500 SMS and 500 MMS rows, 32 parts per MMS,
+20,000 characters per row, two MiB per snapshot and eight threads/eight MiB on
+the phone. Attachments are counted as omitted, never guessed from links. The
+Mac retains existing notification graphics independently. RCS-only content may
+be absent; this is **not complete RCS history**. Publish again on the phone to
+update a snapshot. See [criteria and live evidence](HISTORY-TRANSFER.md).
+
 ## Granted notification media and durable connection (v0.14)
 
 Captured MessagingStyle image URIs and explicit picture-icon URIs can now supply

@@ -30,6 +30,8 @@ enum PhoneRecoveryCheck {
         var retainedMessageRows = 0
         var displayedMessages = 0
         var showingOriginalCaptures = false
+        var selectedHistory = false
+        var historyRows = 0
     }
     struct Report: Encodable, Sendable {
         let schema = 1
@@ -49,6 +51,9 @@ enum PhoneRecoveryCheck {
         var discoveryAttempted = false
         var discoveryCandidates = 0
         var verifiedDiscoveredEndpoint = false
+        var historyState = "notChecked"
+        var publishedHistories = 0
+        var publishedHistoryRows = 0
         var pane = Pane()
     }
     @MainActor static func collect(
@@ -57,6 +62,7 @@ enum PhoneRecoveryCheck {
         records: @Sendable () throws -> [PhoneConversationStore.Record] = { try PhoneConversationStore.load() },
         discover: (@Sendable (String) async -> [CompanionEndpoint])? = nil,
         verifyDiscovered: @Sendable (CompanionPairing) async throws -> Void = { _ = try await CompanionHTTPSJournalClient().fetch(pairing: $0) },
+        history: (@Sendable () async throws -> [PhoneHistorySnapshot])? = nil,
         pane: @MainActor () async -> Pane = { Pane() }
     ) async -> Report {
         var report = Report()
@@ -101,6 +107,18 @@ enum PhoneRecoveryCheck {
                     do { try await verifyDiscovered(candidate); report.verifiedDiscoveredEndpoint = true; break }
                     catch { continue }
                 }
+            }
+            if let history {
+                do {
+                    let samples = try await history()
+                    try Task.checkCancellation()
+                    guard try load() == saved else { report.state = .disconnected; return report }
+                    report.historyState = "ready"; report.publishedHistories = samples.count
+                    report.publishedHistoryRows = samples.reduce(0) { $0 + $1.messages.count }
+                } catch is CancellationError { throw CancellationError() }
+                  catch PhoneHistoryError.notPublished { report.historyState = "notPublished" }
+                  catch is PhoneHistoryError { report.historyState = "refused" }
+                  catch { report.historyState = "unavailable" }
             }
             try Task.checkCancellation()
             guard try load() == saved else { report.state = .disconnected; return report }

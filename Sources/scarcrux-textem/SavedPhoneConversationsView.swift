@@ -6,14 +6,21 @@ import SwiftUI
     let accountID: UUID
     let directory: URL
     @Published private(set) var records: [PhoneConversationStore.Record] = []
+    let historyDirectory: URL
+    @Published private(set) var histories: [PhoneHistoryStore.Record] = []
+    @Published var selectedHistoryKey: String?
+    @Published var showHistory = false
+    var selectedHistory: PhoneHistoryStore.Record? { histories.first { $0.conversationKey == selectedHistoryKey } }
     @Published var selectedKey: String?
     @Published var showOriginalCaptures = false
     @Published private(set) var error: String?
     var selected: PhoneConversationStore.Record? {
         records.first { $0.conversationKey == selectedKey }
     }
-    init(accountID: UUID, directory: URL = PhoneConversationStore.directory) {
-        self.accountID = accountID; self.directory = directory; reload()
+    init(accountID: UUID, directory: URL = PhoneConversationStore.directory, historyDirectory: URL? = nil) {
+        self.accountID = accountID; self.directory = directory
+        self.historyDirectory = historyDirectory ?? (directory == PhoneConversationStore.directory ? PhoneHistoryStore.directory : directory.appendingPathComponent("SelectedHistory"))
+        reload(); showHistory = records.isEmpty && !histories.isEmpty
     }
     func reload() {
         do {
@@ -23,9 +30,11 @@ import SwiftUI
             if !records.contains(where: { $0.conversationKey == selectedKey }) {
                 selectedKey = records.first?.conversationKey
             }
+            histories = try PhoneHistoryStore.load(in: historyDirectory).filter { $0.accountKey == PhoneConversationStore.accountKey(accountID) }
+            if !histories.contains(where: { $0.conversationKey == selectedHistoryKey }) { selectedHistoryKey = histories.first?.conversationKey }
             error = nil
         } catch {
-            records = []; selectedKey = nil; self.error = error.localizedDescription
+            records = []; selectedKey = nil; histories = []; selectedHistoryKey = nil; self.error = error.localizedDescription
         }
     }
     static func label(_ record: PhoneConversationStore.Record) -> String {
@@ -47,7 +56,16 @@ struct SavedPhoneConversationsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Saved on this Mac and available offline.")
                     .font(.caption).foregroundStyle(.secondary)
-                if !model.records.isEmpty {
+                if !model.histories.isEmpty {
+                    Toggle("Show selected phone history", isOn: $model.showHistory)
+                }
+                if model.showHistory && !model.histories.isEmpty {
+                    Picker("Selected history", selection: $model.selectedHistoryKey) {
+                        ForEach(Array(model.histories.enumerated()), id: \.element.conversationKey) { index, record in
+                            Text("Saved history \(index + 1) · \(record.snapshot.messages.count) rows").tag(Optional(record.conversationKey))
+                        }
+                    }
+                } else if !model.records.isEmpty {
                     Picker("Conversation", selection: $model.selectedKey) {
                         ForEach(model.records, id: \.conversationKey) { record in
                             Text(verbatim: SavedPhoneConversationsModel.label(record)).tag(Optional(record.conversationKey))
@@ -61,6 +79,8 @@ struct SavedPhoneConversationsView: View {
                     if let error = model.error {
                         Text("Saved previews couldn’t be opened").font(.headline)
                         Text(error).textSelection(.enabled)
+                    } else if model.showHistory, let record = model.selectedHistory {
+                        PhoneHistoryView(snapshot: record.snapshot)
                     } else if let record = model.selected {
                         PhonePreviewListView(samples: record.samples, showOriginalCaptures: model.showOriginalCaptures)
                     } else {

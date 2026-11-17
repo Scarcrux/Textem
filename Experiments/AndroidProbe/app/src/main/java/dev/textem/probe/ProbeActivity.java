@@ -36,7 +36,7 @@ public final class ProbeActivity extends Activity {
     private TextView status;
     private String safeSummary;
     private boolean fixtureHistory;
-    private int generation;
+    private volatile int generation;
     private volatile CountDownLatch workIdle = new CountDownLatch(0);
 
     @Override public void onCreate(Bundle state) {
@@ -91,7 +91,7 @@ public final class ProbeActivity extends Activity {
         if (clearDiagnostics) ProbeDiagnostics.clear(this);
         base(fixtureHistory ? "SYNTHETIC history · no phone data" : "Textem · Read-only phone probe");
         label("The optional local connection in Automatic recovery setup uses encrypted private-network HTTPS. It stays off until you start it. No sending, mark-read, message deletion, Google pairing, or default-SMS changes. This provider probe saves content-free diagnostic counters; Clear removes them.", 16);
-        label("SMS permission is broad: Android may expose SMS/MMS content across your phone. This probe shows at most 50 recent threads with participant addresses, dates and snippets for you to choose from, then samples only the thread you tap. No Contacts access or business-name lookup. Content stays on this screen/in memory; screenshots are blocked.", 16);
+        label("SMS permission is broad: Android may expose SMS/MMS content across your phone. This probe shows at most 50 recent threads with participant addresses, dates and snippets for you to choose from, then samples only the thread you tap. No Contacts access or business-name lookup. Content stays on this screen/in memory unless you explicitly make a selected history snapshot available to your paired Mac; screenshots are blocked.", 16);
         status.setText(hasPermission() ? "SMS permission granted; no reads until you choose history."
             : "BLOCKED: SMS permission not granted. This does not mean your messages are absent.");
         button("Choose a history thread", "history", () -> {
@@ -170,7 +170,7 @@ public final class ProbeActivity extends Activity {
             row.setAllCaps(false); row.setGravity(android.view.Gravity.START | android.view.Gravity.CENTER_VERTICAL);
             row.setTag("thread-" + i);
             // Keep the original entry, never select by the filtered display position.
-            row.setOnClickListener(view -> scan(entry.id));
+            row.setOnClickListener(view -> scan(entry.id, entry.participants));
             rows.addView(row);
         }
         status.setText("Provider: " + index.state + "; listed: " + index.threads.size()
@@ -179,7 +179,7 @@ public final class ProbeActivity extends Activity {
             + (rows.getChildCount() == 0 ? "\nNo matching loaded threads. Clear the filter to see all." : "")
             + "\nMissing threads here do not prove RCS absence.");
     }
-    private void scan(long id) {
+    private void scan(long id, String participants) {
         int token = ++generation;
         background(() -> {
             ProbeEngine.Report report = ProbeEngine.scan(source(), id);
@@ -190,7 +190,7 @@ public final class ProbeActivity extends Activity {
                 boolean recorded = ProbeDiagnostics.record(this, fixtureHistory
                     ? ProbeDiagnostics.Kind.SYNTHETIC : ProbeDiagnostics.Kind.SELECTED_HISTORY, report);
                 status.setText(safeSummary);
-                label(recorded ? "Content-free counters are ready for automatic Mac readback. Message content stays on this phone."
+                label(recorded ? "Content-free counters are ready for automatic Mac readback. Message content stays on this phone unless you explicitly publish selected history below."
                     : "Diagnostic readback could not be saved; no content was exported.", 16);
                 label("Image counts are readable provider attachments, not proof of the phone's link-preview graphic. Links below are plain text and are never opened or fetched. Compare this sample with Google Messages yourself.", 16);
                 for (int i = 0; i < report.messages.size(); i++) {
@@ -198,10 +198,44 @@ public final class ProbeActivity extends Activity {
                     label(message.text.isEmpty() ? "[No text exposed in this row]" : message.text, 16)
                         .setTag("message-" + i);
                 }
+                if (!fixtureHistory) {
+                    label("To read older provider text on your Mac, explicitly publish a snapshot of this selected thread. Up to 500 SMS and 500 MMS rows; attachments and RCS-only content may be missing. Network requests never scan your inbox.", 16);
+                    button("Make this history available to paired Mac", "publish-history", () -> publishHistory(id, participants));
+                }
                 button("Copy content-free summary", "copy", this::copySummary);
                 button("Clear and return", "home", this::home);
             });
         });
+    }
+    private void publishHistory(long id, String participants) {
+        int token = generation;
+        long revision = NotificationContentStore.revision(this);
+        if (!historyAllowed()) { status.setText("Start the paired local connection and enable local content samples in Automatic recovery setup first. SMS access is also required."); return; }
+        background(() -> {
+            boolean success = false; int count = 0;
+            try {
+                org.json.JSONObject sample = SelectedHistory.capture(SelectedHistory.provider(this), id,
+                    participants, NotificationContentStore.identity(this), false);
+                // The owner's explicit publication is cancelled by navigation or opt-out.
+                synchronized (NotificationContentStore.class) {
+                    if (generation == token && historyAllowed() && NotificationContentStore.revision(this) == revision) {
+                        SelectedHistory.publish(this, sample, false);
+                        count = sample.getJSONArray("messages").length(); success = true;
+                    }
+                }
+            } catch (Exception unavailable) { /* Content and exception strings must not enter logs. */ }
+            final boolean saved = success; final int rows = count;
+            runOnUiThread(() -> {
+                if (isDestroyed() || generation != token) return;
+                status.setText(saved ? "History snapshot ready: " + rows + " provider rows. On the Mac, open this conversation, then Conversation options → Read selected phone history. Compare the text before linking. This is not a complete RCS archive."
+                    : "History could not be published. Existing previews are unchanged. Check SMS permission and the local connection.");
+            });
+        });
+    }
+    private boolean historyAllowed() {
+        return !fixtureHistory && hasPermission() && CaptureState.enabled(this)
+            && CaptureState.access(this) && NotificationContentStore.enabled(this)
+            && CompanionResume.enabled(this);
     }
     private void synthetic() {
         int token = ++generation;

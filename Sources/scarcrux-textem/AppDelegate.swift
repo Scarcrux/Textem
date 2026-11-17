@@ -298,7 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         Task { await runPhoneConnectionCheck(present: true) }
     }
     private func runPhoneConnectionCheck(present: Bool) async {
-        let report = await PhoneRecoveryCheck.collect(discover: { await CompanionDiscovery.resolve(fingerprint: $0) }, pane: { [weak self] in
+        let report = await PhoneRecoveryCheck.collect(discover: { await CompanionDiscovery.resolve(fingerprint: $0) }, history: { try await CompanionHistoryTransport().fetch() }, pane: { [weak self] in
             await self?.windowController?.webViewController.phoneRecoveryPaneEvidence() ?? PhoneRecoveryCheck.Pane()
         })
         do { try PhoneRecoveryCheck.save(report) }

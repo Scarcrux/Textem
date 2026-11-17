@@ -21,6 +21,7 @@ public final class CompanionInstrumentation extends Instrumentation {
     private int checks;
     private String trustPhase = "not_called";
     private String protocol = "TLSv1.2";
+    private String path = "/v1/journal";
     private void check(boolean value) { checks++; if (!value) throw new AssertionError(); }
     @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
     private String request(JSONObject pair, String token, String extra, String pin) throws Exception {
@@ -42,7 +43,7 @@ public final class CompanionInstrumentation extends Instrumentation {
         try (SSLSocket socket = (SSLSocket) tls.getSocketFactory().createSocket(pair.getString("host"), pair.getInt("port"))) {
             socket.setEnabledProtocols(new String[]{protocol});
             socket.setSoTimeout(5000); socket.startHandshake();
-            socket.getOutputStream().write(("GET /v1/journal HTTP/1.1\r\nHost: fixture\r\nAuthorization: Bearer " + token
+            socket.getOutputStream().write(("GET " + path + " HTTP/1.1\r\nHost: fixture\r\nAuthorization: Bearer " + token
                 + "\r\nX-Textem-Request-ID: 57b2dd91-cfa8-4193-9a38-e2d6d6470625\r\n" + extra + "\r\n").getBytes(StandardCharsets.US_ASCII));
             ByteArrayOutputStream out = new ByteArrayOutputStream(); byte[] buffer = new byte[4096]; int count;
             try { while ((count = socket.getInputStream().read(buffer)) != -1) { out.write(buffer, 0, count); if (out.size() > 65536) throw new IOException(); } }
@@ -87,6 +88,14 @@ public final class CompanionInstrumentation extends Instrumentation {
             if (Arrays.asList(SSLContext.getDefault().getSupportedSSLParameters().getProtocols()).contains("TLSv1.3")) {
                 protocol = "TLSv1.3"; check(request(pair, token, "", pin).startsWith("HTTP/1.1 200"));
             }
+            path = "/v1/selected-history";
+            response = request(pair, token, "", pin); check(response.startsWith("HTTP/1.1 404"));
+            SelectedHistory.publish(fixture, SelectedHistoryChecks.sample(), true);
+            response = request(pair, token, "", pin); check(response.startsWith("HTTP/1.1 200"));
+            check(response.contains("Synthetic older selected text") && response.contains("SYNTHETIC_HISTORY_LIBRARY"));
+            check(!response.contains("OTHER_THREAD_SENTINEL"));
+            response = request(pair, "bad", "", pin); check(response.startsWith("HTTP/1.1 403") && !response.contains("Synthetic older selected text"));
+            path = "/v1/journal";
             response = request(pair, "bad", "", pin); check(response.startsWith("HTTP/1.1 403")); check(!response.contains("Synthetic preview"));
             response = request(pair, token, "Authorization: Bearer " + token + "\r\n", pin); check(response.startsWith("HTTP/1.1 403"));
             refused = false;
@@ -94,6 +103,7 @@ public final class CompanionInstrumentation extends Instrumentation {
             authorized.set(false); response = request(pair, token, "", pin); check(response.isEmpty() || response.startsWith("HTTP/1.1 403"));
             authorized.set(true); NotificationContentStore.enabled(fixture, false);
             response = request(pair, token, "", pin); check(response.isEmpty() || response.startsWith("HTTP/1.1 403"));
+            check(!new File(directory, SelectedHistory.FILE).exists());
             NotificationContentStore.enabled(fixture, true); NotificationJournal.append(fixture, sample.document, true);
             server.closeFixture(); server = CompanionServer.fixture(fixture, authorized::get);
             JSONObject again = server.fixturePairing(); check(again.getString("token").equals(token));

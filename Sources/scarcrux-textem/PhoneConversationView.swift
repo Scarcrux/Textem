@@ -7,6 +7,13 @@ import SwiftUI
     @Published private(set) var record: PhoneConversationStore.Record?
     @Published private(set) var candidate: PhoneNotificationSnapshot?
     @Published private(set) var candidates: [PhoneNotificationSnapshot] = []
+    @Published private(set) var history: PhoneHistoryStore.Record?
+    @Published private(set) var historyCandidates: [PhoneHistorySnapshot] = []
+    @Published var historyCandidateKey: String?
+    @Published var showHistory = false
+    var historyCandidate: PhoneHistorySnapshot? { historyCandidates.first { $0.bindingKey == historyCandidateKey } }
+    let historyDirectory: URL
+    private let fetchHistory: @Sendable () async throws -> [PhoneHistorySnapshot]
     @Published private(set) var busy = false
     private(set) var lastSuccessfulRefresh: Date?
     private(set) var lastRefreshTransport: PhoneJournalTransport = .unknown
@@ -20,18 +27,27 @@ import SwiftUI
     private var stopped = false
     init(context: PhoneImageConversation, directory: URL = PhoneConversationStore.directory,
          endpoint: @escaping @MainActor () -> String = { UserDefaults.standard.string(forKey: "phoneImageEndpoint") ?? "" },
-         fetch: @escaping @Sendable (String) async throws -> PhoneNotificationJournal = { try await CompanionJournalTransport().fetch(developerEndpoint: $0) }) {
+         fetch: @escaping @Sendable (String) async throws -> PhoneNotificationJournal = { try await CompanionJournalTransport().fetch(developerEndpoint: $0) },
+         historyDirectory: URL? = nil,
+         fetchHistory: @escaping @Sendable () async throws -> [PhoneHistorySnapshot] = { try await CompanionHistoryTransport().fetch() }) {
         self.context = context; self.directory = directory; self.endpoint = endpoint; self.fetch = fetch
+        self.historyDirectory = historyDirectory ?? (directory == PhoneConversationStore.directory ? PhoneHistoryStore.directory : directory.appendingPathComponent("SelectedHistory"))
+        self.fetchHistory = fetchHistory
         reload()
-        if record != nil { status = "Saved phone previews for this account and conversation." }
+        showHistory = history != nil
+        if history != nil { status = "Saved selected history for this account and conversation." }
+        else if record != nil { status = "Saved phone previews for this account and conversation." }
     }
     func reload() {
-        do { record = try PhoneConversationStore.record(for: context, in: directory) }
-        catch { record = nil; status = error.localizedDescription }
+        do {
+            record = try PhoneConversationStore.record(for: context, in: directory)
+            history = try PhoneHistoryStore.record(for: context, in: historyDirectory)
+        }
+        catch { record = nil; history = nil; status = error.localizedDescription }
     }
-    func cancel() { stopped = true; generation = UUID(); busy = false; candidate = nil; candidates = [] }
+    func cancel() { stopped = true; generation = UUID(); busy = false; candidate = nil; candidates = []; historyCandidates = []; historyCandidateKey = nil }
     func connectionChanged() {
-        generation = UUID(); busy = false; candidate = nil; candidates = []
+        generation = UUID(); busy = false; candidate = nil; candidates = []; historyCandidates = []; historyCandidateKey = nil
         lastSuccessfulRefresh = nil; lastRefreshTransport = .unknown
         status = "Phone connection changed. Saved previews are retained; refresh to check the connection."
     }
@@ -77,16 +93,61 @@ import SwiftUI
         } catch { status = error.localizedDescription }
     }
     func unlink() {
-        generation = UUID(); busy = false; candidate = nil; candidates = []
+        generation = UUID(); busy = false; candidate = nil; candidates = []; historyCandidates = []; historyCandidateKey = nil
         lastSuccessfulRefresh = nil; lastRefreshTransport = .unknown
         do {
             try PhoneConversationStore.unlink(context, in: directory); reload()
             status = "Source unlinked and this conversation’s cached previews deleted. Phone originals and shared images are unchanged."
         } catch { status = error.localizedDescription }
     }
+    func dismissHistorySelection() { historyCandidates = []; historyCandidateKey = nil }
+    func readHistory() async {
+        guard !stopped, !busy else { return }
+        let id = UUID(); generation = id; busy = true
+        defer { if generation == id { busy = false } }
+        do {
+            guard await validate(context), generation == id, !Task.isCancelled else { return }
+            let samples = try await fetchHistory()
+            guard generation == id, !Task.isCancelled, await validate(context), generation == id, !Task.isCancelled else { return }
+            // A known history binding can refresh only from its exact installation/source.
+            if let history {
+                guard let sample = samples.first(where: { $0.bindingKey == history.sourceKey }) else {
+                    status = "The phone has no published snapshot for this linked history. Saved history is retained."; return
+                }
+                try PhoneHistoryStore.link(sample, to: context, in: historyDirectory); reload(); showHistory = true
+                status = "Selected history snapshot updated. Publish again on the phone for newer provider text."
+            } else {
+                historyCandidates = samples.sorted { $0.capturedAtMS > $1.capturedAtMS }
+                historyCandidateKey = historyCandidates.first?.bindingKey
+                candidate = nil; candidates = []
+                status = "Compare the selected phone history below with this conversation before linking."
+            }
+        } catch {
+            guard generation == id, !Task.isCancelled else { return }
+            status = "Couldn’t read selected phone history. Saved content is retained. " + error.localizedDescription
+        }
+    }
+    func linkHistory() async {
+        guard !stopped, !busy, let sample = historyCandidate else { return }
+        let id = UUID(); generation = id; busy = true
+        defer { if generation == id { busy = false } }
+        guard await validate(context), generation == id, !Task.isCancelled, historyCandidate == sample else { return }
+        do {
+            try PhoneHistoryStore.link(sample, to: context, in: historyDirectory)
+            historyCandidates = []; historyCandidateKey = nil; reload(); showHistory = true
+            status = "Selected phone history saved for this account and conversation. Available offline in Saved Conversation Previews."
+        } catch { status = error.localizedDescription }
+    }
+    func unlinkHistory() {
+        generation = UUID(); busy = false; historyCandidates = []; historyCandidateKey = nil
+        do {
+            try PhoneHistoryStore.unlink(context, in: historyDirectory); reload(); showHistory = false
+            status = "Selected history unlinked and its Mac cache deleted."
+        } catch { status = error.localizedDescription }
+    }
     func run() async {
         while !stopped && !Task.isCancelled {
-            if record != nil && automatic { await read() }
+            if record != nil && automatic && !showHistory && historyCandidates.isEmpty { await read() }
             do { try await Task.sleep(for: .seconds(15)) } catch { return }
         }
     }
@@ -107,14 +168,28 @@ struct PhoneConversationView: View {
                 if model.busy { ProgressView().controlSize(.small) }
                 Text(model.status).font(.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                if model.record == nil {
+                if model.record == nil && model.history == nil {
                     Button("Read phone preview") { Task { await model.read() } }.disabled(model.busy)
                 }
             }.padding(.horizontal, 20).padding(.vertical, 10)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let candidate = model.candidate {
+                    if let selected = model.historyCandidate {
+                        Text("Confirm selected history").font(.headline)
+                        Text("Match the text to this conversation. Textem does not infer identity from a sender name.").font(.caption)
+                        Picker("Published phone history", selection: $model.historyCandidateKey) {
+                            ForEach(Array(model.historyCandidates.enumerated()), id: \.element.bindingKey) { index, sample in
+                                Text("Snapshot \(index + 1) · \(sample.messages.count) rows · \(Date(timeIntervalSince1970: Double(sample.capturedAtMS) / 1000).formatted())").tag(Optional(sample.bindingKey))
+                            }
+                        }.disabled(model.busy)
+                        Button("This belongs here — link selected history") { Task { await model.linkHistory() } }.disabled(model.busy)
+                        Button("Cancel history selection") { model.dismissHistorySelection() }.disabled(model.busy)
+                        PhoneHistoryView(snapshot: selected)
+                    } else if model.history != nil && (model.showHistory || model.record == nil) {
+                        if model.record != nil { Toggle("Show selected history", isOn: $model.showHistory) }
+                        if let history = model.history { PhoneHistoryView(snapshot: history.snapshot) }
+                    } else if let candidate = model.candidate {
                         Text("Confirm phone source").font(.headline)
                         Picker("Captured phone source", selection: Binding(get: { PhoneConversationStore.sourceKey(candidate) }, set: { model.chooseSource($0) })) {
                             ForEach(model.candidates, id: \.sourceKey) { sample in
@@ -125,6 +200,7 @@ struct PhoneConversationView: View {
                         PhoneConversationSampleView(sample: candidate)
                         Button("This belongs here — link and refresh previews") { Task { await model.link() } }.disabled(model.busy)
                     } else if let record = model.record {
+                        if model.history != nil { Toggle("Show selected history", isOn: $model.showHistory) }
                         PhonePreviewListView(samples: record.samples, showOriginalCaptures: model.showOriginalCaptures)
                     } else {
                         Text("No phone source linked").font(.headline)
@@ -141,8 +217,8 @@ struct PhoneConversationView: View {
     }
     private var headerActions: some View {
         HStack(spacing: 8) {
-            if model.record != nil {
-                Button { Task { await model.read() } } label: {
+            if model.record != nil || model.history != nil {
+                Button { Task { if model.showHistory { await model.readHistory() } else { await model.read() } } } label: {
                     Image(systemName: "arrow.clockwise").frame(width: 28, height: 28)
                 }.buttonStyle(.plain).disabled(model.busy)
                     .help("Refresh phone previews").accessibilityLabel("Refresh phone previews")
@@ -150,6 +226,10 @@ struct PhoneConversationView: View {
             Menu {
                 Button("Phone connection…") { connection = CompanionConnectionModel() }
                 Button("Shared graphics", action: onImages)
+                Button("Read selected phone history…") { Task { await model.readHistory() } }.disabled(model.busy)
+                if model.history != nil {
+                    Button("Unlink selected history and delete its cache", role: .destructive) { model.unlinkHistory() }.disabled(model.busy)
+                }
                 if model.record != nil {
                     Divider()
                     Toggle("Refresh while open", isOn: $model.automatic)
