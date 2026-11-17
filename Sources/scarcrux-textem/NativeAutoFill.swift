@@ -99,7 +99,7 @@ enum NativeCodeIndexReadback {
         self.clock = clock; self.accountExists = accountExists
         status = "Requires an AutoFill-provisioned build with the signed Textem Codes extension and shared Keychain access. No codes are being collected."
         if self.available {
-            do { enabled = try self.vault.isEnabled(); status = enabled ? "Ready to import fresh codes from explicitly linked phone notification sources." : "Native code AutoFill is off." }
+            do { enabled = try self.vault.isEnabled(); status = enabled ? "On. Codes that arrive in Textem are offered for 3 minutes." : "Native code AutoFill is off." }
             catch { status = "Protected code storage is locked, unavailable or invalid. No code was read." }
         }
     }
@@ -150,6 +150,17 @@ enum NativeCodeIndexReadback {
         } catch { status = "Notification code import was refused by protected storage. No fallback or clipboard write occurred." }
     }
 
+    /// A code Textem saw arrive in its own Google Messages window for this
+    /// account. Stored only while AutoFill is on; never a rescan of old rows.
+    func observe(message: String, accountID: UUID, conversation: String) async {
+        guard available, enabled, accountExists(accountID) else { return }
+        do {
+            guard try vault.ingestObserved(accountID: accountID, conversation: conversation, message: message,
+                                           observedAt: clock(), now: clock()) != nil else { return }
+            await synchronize()
+        } catch { status = "A received code was refused by protected storage. No fallback storage was used." }
+    }
+
     func removeAccount(_ id: UUID) throws {
         guard available else { return }
         try vault.removeAccount(id)
@@ -190,9 +201,10 @@ enum NativeCodeIndexReadback {
                 counts.indexed = entries.count
                 diagnose(.ready, counts)
                 if enabled {
-                    status = "System index verified: \(entries.count) fresh domain-matched code(s)."
-                    if counts.withheld > 0 { status += " \(counts.withheld) fresh receipt(s) withheld because their domains overlap; no code was guessed." }
-                    status += " An actual macOS field offer/fill is not established by this index check. Phone imports are manual."
+                    let open = samples.filter { !$0.isDomainBound }.count
+                    status = samples.isEmpty ? "On. Codes that arrive in Textem are offered for 3 minutes."
+                        : "\(samples.count) fresh code(s): \(open) in Textem's AutoFill list, \(entries.count) suggested for their own site."
+                    if counts.withheld > 0 { status += " \(counts.withheld) site code(s) held back because their domains overlap; none was guessed." }
                 } else { status = "Native code AutoFill is off. Protected samples and source bindings were deleted." }
             } catch NativeCodeSetupError.indexReadbackRefused {
                 if revision == id {

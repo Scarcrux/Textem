@@ -17,6 +17,7 @@ enum Preferences {
         static let hideNotificationPreview = "hideNotificationPreview"
         static let blurMessages = "blurMessages"
         static let hideAvatars = "hideAvatars"
+        static let copyCodeNotifications = "copyCodeNotifications"
     }
 
     // Posted when a privacy toggle changes so the live web view re-applies CSS.
@@ -41,6 +42,12 @@ enum Preferences {
     static var hideAvatars: Bool {
         get { defaults.bool(forKey: Key.hideAvatars) }
         set { defaults.set(newValue, forKey: Key.hideAvatars) }
+    }
+
+    // Offer a Copy Code button when a verification code arrives (default on).
+    static var copyCodeNotifications: Bool {
+        get { defaults.object(forKey: Key.copyCodeNotifications) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.copyCodeNotifications) }
     }
 
     // Whether the first-run sign-in guidance has been shown.

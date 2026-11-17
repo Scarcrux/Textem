@@ -87,7 +87,10 @@ public struct NotificationCodeSource: Codable, Equatable, Sendable {
     }
     public static let maximumBytes = 32_768
     private struct Binding: Codable { let source: NotificationCodeSource; let accountID: UUID }
-    private struct Record: Codable { let receipt: String; let sample: CodeSample }
+    /// `observed` marks a code seen arriving in Textem's own Google Messages
+    /// window for that local account; legacy records (nil) came from a linked
+    /// phone notification source and still require that link.
+    private struct Record: Codable { let receipt: String; let sample: CodeSample; var observed: Bool? = nil }
     private struct State: Codable {
         var schema = 1; var enabled = false
         var bindings: [Binding] = []; var records: [Record] = []
@@ -107,8 +110,8 @@ public struct NotificationCodeSource: Codable, Equatable, Sendable {
               state.bindings.allSatisfy({ NotificationCodeSource(installationID: $0.source.installationID.uuidString, shortcutKey: $0.source.shortcutKey) != nil }),
               state.records.allSatisfy({ record in
                   record.receipt.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil &&
-                  state.bindings.contains(where: { $0.accountID == record.sample.accountID }) &&
-                  record.sample.consent && CodeSample.validDomain(record.sample.domain) &&
+                  (record.observed == true || state.bindings.contains(where: { $0.accountID == record.sample.accountID })) &&
+                  record.sample.consent && (record.sample.domain.isEmpty ? record.observed == true : CodeSample.validDomain(record.sample.domain)) &&
                   record.sample.code.range(of: "^[0-9]{4,8}$", options: .regularExpression) != nil
               }) else { throw CodeVaultError.malformed }
         return state
@@ -180,5 +183,25 @@ public struct NotificationCodeSource: Codable, Equatable, Sendable {
         guard state.records.count < 16 else { throw CodeVaultError.capacity }
         state.records.append(Record(receipt: receipt, sample: sample)); try save(state)
         return true
+    }
+
+    /// Store a code Textem saw arrive in its Google Messages window. The caller
+    /// must pass the time it observed the change, never a rescan of old rows.
+    /// The receipt keys on account + conversation + message text, so a page
+    /// reload re-reporting the same row cannot make an old code fresh again.
+    @discardableResult public func ingestObserved(accountID: UUID, conversation: String, message: String,
+                                                  observedAt: Date, now: Date) throws -> CodeSample? {
+        var state = try load()
+        guard state.enabled else { throw CodeVaultError.disabled }
+        guard !conversation.isEmpty, let detection = CodeDetector.detect(message),
+              let sample = CodeSample(detection: detection, accountID: accountID, receivedAt: observedAt, consent: true),
+              sample.eligible(domain: sample.domain, now: now) else { return nil }
+        let fields = ["observed", accountID.uuidString, conversation, message]
+        let receipt = SHA256.hash(data: Data(fields.map { "\($0.utf8.count):\($0)" }.joined().utf8)).map { String(format: "%02x", $0) }.joined()
+        if state.records.contains(where: { $0.receipt == receipt }) { return nil }
+        state.records.removeAll { !$0.sample.eligible(domain: $0.sample.domain, now: now) }
+        guard state.records.count < 16 else { throw CodeVaultError.capacity }
+        state.records.append(Record(receipt: receipt, sample: sample, observed: true)); try save(state)
+        return sample
     }
 }

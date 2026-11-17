@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import XCTest
 import NativeAutoFillCore
+import NativeAutoFillProvider
 @testable import scarcrux_textem
 
 // Renders Textem's native surfaces to PNG files so a design change can be
@@ -103,6 +104,21 @@ final class DesignSnapshotTests: XCTestCase {
             try render(retrying, "load-retrying-\(suffix)", appearance, output, fitting: false)
             try render(failed, "load-failed-\(suffix)", appearance, output, fitting: false)
             try render(find, "find-bar-\(suffix)", appearance, output, fitting: false)
+            if #available(macOS 15, *) {
+                let now = Date()
+                let samples = [("482913", -20.0), ("7731", -95.0)].compactMap { code, age in
+                    CodeSample(detection: .init(code: code, domain: nil), accountID: UUID(),
+                               receivedAt: now.addingTimeInterval(age), consent: true)
+                }
+                let provider = CredentialProvider()
+                provider.readSamples = { samples }; provider.now = { now }
+                provider.prepareOneTimeCodeCredentialList(for: [])
+                try render(provider.view, "autofill-list-\(suffix)", appearance, output, fitting: false)
+                let empty = CredentialProvider()
+                empty.readSamples = { [] }
+                empty.prepareOneTimeCodeCredentialList(for: [])
+                try render(empty.view, "autofill-empty-\(suffix)", appearance, output, fitting: false)
+            }
         }
     }
 

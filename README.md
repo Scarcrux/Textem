@@ -28,6 +28,8 @@ Early but usable. See [`commandem.toml`](commandem.toml) for the live roadmap
   menu-bar-only (hide Dock) modes
 - **Zoom** (⌘+ / ⌘− / ⌘0), **find in page** (⌘F), **always-on-top**
 - **New conversation** (⌘N / Dock), **copy latest 2FA code** (⇧⌘C)
+- **Verification codes**: a **Copy Code** button on the notification when a text
+  with a code arrives, and (signed builds, macOS 15+) **Textem Codes** in AutoFill
 - **Global show/hide hotkey** (⌥⌘M), single condensed app menu
 - **Settings** window (⌘,)
 - Multiple Google accounts with isolated persistent sessions (macOS 14+)
@@ -99,6 +101,35 @@ are not archived offline, and saved phone history may omit RCS-only content.
 Live Messages/phone loading and inline replies are paused; this does not disable
 the Mac's network or other apps. Explicit external links and software updates
 remain separate actions.
+
+## Verification codes
+
+When a text containing a verification code arrives in Textem's Google Messages
+window, Textem can offer it the way Messages does for iMessage codes — for 3
+minutes, then it is gone:
+
+- **Copy Code** on the notification copies it (marked concealed, so clipboard
+  managers that honour that convention don't record it). Turn it off in
+  Settings → Verification Codes. Codes are kept in memory only.
+- **Textem Codes in AutoFill** (Developer ID builds with the embedded extension,
+  macOS 15+; enable *Textem Codes* in System Settings → General → AutoFill &
+  Passwords, and *AutoFill verification codes* in Textem's Settings). In a code
+  field, open AutoFill and choose Textem Codes to pick from fresh codes.
+  A text ending in Apple's domain-bound form (`@example.com #123456`) is also
+  registered for that site so macOS can suggest it directly; any other code is
+  only offered when you open the list, because macOS needs a domain to suggest
+  a third-party code inline.
+
+Apple's own "From Messages" suggestions read only the Messages and Mail apps;
+there is no public way for another app to join that pipeline, so this uses
+Apple's credential-provider API instead.
+
+Detection is deliberately conservative: it needs verification wording and
+exactly one 4–8 digit code (Google-style `G-123456` included), and it ignores
+your own sent messages, promo/coupon texts, phone numbers and amounts. Only rows
+that change after Textem has loaded the inbox count, so opening the app never
+offers old codes. Not yet verified live: macOS actually presenting Textem
+Codes in a Safari code field.
 
 ## Signing in (important)
 

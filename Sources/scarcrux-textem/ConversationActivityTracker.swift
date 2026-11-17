@@ -23,6 +23,10 @@ struct ConversationActivityTracker {
     // page already shows as read changes content but emits no event, which is
     // exactly the case this count exposes.
     private(set) var changedContentCount = 0
+    // Rows whose content changed since the previous report (after the
+    // baseline), read or unread: a code can arrive in the open, already-read
+    // thread. Empty for the baseline, so launch never "receives" old codes.
+    private(set) var changedRows: [ConversationSnapshot] = []
 
     mutating func update(_ rows: [ConversationSnapshot]) -> [ConversationSnapshot] {
         var current: [String: State] = [:]
@@ -38,11 +42,13 @@ struct ConversationActivityTracker {
         // are not newly received messages and must not notify at app launch.
         guard let previous, !previous.isEmpty else {
             changedContentCount = 0
+            changedRows = []
             return []
         }
-        changedContentCount = uniqueRows.filter { row in
+        changedRows = uniqueRows.filter { row in
             previous[row.id]?.fingerprint != row.fingerprint
-        }.count
+        }
+        changedContentCount = changedRows.count
 
         return uniqueRows.filter { row in
             guard row.isUnread else { return false }

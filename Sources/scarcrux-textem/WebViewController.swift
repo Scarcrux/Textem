@@ -314,14 +314,29 @@ final class WebViewController: NSViewController {
         logSnapshotDiagnostics(rows: rows.count, unread: count,
                                changed: activityTracker.changedContentCount,
                                events: events.count, domRows: domRows)
+        let codes = ReceivedCodes.detect(in: activityTracker.changedRows)
+        for (conversation, row) in codes.rows {
+            Task { await NativeAutoFillCoordinator.shared.observe(message: row.snippet, accountID: accountID,
+                                                                  conversation: conversation) }
+        }
         if !NSApp.isActive, !Preferences.notificationsMuted {
+            let offerCopy = Preferences.copyCodeNotifications
             for event in events {
                 NotificationManager.shared.notifyNewMessage(
                     sender: event.sender,
                     snippet: event.snippet,
                     accountID: accountID,
-                    conversationID: event.id
+                    conversationID: event.id,
+                    code: offerCopy ? codes.code(for: event.id) : nil
                 )
+            }
+            if offerCopy {
+                for (conversation, row) in codes.rows where !events.contains(where: { $0.id == conversation }) {
+                    if let code = codes.code(for: conversation) {
+                        NotificationManager.shared.notifyCode(code, sender: row.sender, accountID: accountID,
+                                                              conversationID: conversation)
+                    }
+                }
             }
         }
         onUnreadCountChanged?(count)

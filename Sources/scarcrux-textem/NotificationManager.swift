@@ -9,12 +9,22 @@ final class NotificationManager: NSObject {
     static let shared = NotificationManager()
 
     nonisolated private static let messageCategoryID = "textem.message"
+    nonisolated private static let messageWithCodeCategoryID = "textem.message.code"
+    nonisolated private static let codeCategoryID = "textem.code"
     nonisolated private static let replyActionID = "textem.reply"
+    nonisolated private static let copyCodeActionID = "textem.copy-code"
+    // A code is offered for as long as AutoFill would offer it.
+    static let codeLifetime: TimeInterval = 180
     nonisolated private static let accountKey = "accountID"
     nonisolated private static let conversationKey = "conversationID"
 
     private var onOpen: ((UUID?, String?) -> Void)?
     private var onReply: ((String, UUID?, String?) -> Void)?
+    // Codes live only in memory, keyed by notification, never in the
+    // notification's stored userInfo; they stop copying when they expire.
+    private var codes: [String: (code: String, expires: Date)] = [:]
+    var clock: () -> Date = Date.init
+    var pasteboard: NSPasteboard = .general
 
     func configure(onOpen: @escaping (UUID?, String?) -> Void,
                    onReply: @escaping (String, UUID?, String?) -> Void) {
@@ -30,13 +40,14 @@ final class NotificationManager: NSObject {
             textInputButtonTitle: "Send",
             textInputPlaceholder: "Reply…"
         )
+        let copy = UNNotificationAction(identifier: Self.copyCodeActionID, title: "Copy Code", options: [])
         center.setNotificationCategories([
-            UNNotificationCategory(
-                identifier: Self.messageCategoryID,
-                actions: [reply],
-                intentIdentifiers: [],
-                options: []
-            ),
+            UNNotificationCategory(identifier: Self.messageCategoryID, actions: [reply],
+                                   intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: Self.messageWithCodeCategoryID, actions: [copy, reply],
+                                   intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: Self.codeCategoryID, actions: [copy],
+                                   intentIdentifiers: [], options: []),
         ])
     }
 
@@ -111,10 +122,10 @@ final class NotificationManager: NSObject {
     }
 
     func notifyNewMessage(sender: String, snippet: String,
-                          accountID: UUID, conversationID: String) {
+                          accountID: UUID, conversationID: String, code: String? = nil) {
         let content = UNMutableNotificationContent()
         content.sound = .default
-        content.categoryIdentifier = Self.messageCategoryID
+        content.categoryIdentifier = code == nil ? Self.messageCategoryID : Self.messageWithCodeCategoryID
         content.threadIdentifier = "\(accountID.uuidString):\(conversationID)"
         content.userInfo = [
             Self.accountKey: accountID.uuidString,
@@ -123,18 +134,48 @@ final class NotificationManager: NSObject {
 
         if Preferences.hideNotificationPreview {
             content.title = "Textem"
-            content.body = "New message"
+            content.body = code == nil ? "New message" : "Verification code received"
         } else {
             content.title = sender.isEmpty ? "New message" : sender
             content.body = snippet.isEmpty ? "New message" : snippet
         }
-        add(content, kind: "message")
+        add(content, kind: code == nil ? "message" : "message_code", code: code)
     }
 
-    private func add(_ content: UNMutableNotificationContent, kind: String) {
+    // For a code that arrived in a thread already shown as read (e.g. the open
+    // conversation), which produces no new-message notification of its own.
+    func notifyCode(_ code: String, sender: String, accountID: UUID, conversationID: String) {
+        let content = UNMutableNotificationContent()
+        content.sound = .default
+        content.categoryIdentifier = Self.codeCategoryID
+        content.threadIdentifier = "\(accountID.uuidString):\(conversationID)"
+        content.userInfo = [Self.accountKey: accountID.uuidString, Self.conversationKey: conversationID]
+        content.title = "Verification code"
+        content.body = Preferences.hideNotificationPreview ? "Received in Textem"
+            : (sender.isEmpty ? code : "\(code) from \(sender)")
+        add(content, kind: "code", code: code)
+    }
+
+    /// Copy the code a notification carries, if it is still fresh.
+    @discardableResult func copyCode(forNotification id: String) -> Bool {
+        let now = clock()
+        codes = codes.filter { $0.value.expires > now }
+        guard let entry = codes[id] else { NSSound.beep(); return false }
+        CodeClipboard.copy(entry.code, to: pasteboard)
+        return true
+    }
+
+    func rememberCode(_ code: String, forNotification id: String) {
+        let now = clock()
+        codes = codes.filter { $0.value.expires > now }
+        codes[id] = (code, now.addingTimeInterval(Self.codeLifetime))
+    }
+
+    private func add(_ content: UNMutableNotificationContent, kind: String, code: String? = nil) {
         let request = UNNotificationRequest(
             identifier: UUID().uuidString, content: content, trigger: nil)
         let requestID = request.identifier
+        if let code { rememberCode(code, forNotification: requestID) }
         NotificationDiagnostics.record("request_" + kind)
         UNUserNotificationCenter.current().add(request) { error in
             Task { @MainActor in
@@ -182,6 +223,12 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let (accountID, conversationID) = Self.route(from: response)
+        if response.actionIdentifier == Self.copyCodeActionID {
+            let id = response.notification.request.identifier
+            completionHandler()
+            Task { @MainActor in self.copyCode(forNotification: id) }
+            return
+        }
         if response.actionIdentifier == Self.replyActionID,
            let textResponse = response as? UNTextInputNotificationResponse {
             let text = textResponse.userText

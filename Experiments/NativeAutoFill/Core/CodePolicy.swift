@@ -33,6 +33,18 @@ public struct CodeSample: Codable, Equatable, Sendable {
         self.code = code; self.receivedAt = receivedAt; self.consent = consent
     }
 
+    /// A code observed arriving in Textem's own Google Messages window. An
+    /// empty domain means the message named no site: offer it only when the
+    /// person picks it from Textem's AutoFill list, never inline for a site.
+    public init?(detection: CodeDetector.Detection, accountID: UUID, receivedAt: Date, consent: Bool) {
+        guard consent, detection.code.range(of: #"^[0-9]{4,8}$"#, options: .regularExpression) != nil else { return nil }
+        if let domain = detection.domain, !Self.validDomain(domain) { return nil }
+        id = UUID(); self.accountID = accountID; self.domain = detection.domain ?? ""
+        code = detection.code; self.receivedAt = receivedAt; self.consent = consent
+    }
+
+    public var isDomainBound: Bool { !domain.isEmpty }
+
     public static func validDomain(_ domain: String) -> Bool {
         guard domain.utf8.count <= 253, domain == domain.lowercased() else { return false }
         let labels = domain.split(separator: ".", omittingEmptySubsequences: false)
@@ -41,8 +53,9 @@ public struct CodeSample: Codable, Equatable, Sendable {
         }
     }
 
+    /// `requested` is the site asking; pass "" to ask about an any-site code.
     public func eligible(domain requested: String, now: Date) -> Bool {
-        consent && !consumed && Self.validDomain(domain) && domain == requested &&
+        consent && !consumed && domain == requested && (domain.isEmpty || Self.validDomain(domain)) &&
         code.range(of: #"^[0-9]{4,8}$"#, options: .regularExpression) != nil &&
         now.timeIntervalSince(receivedAt) >= 0 && now.timeIntervalSince(receivedAt) < 180
     }
@@ -58,13 +71,29 @@ public enum CodePolicy {
         return host
     }
 
+    /// The single inline offer for a site. Any-site codes never qualify here.
     public static func select(_ samples: [CodeSample], domains: Set<String>, recordID: String? = nil,
                               now: Date) -> CodeSample? {
         let matches = samples.filter {
-            domains.contains($0.domain) && $0.eligible(domain: $0.domain, now: now)
+            $0.isDomainBound && domains.contains($0.domain) && $0.eligible(domain: $0.domain, now: now)
         }
         guard matches.count == 1, let sample = matches.first,
               recordID == nil || sample.id.uuidString == recordID else { return nil }
         return sample
+    }
+
+    /// Codes for the AutoFill list the person opens explicitly: the single
+    /// unambiguous code bound to the requesting site (if any), then every fresh
+    /// any-site code, newest first. The person chooses; nothing is auto-filled.
+    public static func offers(_ samples: [CodeSample], domains: Set<String>, now: Date, limit: Int = 5) -> [CodeSample] {
+        let bound = select(samples, domains: domains, now: now).map { [$0] } ?? []
+        let open = samples.filter { !$0.isDomainBound && $0.eligible(domain: "", now: now) }
+            .sorted { $0.receivedAt > $1.receivedAt }
+        return Array((bound + open).prefix(limit))
+    }
+
+    /// Re-check a previously shown offer at the moment the person clicks.
+    public static func revalidate(_ samples: [CodeSample], id: UUID, domains: Set<String>, now: Date) -> CodeSample? {
+        offers(samples, domains: domains, now: now, limit: .max).first { $0.id == id }
     }
 }

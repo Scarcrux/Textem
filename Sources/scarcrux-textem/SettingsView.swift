@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage("hideNotificationPreview") private var hideNotificationPreview = false
     @AppStorage("blurMessages") private var blurMessages = false
     @AppStorage("hideAvatars") private var hideAvatars = false
+    @AppStorage("copyCodeNotifications") private var copyCodeNotifications = true
     @State private var launchAtLogin = LoginItem.isEnabled
     @StateObject private var nativeCodes: NativeAutoFillCoordinator
     @StateObject private var updates: AppUpdates
@@ -86,11 +87,15 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle(isOn: notifying($copyCodeNotifications)) {
+                    row("Copy Code button in notifications",
+                        "When a text with a verification code arrives, its notification can copy the code.")
+                }
                 Toggle(isOn: Binding(
                     get: { nativeCodes.enabled }, set: { value in Task { await nativeCodes.setEnabled(value) } }
                 )) {
                     row("AutoFill verification codes",
-                        "Offer fresh codes from your texts in other apps, through Textem Codes.")
+                        "Offer codes from your texts in Safari and other apps, through Textem Codes.")
                 }.disabled(!nativeCodes.available).accessibilityIdentifier("native-code-autofill-toggle")
                 Button("Delete native codes and source links", role: .destructive) {
                     Task { await nativeCodes.setEnabled(false) }

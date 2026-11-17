@@ -40,11 +40,13 @@ public final class CredentialProvider: ASCredentialProviderViewController {
     public var testCompletion: ((String?) -> Void)?
     public var testCancellation: ((ASExtensionError.Code) -> Void)?
     private var offered: CodeSample?
+    /// Everything shown in the list; `offered` is the default (first) choice.
+    private var choices: [CodeSample] = []
     private var domains: Set<String> = []
     private var selectedRecordID: String?
 
     public override func loadView() {
-        view = ProviderBackground(frame: NSRect(x: 0, y: 0, width: 460, height: 240))
+        view = ProviderBackground(frame: NSRect(x: 0, y: 0, width: 460, height: 360))
         show(nil)
     }
 
@@ -84,26 +86,61 @@ public final class CredentialProvider: ASCredentialProviderViewController {
 
     private func refresh() {
         _ = view // Ensure the native view exists before presentation.
-        offered = CodePolicy.select(readSamples(), domains: domains, recordID: selectedRecordID, now: now())
-        observe(.evaluatedOffer, offered == nil ? 0 : 1)
+        let samples = readSamples()
+        if selectedRecordID != nil {
+            // The OS picked one site-bound identity inline: only that record.
+            offered = CodePolicy.select(samples, domains: domains, recordID: selectedRecordID, now: now())
+            choices = offered.map { [$0] } ?? []
+        } else {
+            choices = CodePolicy.offers(samples, domains: domains, now: now())
+            offered = choices.first
+        }
+        observe(.evaluatedOffer, choices.count)
         show(offered)
+    }
+
+    private func describe(_ sample: CodeSample) -> String {
+        let seconds = max(0, Int(now().timeIntervalSince(sample.receivedAt)))
+        let age = seconds < 60 ? "just now" : "\(seconds / 60) min ago"
+        return sample.isDomainBound ? "For \(sample.domain) · received \(age)" : "From a text message · received \(age)"
     }
 
     private func show(_ sample: CodeSample?) {
         view.subviews.forEach { $0.removeFromSuperview() }
         let title = NSTextField(labelWithString: "Textem verification code")
         title.font = .boldSystemFont(ofSize: 18)
-        let detail = NSTextField(wrappingLabelWithString: sample.map {
-            "Use the recently received code for \($0.domain)."
-        } ?? "No single fresh, domain-matched code is available. Textem will not guess or reuse an expired code.")
-        let use = NSButton(title: "Fill Code", target: self, action: #selector(fillCode))
+        let detail = NSTextField(wrappingLabelWithString: sample == nil
+            ? "No fresh code from your texts in the last 3 minutes. Textem will not reuse an expired code."
+            : "Codes that arrived in Textem in the last 3 minutes. Choose the one this site sent.")
+        let use = NSButton(title: sample.map { "Fill \($0.code)" } ?? "Fill Code", target: self, action: #selector(fillCode))
         use.bezelStyle = .rounded
+        use.keyEquivalent = "\r"
         use.identifier = NSUserInterfaceItemIdentifier("fill-code")
         use.isEnabled = sample != nil
+        use.toolTip = sample.map(describe)
+        // Each choice: its button, then where/when it came from underneath.
+        var rows: [NSView] = [title, detail, use]
+        var captions: [NSView] = []
+        if let sample { let label = caption(describe(sample)); rows.append(label); captions.append(label) }
+        for (index, other) in choices.dropFirst().enumerated() {
+            let button = NSButton(title: "Fill \(other.code)", target: self, action: #selector(fillChoice(_:)))
+            button.bezelStyle = .rounded
+            button.tag = index + 1
+            button.identifier = NSUserInterfaceItemIdentifier("fill-code-\(index + 1)")
+            let label = caption(describe(other))
+            rows.append(button); rows.append(label); captions.append(label)
+        }
         let close = NSButton(title: "Cancel", target: self, action: #selector(cancelSelection))
         close.bezelStyle = .rounded
-        let stack = NSStackView(views: [title, detail, use, close])
+        close.keyEquivalent = "\u{1b}"
+        rows.append(close)
+        let stack = NSStackView(views: rows)
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 16
+        for label in captions {
+            if let index = stack.arrangedSubviews.firstIndex(of: label), index > 0 {
+                stack.setCustomSpacing(4, after: stack.arrangedSubviews[index - 1])
+            }
+        }
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -113,12 +150,31 @@ public final class CredentialProvider: ASCredentialProviderViewController {
         ])
     }
 
+    private func caption(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.textColor = .secondaryLabelColor
+        return label
+    }
+
+    @objc private func fillChoice(_ sender: NSButton) {
+        guard choices.indices.contains(sender.tag) else { return }
+        offered = choices[sender.tag]
+        fillCode()
+    }
+
     @objc public func fillCode() {
         // Re-read on click: a once-visible option is not a continuing grant.
-        guard let offered,
-              let current = CodePolicy.select(readSamples(), domains: domains, recordID: offered.id.uuidString, now: now()),
-              current == offered else { observe(.fillRefused, 0); self.offered = nil; show(nil); return }
-        self.offered = nil
+        let samples = readSamples()
+        let current: CodeSample? = offered.flatMap { offered in
+            selectedRecordID != nil
+                ? CodePolicy.select(samples, domains: domains, recordID: offered.id.uuidString, now: now())
+                : CodePolicy.revalidate(samples, id: offered.id, domains: domains, now: now())
+        }
+        guard let offered, let current, current == offered else {
+            observe(.fillRefused, 0); self.offered = nil; choices = []; show(nil); return
+        }
+        self.offered = nil; choices = []
         show(nil)
         if let testCompletion { testCompletion(current.code); return }
         observe(.fillRequested, 1)
@@ -128,14 +184,14 @@ public final class CredentialProvider: ASCredentialProviderViewController {
     }
 
     @objc public func cancelSelection() {
-        offered = nil
+        offered = nil; choices = []
         if let testCompletion { testCompletion(nil); return }
         cancel(.userCanceled)
     }
 
     private func cancel(_ code: ASExtensionError.Code) {
         observe(.cancelled, code.rawValue)
-        offered = nil; domains = []; selectedRecordID = nil
+        offered = nil; choices = []; domains = []; selectedRecordID = nil
         if isViewLoaded { show(nil) }
         if let testCancellation { testCancellation(code); return }
         extensionContext.cancelRequest(withError: NSError(domain: ASExtensionErrorDomain, code: code.rawValue))
