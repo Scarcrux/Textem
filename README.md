@@ -1,8 +1,8 @@
 # Textem
 
-Textem is a free macOS app for texting from your Mac with **Google Messages**.
-It wraps [Google Messages for web](https://messages.google.com/web) in a real
-Mac window, with the things a browser tab can't do: notifications you can
+Textem is a free macOS wrapper for **Google Messages**, so you can text from
+your Mac. It puts [Google Messages for web](https://messages.google.com/web) in
+a real Mac window, with the things a browser tab can't do: notifications you can
 reply to, an unread badge in the Dock and menu bar, keyboard shortcuts,
 multiple Google accounts, and one-click verification codes.
 
