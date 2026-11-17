@@ -67,4 +67,27 @@ import XCTest
         let delegate = AppDelegate()
         for item in menu.items where !item.isSeparatorItem { XCTAssertTrue(delegate.responds(to: try XCTUnwrap(item.action))) }
     }
+
+    func testPhoneToolsHideTheCompanionOnlyCommands() throws {
+        let menu = MainMenu.build(appName: "Textem")
+        let diagnostics = try XCTUnwrap(menu.item(withTitle: "Help")?.submenu?.item(withTitle: "Diagnostics")?.submenu)
+        MainMenu.applyPhoneTools(visible: false, to: menu)
+        XCTAssertTrue(try XCTUnwrap(menu.item(withTitle: "Phone")).isHidden)
+        XCTAssertTrue(try XCTUnwrap(diagnostics.item(withTitle: "Check Phone Connection…")).isHidden)
+        XCTAssertFalse(try XCTUnwrap(diagnostics.item(withTitle: "Send Test Notification")).isHidden)
+        XCTAssertEqual(diagnostics.items.filter { !$0.isHidden }.map(\.title), ["Send Test Notification"])
+        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "View")?.submenu?.item(withTitle: "Offline Mode")).isHidden)
+        MainMenu.applyPhoneTools(visible: true, to: menu)
+        XCTAssertFalse(try XCTUnwrap(menu.item(withTitle: "Phone")).isHidden)
+        XCTAssertFalse(try XCTUnwrap(diagnostics.item(withTitle: "Check Phone Connection…")).isHidden)
+    }
+
+    func testPhoneToolsDefaultOnOnlyWhereCompanionDataExists() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("textem-phone-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        XCTAssertFalse(Preferences.hasSavedPhoneData(in: root))
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("PhoneImages"), withIntermediateDirectories: true)
+        XCTAssertTrue(Preferences.hasSavedPhoneData(in: root))
+    }
 }

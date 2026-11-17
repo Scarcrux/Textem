@@ -3,6 +3,20 @@
 Developer and research material for Textem. For what Textem is and how to use
 it, see the [README](README.md).
 
+## Phone companion tools and developer hooks
+
+The **Phone** menu and **Help → Diagnostics → Check Phone Connection…** serve
+the experimental Android companion. They are hidden unless **Settings →
+Advanced → Show phone companion tools** is on (it defaults on only where phone
+data has already been saved on the Mac).
+
+Research hooks that export Google session cookies
+(`TEXTEM_LIBGM_COOKIE_EXPORT`), override the AGPL helper or its state path
+(`TEXTEM_LIBGM_HELPER_PATH`, `TEXTEM_LIBGM_STATE_DIR`), enable automatic
+phone-only recovery (`TEXTEM_EXPERIMENTAL_AUTOMATIC_RECOVERY`) or capture
+message payloads (`TEXTEM_PAYLOAD_PROBE*`) are read through `DeveloperHooks`
+and work only in DEBUG builds; release builds ignore them.
+
 ## Requirements
 
 - macOS 13 (Ventura) or later; Xcode with a Swift 6 toolchain

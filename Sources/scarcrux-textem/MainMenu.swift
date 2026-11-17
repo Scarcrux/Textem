@@ -1,5 +1,6 @@
 import AppKit
 
+@MainActor
 enum MainMenu {
     static func build(appName: String) -> NSMenu {
         let main = NSMenu()
@@ -84,7 +85,21 @@ enum MainMenu {
         diagnostics.submenu?.addItem(.separator())
         command(diagnostics.submenu!, "Send Test Notification", #selector(AppDelegate.sendTestNotification(_:)))
         help.addItem(diagnostics)
+        applyPhoneTools(visible: Preferences.showPhoneTools, to: main)
         return main
+    }
+
+    /// Show or hide the companion-only commands: the Phone menu and the
+    /// phone check in Help → Diagnostics (with its separator).
+    static func applyPhoneTools(visible: Bool, to main: NSMenu) {
+        main.item(withTitle: "Phone")?.isHidden = !visible
+        guard let diagnostics = main.item(withTitle: "Help")?.submenu?.item(withTitle: "Diagnostics")?.submenu,
+              let check = diagnostics.item(withTitle: "Check Phone Connection…") else { return }
+        check.isHidden = !visible
+        let index = diagnostics.index(of: check)
+        if diagnostics.items.indices.contains(index + 1), diagnostics.items[index + 1].isSeparatorItem {
+            diagnostics.items[index + 1].isHidden = !visible
+        }
     }
 
     static func populateAccounts(_ menu: NSMenu, accounts: [Account], activeID: UUID, canAdd: Bool) {

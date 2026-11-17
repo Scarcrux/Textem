@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import WebKit
+import NativeAutoFillCore
 
 final class WebViewController: NSViewController {
     // The web client. Google gates this on the User-Agent; a mobile or
@@ -89,6 +90,8 @@ final class WebViewController: NSViewController {
     // Retain live popup windows (e.g. the Google verification popup) so they
     // aren't deallocated mid-flow.
     private var popups: [PopupWindowController] = []
+    // Most recent code seen arriving, for ⇧⌘C. Memory only.
+    private var lastReceivedCode: (code: String, at: Date)?
     // Notified whenever the unread count changes (drives the menu-bar item).
     var onUnreadCountChanged: ((Int) -> Void)?
     private let initialURL: URL?
@@ -178,12 +181,12 @@ final class WebViewController: NSViewController {
         // Opt-in, metadata-only diagnostic for messages that Google marks as
         // phone-only. It must be present at document start to observe receive
         // traffic; normal launches never install it.
-        if ProcessInfo.processInfo.environment["TEXTEM_PAYLOAD_PROBE"] == "1" {
+        if DeveloperHooks.isOn("TEXTEM_PAYLOAD_PROBE") {
             PayloadProbe.prepareLog()
             controller.add(WeakScriptMessageHandler(self), name: PayloadProbe.handlerName)
             controller.addUserScript(WKUserScript(
                 source: PayloadProbe.userScript(targetHint:
-                    ProcessInfo.processInfo.environment["TEXTEM_PAYLOAD_PROBE_TARGET"]),
+                    DeveloperHooks.value("TEXTEM_PAYLOAD_PROBE_TARGET")),
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: true
             ))
@@ -314,6 +317,10 @@ final class WebViewController: NSViewController {
         logSnapshotDiagnostics(rows: rows.count, unread: count,
                                changed: activityTracker.changedContentCount,
                                events: events.count, domRows: domRows)
+        if let latest = ReceivedCodes.detect(in: activityTracker.changedRows).rows.last,
+           let code = CodeDetector.detect(latest.row.snippet)?.code {
+            lastReceivedCode = (code, Date())
+        }
         let plan = ReceivedCodes.plan(events: events, changed: activityTracker.changedRows,
                                       notify: !NSApp.isActive && !Preferences.notificationsMuted,
                                       offerCopy: Preferences.copyCodeNotifications)
@@ -1041,30 +1048,40 @@ final class WebViewController: NSViewController {
     // parity). Scans conversation snippets + visible message text for a 4–8
     // digit number and copies the newest match. macOS's built-in SMS-code
     // autofill only covers Apple Messages, so this fills the gap here.
+    // ⇧⌘C. Prefers a code that arrived while Textem was running (last 3
+    // minutes); otherwise reads the open thread newest-first, then the inbox
+    // previews top-down — always through the same cautious CodeDetector as
+    // Copy Code, never "any 4–8 digit number on the page".
     @objc func copyLatestCode(_ sender: Any?) {
+        if let recent = lastReceivedCode, Date().timeIntervalSince(recent.at) < NotificationManager.codeLifetime {
+            finishCopy(recent.code); return
+        }
         let js = """
         (function(){
-          var nodes = document.querySelectorAll('mws-text-message-part, mws-conversation-snippet');
-          var re = /\\b(\\d{4,8})\\b/;
-          for (var i = nodes.length - 1; i >= 0; i--) {
-            var t = nodes[i].textContent || '';
-            var m = t.match(re);
-            if (m) return m[1];
-          }
-          return '';
+          var text = function(n){ return (n.textContent || '').replace(/\\s+/g, ' ').trim(); };
+          var parts = Array.prototype.map.call(document.querySelectorAll('mws-text-message-part'), text).reverse();
+          var snippets = Array.prototype.map.call(document.querySelectorAll('[data-e2e-conversation-snippet], mws-conversation-snippet'), text);
+          return parts.concat(snippets).slice(0, 80);
         })();
         """
-        webView.evaluateJavaScript(js) { result, _ in
-            let code = (result as? String) ?? ""
-            Task { @MainActor in
-                guard !code.isEmpty else { NSSound.beep(); return }
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(code, forType: .string)
-                NotificationManager.shared.notifyInfo(
-                    Preferences.hideNotificationPreview
-                        ? "Copied verification code" : "Copied code \(code)")
-            }
+        webView.evaluateJavaScript(js) { [weak self] result, _ in
+            let texts = (result as? [String]) ?? []
+            Task { @MainActor in self?.finishCopy(Self.firstCode(in: texts)) }
         }
+    }
+
+    nonisolated static func firstCode(in texts: [String]) -> String? {
+        for text in texts where !ReceivedCodes.outgoingPrefixes.contains(where: { text.hasPrefix($0) }) {
+            if let detection = CodeDetector.detect(text) { return detection.code }
+        }
+        return nil
+    }
+
+    private func finishCopy(_ code: String?) {
+        guard let code else { NSSound.beep(); return }
+        CodeClipboard.copy(code)
+        NotificationManager.shared.notifyInfo(
+            Preferences.hideNotificationPreview ? "Copied verification code" : "Copied code \(code)")
     }
 
     // Start a new conversation by clicking Google's compose FAB (mw-fab-link,

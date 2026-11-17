@@ -153,4 +153,11 @@ struct ReceivedCodeTests {
         #expect(pasteboard.string(forType: .string) == nil)
         #expect(!manager.copyCode(forNotification: "unknown"))
     }
+
+    @Test func copyLatestCodeUsesTheCautiousDetectorNewestFirst() {
+        // Open-thread parts arrive newest-first, then inbox previews.
+        #expect(WebViewController.firstCode(in: ["See you at 2026 Main St", "Your login code is 7731", "Your code is 1111"]) == "7731")
+        #expect(WebViewController.firstCode(in: ["You: my PIN is 4321", "Order 482913 shipped"]) == nil)
+        #expect(WebViewController.firstCode(in: ["Meeting in room 4410", "$1250.00 refunded"]) == nil)
+    }
 }

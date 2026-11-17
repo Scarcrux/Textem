@@ -12,6 +12,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if ProcessInfo.processInfo.arguments.contains("--offline") { OfflineMode.setEnabled(true) }
         NativeAutoFillCoordinator.shared.start()
         NSApp.mainMenu = MainMenu.build(appName: "Textem")
+        NotificationCenter.default.addObserver(forName: Preferences.settingsChanged, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                if let menu = NSApp.mainMenu { MainMenu.applyPhoneTools(visible: Preferences.showPhoneTools, to: menu) }
+            }
+        }
         AppUpdates.shared.start()
         if ProcessInfo.processInfo.arguments.contains("--check-app-updates") {
             try? UpdateDiagnostics.save(UpdateDiagnostics.collect(AppUpdates.shared))

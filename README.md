@@ -123,8 +123,9 @@ from notifications. These change only what's shown on your Mac.
 
 **View → Offline Mode** pauses Google Messages and shows what Textem has saved
 on this Mac. Today that means phone history and pictures saved through the
-experimental Android companion (see [DEVELOPING.md](DEVELOPING.md)); without
-the companion it is empty. Ordinary conversations are not stored offline.
+experimental Android companion (turn on **Settings → Advanced → Show phone
+companion tools**; see [DEVELOPING.md](DEVELOPING.md)); without the companion
+it is empty. Ordinary conversations are not stored offline.
 Choose **Go Online** to return; the mode is remembered across restarts.
 
 ## Troubleshooting

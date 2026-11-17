@@ -18,6 +18,7 @@ enum Preferences {
         static let blurMessages = "blurMessages"
         static let hideAvatars = "hideAvatars"
         static let copyCodeNotifications = "copyCodeNotifications"
+        static let showPhoneTools = "showPhoneTools"
     }
 
     // Posted when a privacy toggle changes so the live web view re-applies CSS.
@@ -48,6 +49,21 @@ enum Preferences {
     static var copyCodeNotifications: Bool {
         get { defaults.object(forKey: Key.copyCodeNotifications) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.copyCodeNotifications) }
+    }
+
+    // The Phone menu and phone diagnostics serve the experimental Android
+    // companion, which needs Android developer tools. Hidden for ordinary
+    // users; on by default only where phone data has already been saved.
+    static var showPhoneTools: Bool {
+        get { defaults.object(forKey: Key.showPhoneTools) as? Bool ?? hasSavedPhoneData() }
+        set { defaults.set(newValue, forKey: Key.showPhoneTools) }
+    }
+
+    static func hasSavedPhoneData(in support: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Textem", isDirectory: true)) -> Bool {
+        ["PhoneImages", "ConversationPreviews", "SelectedHistory", "NotificationPreviews"].contains {
+            FileManager.default.fileExists(atPath: support.appendingPathComponent($0).path)
+        }
     }
 
     // Whether the first-run sign-in guidance has been shown.

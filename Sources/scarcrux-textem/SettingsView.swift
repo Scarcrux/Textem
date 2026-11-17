@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage("blurMessages") private var blurMessages = false
     @AppStorage("hideAvatars") private var hideAvatars = false
     @AppStorage("copyCodeNotifications") private var copyCodeNotifications = true
+    @State private var showPhoneTools = Preferences.showPhoneTools
     @State private var launchAtLogin = LoginItem.isEnabled
     @StateObject private var nativeCodes: NativeAutoFillCoordinator
     @StateObject private var updates: AppUpdates
@@ -121,6 +122,18 @@ struct SettingsView: View {
                 Text("Privacy")
             } footer: {
                 footer("These only change what is shown on this Mac. Read receipts and what you send are unaffected.")
+            }
+
+            Section {
+                Toggle(isOn: Binding(
+                    get: { showPhoneTools },
+                    set: { Preferences.showPhoneTools = $0; showPhoneTools = $0; settingsChanged() }
+                )) {
+                    row("Show phone companion tools",
+                        "Adds the Phone menu for the experimental Android companion. Needs Android developer tools.")
+                }
+            } header: {
+                Text("Advanced")
             }
         }
         .formStyle(.grouped)
