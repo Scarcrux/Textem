@@ -8,6 +8,7 @@ enum PhoneImageCommand {
         var timedOut = false
     }
     static func run(_ executable: URL, _ arguments: [String], maximum: Int = 4096, timeout: Double = 12) throws -> Data {
+        try OfflineMode.requireOnline()
         let state = State(), pipe = Pipe()
         let process = state.process
         process.executableURL = executable; process.arguments = arguments
@@ -243,6 +244,7 @@ final class PhoneImageADBClient: @unchecked Sendable {
         return (executable, device)
     }
     func fetch(endpoint: String) async throws -> (PhoneImageManifest, Data) {
+        try OfflineMode.requireOnline()
         let (executable, device) = try await connectedDevice(endpoint: endpoint)
         func connected() -> Bool {
             guard let data = try? PhoneImageCommand.run(executable, device + ["get-state"]) else { return false }
@@ -265,6 +267,7 @@ final class PhoneImageADBClient: @unchecked Sendable {
     }
     /// The same owned authenticated transport, but a separate fixed preview format/storage path.
     func fetchNotification(endpoint: String) async throws -> PhoneNotificationSnapshot {
+        try OfflineMode.requireOnline()
         let (executable, device) = try await connectedDevice(endpoint: endpoint)
         return try Self.readNotification { name, maximum in
             try PhoneImageCommand.run(executable, device + ["exec-out", "run-as", "dev.textem.probe", "/system/bin/head",
@@ -283,6 +286,7 @@ final class PhoneImageADBClient: @unchecked Sendable {
         return snapshot
     }
     func fetchNotificationJournal(endpoint: String) async throws -> PhoneNotificationJournal {
+        try OfflineMode.requireOnline()
         let (executable, device) = try await connectedDevice(endpoint: endpoint)
         let journal = try Self.readNotificationJournal { name, maximum in
             try PhoneImageCommand.run(executable, device + ["exec-out", "run-as", "dev.textem.probe", "/system/bin/head",

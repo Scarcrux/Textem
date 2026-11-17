@@ -91,6 +91,7 @@ final class WebViewController: NSViewController {
     private var popups: [PopupWindowController] = []
     // Notified whenever the unread count changes (drives the menu-bar item).
     var onUnreadCountChanged: ((Int) -> Void)?
+    private let initialURL: URL?
     private let accountID: UUID
     // The account's isolated session store.
     private let dataStore: WKWebsiteDataStore
@@ -147,7 +148,8 @@ final class WebViewController: NSViewController {
     private var lastRecoveryRequest: [String: Date] = [:]
     private static let maxLoadRetries = 5
 
-    init(accountID: UUID, dataStore: WKWebsiteDataStore) {
+    init(accountID: UUID, dataStore: WKWebsiteDataStore, initialURL: URL? = nil) {
+        self.initialURL = initialURL
         self.accountID = accountID
         self.dataStore = dataStore
         super.init(nibName: nil, bundle: nil)
@@ -707,6 +709,7 @@ final class WebViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        guard !OfflineMode.enabled else { return }
         let phoneFallbackSnapshot =
             ProcessInfo.processInfo.environment["TEXTEM_PHONE_FALLBACK_SNAPSHOT"] == "1"
         let phoneRecoverySnapshot =
@@ -714,7 +717,7 @@ final class WebViewController: NSViewController {
         if phoneFallbackSnapshot || phoneRecoverySnapshot {
             webView.loadHTMLString(Self.phoneFallbackSnapshotHTML, baseURL: nil)
         } else {
-            webView.load(URLRequest(url: Self.entryURL))
+            webView.load(URLRequest(url: initialURL ?? Self.entryURL))
         }
         // Diagnostic (TEXTEM_SELFCHECK=1): dump web-view state to a file shortly
         // after launch. Screen recording + accessibility are denied to tooling on
@@ -793,6 +796,7 @@ final class WebViewController: NSViewController {
     // report a real Messages snapshot before automation starts, which also lets
     // a reply switch back to its originating account without racing page load.
     func quickReply(_ text: String, conversationID: String?) {
+        guard !OfflineMode.enabled else { NotificationManager.shared.notifyInfo("Reply not sent: Offline Mode is on."); return }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let conversationID, !conversationID.isEmpty else {
             NotificationManager.shared.notifyInfo("Reply not sent: missing message or conversation.")
@@ -804,6 +808,7 @@ final class WebViewController: NSViewController {
     }
 
     func openConversation(_ conversationID: String?) {
+        guard !OfflineMode.enabled else { return }
         guard let conversationID, !conversationID.isEmpty else { return }
         pendingOpenConversationID = conversationID
         pendingOpenAttempts = 0
@@ -984,10 +989,13 @@ final class WebViewController: NSViewController {
         replyTimeoutTask = nil
         if activeReply != nil || !replyQueue.isEmpty {
             NotificationManager.shared.notifyInfo(
-                "Reply not sent because the active account changed.")
+                "Reply not sent because the conversation session changed.")
         }
         activeReply = nil
         replyQueue.removeAll()
+        loadRetryTask?.cancel(); loadRetryTask = nil
+        popups.forEach { $0.close() }; popups = []
+        guard isViewLoaded, let webView else { return }
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
@@ -1058,6 +1066,7 @@ final class WebViewController: NSViewController {
     // Start a new conversation by clicking Google's compose FAB (mw-fab-link,
     // confirmed present in the DOM). Texty Pro parity via ⌘N / Dock menu.
     @objc func compose(_ sender: Any?) {
+        guard !OfflineMode.enabled else { return }
         let js = "(function(){var f=document.querySelector('mw-fab-link a, mw-fab-link button, mw-fab-link');if(f){f.click();return true;}return false;})();"
         webView.evaluateJavaScript(js, completionHandler: nil)
     }
@@ -1203,6 +1212,7 @@ final class WebViewController: NSViewController {
 
     // Immediate retry (Retry button); clears any pending backoff.
     private func retryLoadNow() {
+        guard !OfflineMode.enabled else { return }
         loadRetryTask?.cancel()
         loadRetryCount = 0
         errorView.isHidden = true
@@ -1213,6 +1223,7 @@ final class WebViewController: NSViewController {
     // Transient faults get retried with exponential backoff; once those are
     // spent we state the cause rather than leaving a blank window.
     private func handleLoadFailure(_ error: Error) {
+        guard !OfflineMode.enabled else { return }
         let ns = error as NSError
         // Cancellations are normal (redirects, our own decidePolicy .cancel),
         // not failures — retrying them would fight the page.
@@ -1237,7 +1248,7 @@ final class WebViewController: NSViewController {
         loadRetryTask?.cancel()
         loadRetryTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard let self, !Task.isCancelled else { return }
+            guard let self, !Task.isCancelled, !OfflineMode.enabled else { return }
             self.webView.load(URLRequest(url: Self.entryURL))
         }
     }
@@ -1248,6 +1259,7 @@ extension WebViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+        guard !OfflineMode.enabled else { decisionHandler(.cancel); return }
         guard let url = navigationAction.request.url else {
             decisionHandler(.cancel)
             return
@@ -1320,6 +1332,7 @@ extension WebViewController: WKNavigationDelegate {
 extension WebViewController: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController,
                               didReceive message: WKScriptMessage) {
+        guard !OfflineMode.enabled else { return }
         guard message.webView === webView,
               message.frameInfo.isMainFrame,
               WebNavigationPolicy.isAllowedBridgeOrigin(
@@ -1397,6 +1410,7 @@ extension WebViewController: WKUIDelegate {
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard !OfflineMode.enabled else { return nil }
         guard let url = navigationAction.request.url,
               WebNavigationPolicy.isAllowedTopLevelURL(url) else {
             if let url = navigationAction.request.url { NSWorkspace.shared.open(url) }

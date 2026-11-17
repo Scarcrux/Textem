@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var globalHotkey: GlobalHotkey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if ProcessInfo.processInfo.arguments.contains("--offline") { OfflineMode.setEnabled(true) }
         NativeAutoFillCoordinator.shared.start()
         NSApp.mainMenu = MainMenu.build(appName: "Textem")
         AppUpdates.shared.start()
@@ -91,6 +92,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         hotkey.register()
         globalHotkey = hotkey
 
+        if ProcessInfo.processInfo.arguments.contains("--check-offline-mode") {
+            try? OfflineDiagnostics.save(OfflineDiagnostics.collect(controller))
+        }
         // First-run: steer the user away from the passkey dead-end.
         if !Preferences.hasSeenOnboarding {
             showOnboarding()
@@ -103,8 +107,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc func checkForUpdates(_ sender: Any?) { AppUpdates.shared.check() }
 
+    @objc func toggleOfflineMode(_ sender: Any?) { OfflineMode.setEnabled(!OfflineMode.enabled) }
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        menuItem.action == #selector(checkForUpdates(_:)) ? AppUpdates.shared.canCheck : true
+        if menuItem.action == #selector(toggleOfflineMode(_:)) { menuItem.state = OfflineMode.enabled ? .on : .off; return true }
+        if OfflineMode.enabled && [#selector(dockCompose), #selector(showPhoneNotification(_:)), #selector(showLinkPreviews(_:)), #selector(checkPhoneConnection(_:))].contains(menuItem.action) { return false }
+        return menuItem.action == #selector(checkForUpdates(_:)) ? AppUpdates.shared.canCheck : true
     }
 
     @objc func sendTestNotification(_ sender: Any?) {
@@ -278,6 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc func showLinkPreviews(_ sender: Any?) {
+        guard !OfflineMode.enabled else { return }
         do {
             try windowController?.webViewController.showLinkPreviewLibrary()
             showMainWindow()
@@ -313,17 +321,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc func showPhoneImages(_ sender: Any?) {
+        if OfflineMode.enabled { windowController?.showOfflineLibrary(pictures: true); showMainWindow(); return }
         windowController?.webViewController.showPhoneImages()
         showMainWindow()
     }
 
     @objc func showSavedPhoneConversations(_ sender: Any?) {
+        if OfflineMode.enabled { windowController?.showOfflineLibrary(); showMainWindow(); return }
         windowController?.webViewController.showSavedPhoneConversations()
         showMainWindow()
     }
 
     private var phoneNotificationWindow: PhoneNotificationWindowController?
     @objc func showPhoneNotification(_ sender: Any?) {
+        guard !OfflineMode.enabled else { return }
         if phoneNotificationWindow == nil { phoneNotificationWindow = PhoneNotificationWindowController() }
         phoneNotificationWindow?.showWindow(nil); phoneNotificationWindow?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

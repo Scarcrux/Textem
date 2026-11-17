@@ -116,6 +116,7 @@ struct CompanionHTTPSJournalClient: Sendable {
         return try Self.validateReply(data, response: response, requestID: id, pairing: pairing)
     }
     func fetchData(pairing: CompanionPairing, path: String, maximum: Int) async throws -> (Data, HTTPURLResponse, UUID) {
+        try OfflineMode.requireOnline()
         try Task.checkCancellation()
         guard ["/v1/journal", "/v1/selected-history"].contains(path) else { throw CompanionConnectionError.invalidReply }
 
@@ -125,7 +126,11 @@ struct CompanionHTTPSJournalClient: Sendable {
         config.urlCredentialStorage = nil; config.timeoutIntervalForRequest = 10
         config.timeoutIntervalForResource = 15; config.tlsMinimumSupportedProtocolVersion = .TLSv12
         let session = URLSession(configuration: config, delegate: policy, delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
+        let observer = NotificationCenter.default.addObserver(forName: OfflineMode.changed, object: nil, queue: nil) { _ in
+            if OfflineMode.enabled { session.invalidateAndCancel() }
+        }
+        defer { NotificationCenter.default.removeObserver(observer); session.invalidateAndCancel() }
+        try OfflineMode.requireOnline()
         let id = UUID()
         var request = URLRequest(url: URL(string: "https://\(pairing.host):\(pairing.port)\(path)")!, cachePolicy: .reloadIgnoringLocalCacheData)
         request.setValue("Bearer " + pairing.token, forHTTPHeaderField: "Authorization")
@@ -138,6 +143,7 @@ struct CompanionHTTPSJournalClient: Sendable {
             guard response.statusCode == 200 else { throw CompanionConnectionError.invalidReply }
             var data = Data()
             for try await byte in bytes {
+                try OfflineMode.requireOnline()
                 guard data.count < maximum else { throw CompanionConnectionError.tooLarge }
                 data.append(byte)
             }

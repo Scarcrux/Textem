@@ -4,9 +4,10 @@ import Foundation
 /// Runs inside signed Textem: CLI helpers cannot establish its Keychain access.
 enum PhoneRecoveryCheck {
     enum State: String, Codable {
-        case connected, unpaired, disconnected, keychainUnavailable, invalidPairing, untrustedPhone, invalidReply, unavailable, cancelled
+        case offline, connected, unpaired, disconnected, keychainUnavailable, invalidPairing, untrustedPhone, invalidReply, unavailable, cancelled
         var message: String {
             switch self {
+            case .offline: "Offline Mode is on. Saved content is available without a phone connection."
             case .connected: "Phone connection working."
             case .unpaired: "No phone connection has been imported."
             case .disconnected: "The phone connection is disconnected on this Mac."
@@ -76,6 +77,7 @@ enum PhoneRecoveryCheck {
                 report.projectedMessageRows += presentation.messages.count
             }
         }
+        if OfflineMode.enabled { report.state = .offline; return report }
         do {
             let saved: Data?
             do { saved = try load() } catch { report.state = .keychainUnavailable; return report }

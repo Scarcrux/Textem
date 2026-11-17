@@ -46,13 +46,15 @@ import SwiftUI
 struct SavedPhoneConversationsView: View {
     @ObservedObject var model: SavedPhoneConversationsModel
     var onClose: () -> Void
+    var showHeader = true
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PhonePanelHeader(symbol: "tray.full", title: "Saved conversation previews",
+            if showHeader { PhonePanelHeader(symbol: "tray.full", title: "Saved conversation previews",
                 subtitle: "On this Mac · current account", onClose: onClose,
                 closeLabel: "Close saved conversation previews", trailingActions: AnyView(headerActions))
                 .padding(.horizontal, 20).padding(.vertical, 14)
-            Divider()
+            Divider() }
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Saved on this Mac and available offline.")
                     .font(.caption).foregroundStyle(.secondary)

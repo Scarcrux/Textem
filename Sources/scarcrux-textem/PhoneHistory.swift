@@ -97,6 +97,7 @@ struct CompanionHistoryTransport: Sendable {
         return try PhoneHistorySnapshot.library(data, installID: pairing.installID)
     }
     func fetch() async throws -> [PhoneHistorySnapshot] {
+        try OfflineMode.requireOnline()
         guard let saved = try load(), !saved.isEmpty else { throw CompanionConnectionError.disconnected }
         let result = try await network(CompanionPairing.parse(saved))
         try Task.checkCancellation()

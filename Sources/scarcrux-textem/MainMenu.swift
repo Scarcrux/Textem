@@ -50,6 +50,8 @@ enum MainMenu {
         command(edit, "Copy Latest Code", #selector(WebViewController.copyLatestCode(_:)), "c", [.command, .shift])
 
         let view = section("View")
+        command(view, "Offline Mode", #selector(AppDelegate.toggleOfflineMode(_:)))
+        view.addItem(.separator())
         command(view, "Reload", #selector(WebViewController.reloadPage(_:)), "r")
         command(view, "Reload from Origin", #selector(WebViewController.reloadFromOrigin(_:)), "r", [.command, .shift])
         view.addItem(.separator())

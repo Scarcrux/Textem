@@ -71,6 +71,7 @@ final class PhoneImagesModel: ObservableObject {
         do {
             let client = self.client
             let (manifest, data) = try await Task.detached { try await client.fetch(endpoint: address) }.value
+            try OfflineMode.requireOnline()
             let alreadyImported = images.contains { $0.sha256 == manifest.sha256 }
             let imported = try PhoneImageStore.importImage(manifest: manifest, png: data, in: directory)
             reload(); selectedID = imported.id

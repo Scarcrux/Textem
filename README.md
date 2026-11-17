@@ -82,6 +82,20 @@ requires approval. Signed feed/archive staging is documented in
 [the update guide](Experiments/Updates/README.md). The first published update
 channel and end-to-end install remain separate release gates.
 
+## Offline Mode
+
+Choose **View → Offline Mode** to browse saved phone history, notification
+previews and imported pictures without loading Google Messages or connecting
+to your phone. The choice persists across launches; **Go Online** returns to
+the existing account session. History and previews remain scoped to the selected
+account. Imported pictures use the existing local picture library.
+
+This mode uses content already saved on this Mac. Ordinary web conversations
+are not archived offline, and saved phone history may omit RCS-only content.
+Live Messages/phone loading and inline replies are paused; this does not disable
+the Mac's network or other apps. Explicit external links and software updates
+remain separate actions.
+
 ## Signing in (important)
 
 QR-code pairing is no longer available in the US; Google Messages for web now

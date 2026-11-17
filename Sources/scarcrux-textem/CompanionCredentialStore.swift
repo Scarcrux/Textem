@@ -42,6 +42,7 @@ struct CompanionJournalTransport: Sendable {
         try await PhoneImageADBClient.shared.fetchNotificationJournal(endpoint: $0)
     }
     func fetch(developerEndpoint: String) async throws -> PhoneNotificationJournal {
+        try OfflineMode.requireOnline()
         let saved = try load()
         let journal: PhoneNotificationJournal
         if let saved {
