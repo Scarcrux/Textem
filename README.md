@@ -135,6 +135,11 @@ Choose **Go Online** to return; the mode is remembered across restarts.
   16 seconds and shows the reason. Press **Try Again** or **⇧⌘R**.
 - **"Trying to reach your phone."** Google Messages on your phone needs to be
   on and connected. Opening the Messages app on your phone usually fixes it.
+- **A message says "View on your phone."** Google sends some messages —
+  usually business messages with rich cards, images or buttons — only to
+  your phone, so Google Messages for web (and therefore Textem) never
+  receives their content. Open them on your phone. This is a Google
+  limitation that Textem can't work around.
 - **Disconnected after using Messages in a browser.** Only one computer can
   be active. Press **⇧⌘R** in Textem to make it active again.
 - **Sign-in verification fails.** You probably chose a passkey. Choose
