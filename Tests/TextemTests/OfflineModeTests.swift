@@ -71,6 +71,33 @@ import XCTest
         XCTAssertEqual(menu.item(withTitle: "View")?.submenu?.item(withTitle: "Offline Mode")?.action,
             #selector(AppDelegate.toggleOfflineMode(_:)))
     }
+    func testOfflineClearsUnreadIndicatorsOnEntryAndNewSubscriber() async throws {
+        let root = try PhoneImageTests().temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let application = NSApplication.shared
+        let badge = application.dockTile.badgeLabel
+        defer { NSApp.dockTile.badgeLabel = badge }
+        await withMode(false) {
+            let controller = MainWindowController(account: Account(name: "Synthetic account", storeIdentifier: nil),
+                storeForAccount: { _ in .nonPersistent() }, initialURL: URL(string: "about:blank"),
+                offlineLibrary: { self.model($0, root: root) })
+            defer { NotificationCenter.default.removeObserver(controller); controller.close() }
+            var unread: Int?
+            controller.onUnreadCountChanged = { unread = $0 }
+            NSApp.dockTile.badgeLabel = "3"
+            XCTAssertNil(unread, "Online mode must wait for a live unread snapshot")
+            OfflineMode.setEnabled(true)
+            XCTAssertNil(NSApp.dockTile.badgeLabel)
+            XCTAssertEqual(unread, 0, "The status-item subscriber must clear its stale count")
+            NSApp.dockTile.badgeLabel = "7"; unread = nil
+            controller.onUnreadCountChanged = { unread = $0 }
+            XCTAssertNil(NSApp.dockTile.badgeLabel)
+            XCTAssertEqual(unread, 0, "Subscribers attached after offline startup must also reset")
+            NSApp.dockTile.badgeLabel = "5"; unread = 5
+            controller.switchTo(Account(name: "Other synthetic account", storeIdentifier: UUID()))
+            XCTAssertNil(NSApp.dockTile.badgeLabel)
+            XCTAssertEqual(unread, 0)
+        }
+    }
     func testRenderPopulatedEmptyAndPictureLibraries() throws {
         let root = try PhoneImageTests().temporary(); defer { try? FileManager.default.removeItem(at: root) }
         let context = PhoneHistoryTests().context

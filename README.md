@@ -90,6 +90,10 @@ to your phone. The choice persists across launches; **Go Online** returns to
 the existing account session. History and previews remain scoped to the selected
 account. Imported pictures use the existing local picture library.
 
+The `--offline` launch argument deliberately enables and saves this same choice.
+The read-only `--check-offline-mode` argument reports the current mode without
+changing it.
+
 This mode uses content already saved on this Mac. Ordinary web conversations
 are not archived offline, and saved phone history may omit RCS-only content.
 Live Messages/phone loading and inline replies are paused; this does not disable

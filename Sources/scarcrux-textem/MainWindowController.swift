@@ -12,7 +12,10 @@ final class MainWindowController: NSWindowController {
 
     // Persisted across account switches and applied to the active web VC.
     var onUnreadCountChanged: ((Int) -> Void)? {
-        didSet { webViewController.onUnreadCountChanged = onUnreadCountChanged }
+        didSet {
+            webViewController.onUnreadCountChanged = onUnreadCountChanged
+            if OfflineMode.enabled { clearUnreadIndicators() }
+        }
     }
 
     init(account: Account? = nil, storeForAccount: @escaping (Account) -> WKWebsiteDataStore = { AccountStore.shared.dataStore(for: $0) },
@@ -61,6 +64,7 @@ final class MainWindowController: NSWindowController {
 
     private func presentContent(for account: Account) {
         if OfflineMode.enabled {
+            clearUnreadIndicators()
             let model = offlineLibrary(account.id)
             offlineModel = model
             window?.contentViewController = NSHostingController(rootView: OfflineLibraryView(model: model,
@@ -71,6 +75,10 @@ final class MainWindowController: NSWindowController {
             window?.contentViewController = webViewController
             window?.title = "Textem"
         }
+    }
+    private func clearUnreadIndicators() {
+        NSApp.dockTile.badgeLabel = nil
+        onUnreadCountChanged?(0)
     }
     @objc private func modeChanged() {
         let old = webViewController
