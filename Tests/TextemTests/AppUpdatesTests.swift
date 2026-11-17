@@ -89,7 +89,11 @@ struct AppUpdatesTests {
         let config = try AppUpdateConfiguration(info: info)
         #expect(config.feed.absoluteString == "https://textem.scarcrux.com/updates/appcast.xml")
         for key in ["SUVerifyUpdateBeforeExtraction", "SURequireSignedFeed"] { #expect(info[key] as? Bool == true) }
-        for key in ["SUEnableAutomaticChecks", "SUAutomaticallyUpdate", "SUAllowsAutomaticUpdates", "SUEnableSystemProfiling", "SUEnableJavaScript"] {
+        // Checks run on their own (daily, only while Textem is open); installing
+        // always asks. No system profile or feed JavaScript.
+        #expect(info["SUEnableAutomaticChecks"] as? Bool == true)
+        #expect(info["SUScheduledCheckInterval"] as? Int == 86400)
+        for key in ["SUAutomaticallyUpdate", "SUAllowsAutomaticUpdates", "SUEnableSystemProfiling", "SUEnableJavaScript"] {
             #expect(info[key] as? Bool == false)
         }
         #expect(info["SUSignedFeedFailureExpirationInterval"] as? Int == 0)

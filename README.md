@@ -150,8 +150,11 @@ Choose **Go Online** to return; the mode is remembered across restarts.
 
 ## Privacy
 
-Textem shows Google's own Messages for web client and talks only to Google;
-it adds no analytics, telemetry, accounts or relay servers. Your session is
+Textem shows Google's own Messages for web client and talks to Google; it adds
+no analytics, telemetry, accounts or relay servers. The one other connection
+is the update check: while Textem is open it checks textem.scarcrux.com once a
+day for a new version (no system profile is sent), and asks before installing
+anything. Turn it off in **Settings → Updates**. Your session is
 stored locally on your Mac. To keep Google's sign-in working inside an app,
 Textem turns off WebKit's cross-site tracking prevention for its own Google
 session (this doesn't affect Safari). Links open in your default browser.
