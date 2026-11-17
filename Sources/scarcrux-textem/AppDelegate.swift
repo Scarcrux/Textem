@@ -56,9 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             showMainWindow()
         }
 
-        if LinkPreviewStore.isEnabled {
-            showLinkPreviews(nil)
-        }
         if ProcessInfo.processInfo.environment["TEXTEM_PHONE_IMAGE_CHECK"] == "1" { showPhoneImages(nil) }
 
         // Native notifications: click focuses the window; inline reply routes
@@ -115,7 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc func toggleOfflineMode(_ sender: Any?) { OfflineMode.setEnabled(!OfflineMode.enabled) }
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleOfflineMode(_:)) { menuItem.state = OfflineMode.enabled ? .on : .off; return true }
-        if OfflineMode.enabled && [#selector(dockCompose), #selector(showPhoneNotification(_:)), #selector(showLinkPreviews(_:)), #selector(checkPhoneConnection(_:))].contains(menuItem.action) { return false }
+        if OfflineMode.enabled && [#selector(dockCompose), #selector(showPhoneNotification(_:)), #selector(checkPhoneConnection(_:))].contains(menuItem.action) { return false }
         return menuItem.action == #selector(checkForUpdates(_:)) ? AppUpdates.shared.canCheck : true
     }
 
@@ -287,16 +284,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         settingsWindowController?.window?.center()
         settingsWindowController?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-    }
-
-    @objc func showLinkPreviews(_ sender: Any?) {
-        guard !OfflineMode.enabled else { return }
-        do {
-            try windowController?.webViewController.showLinkPreviewLibrary()
-            showMainWindow()
-        } catch {
-            presentInfo(error.localizedDescription)
-        }
     }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {

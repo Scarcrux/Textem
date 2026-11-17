@@ -21,11 +21,8 @@ APP_BUNDLE := $(APP).app
 CONTENTS   := $(APP_BUNDLE)/Contents
 VERSION    ?= 0.1.0
 BUILD_NUMBER ?= 1
-HELPER_SOURCE := Experiments/LibGMProbe
-HELPER_BUILD := .build.nosync/textem-libgm-probe
-HELPER_DIR ?= $(shell /usr/bin/printenv HOME)/Library/Application Support/Textem/LibGMProbe
 
-.PHONY: all build bundle run helper install-helper clean icloud-heal dmg sign release notarize require-developer-id
+.PHONY: all build bundle run clean icloud-heal dmg sign release notarize require-developer-id
 .NOTPARALLEL: release notarize
 
 all: bundle
@@ -81,19 +78,6 @@ bundle: build
 
 run: bundle
 	open $(APP_BUNDLE)
-
-# The native read helper is AGPL and intentionally remains a separately built,
-# separately installed process rather than becoming part of the MIT app bundle.
-helper: icloud-heal
-	@cd $(HELPER_SOURCE) && go build -trimpath -o "$(CURDIR)/$(HELPER_BUILD)" .
-	@chmod 700 "$(HELPER_BUILD)"
-	@echo "built separate AGPL helper: $(HELPER_BUILD)"
-
-install-helper: helper
-	@mkdir -p "$(HELPER_DIR)"
-	@chmod 700 "$(HELPER_DIR)"
-	@install -m 700 "$(HELPER_BUILD)" "$(HELPER_DIR)/textem-libgm-probe"
-	@echo "installed separate AGPL helper: $(HELPER_DIR)/textem-libgm-probe"
 
 # Package the bundle into a compressed .dmg for distribution. Unsigned for
 # now; Developer ID signing + notarization come before a public release.

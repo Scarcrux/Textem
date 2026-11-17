@@ -167,6 +167,4 @@ in [DEVELOPING.md](DEVELOPING.md). The roadmap lives in
 ## License
 
 Textem is [MIT](LICENSE) © 2026 Scarcrux. It includes
-[Sparkle](https://sparkle-project.org) for updates (MIT). The optional
-research helper in `Experiments/LibGMProbe` is separately licensed under the
-AGPL, is built separately, and is not part of the Textem app.
+[Sparkle](https://sparkle-project.org) for updates (MIT).

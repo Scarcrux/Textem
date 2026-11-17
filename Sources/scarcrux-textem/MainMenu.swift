@@ -65,7 +65,6 @@ enum MainMenu {
 
         let phone = section("Phone")
         command(phone, "Saved Conversation Previews…", #selector(AppDelegate.showSavedPhoneConversations(_:)))
-        command(phone, "Phone-only Message Preview…", #selector(AppDelegate.showLinkPreviews(_:)))
         command(phone, "Shared Phone Images…", #selector(AppDelegate.showPhoneImages(_:)))
         command(phone, "Phone Notification Preview…", #selector(AppDelegate.showPhoneNotification(_:)))
 

@@ -30,7 +30,7 @@ import XCTest
         let items = commands(MainMenu.build(appName: "Textem"))
         let titles = Set(items.map(\.title))
         for title in ["About Textem", "Settings…", "New Conversation", "Copy Latest Code", "Sign-in Help…", "Send Test Notification",
-                      "Phone-only Message Preview…", "Shared Phone Images…", "Phone Notification Preview…", "Reload", "Reload from Origin",
+                      "Shared Phone Images…", "Phone Notification Preview…", "Reload", "Reload from Origin",
                       "Undo", "Redo", "Cut", "Copy", "Paste", "Select All", "Find…", "Find Next", "Find Previous",
                       "Zoom In", "Zoom Out", "Actual Size", "Always on Top", "Hide Textem", "Hide Others", "Quit Textem"] {
             XCTAssertTrue(titles.contains(title), title)

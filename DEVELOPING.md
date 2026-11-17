@@ -3,19 +3,12 @@
 Developer and research material for Textem. For what Textem is and how to use
 it, see the [README](README.md).
 
-## Phone companion tools and developer hooks
+## Phone companion tools
 
 The **Phone** menu and **Help → Diagnostics → Check Phone Connection…** serve
 the experimental Android companion. They are hidden unless **Settings →
 Advanced → Show phone companion tools** is on (it defaults on only where phone
 data has already been saved on the Mac).
-
-Research hooks that export Google session cookies
-(`TEXTEM_LIBGM_COOKIE_EXPORT`), override the AGPL helper or its state path
-(`TEXTEM_LIBGM_HELPER_PATH`, `TEXTEM_LIBGM_STATE_DIR`), enable automatic
-phone-only recovery (`TEXTEM_EXPERIMENTAL_AUTOMATIC_RECOVERY`) or capture
-message payloads (`TEXTEM_PAYLOAD_PROBE*`) are read through `DeveloperHooks`
-and work only in DEBUG builds; release builds ignore them.
 
 ## Requirements
 
@@ -27,7 +20,6 @@ and work only in DEBUG builds; release builds ignore them.
 ```sh
 make run      # build release, wrap into Textem.app, and launch it
 make bundle   # just build + produce Textem.app
-make install-helper # locally build/install the separate AGPL read helper
 ```
 
 The Makefile selects Xcode's compiler explicitly and builds a universal
@@ -75,21 +67,6 @@ adds native integration around it:
 
 Textem adds no analytics, telemetry endpoint, account service, or relay.
 Google's web client still communicates with Google under Google's own policies.
-
-The phone-only research helper is the separate AGPL
-`Experiments/LibGMProbe` executable; it is not linked or bundled into the MIT app.
-Live testing established that Google permits the helper and the embedded web inbox
-to pair, but rejects the inactive relay with HTTP 401 when the active computer
-changes. Normal Textem launches therefore never start the helper or request phone
-pairing merely because a phone-only conversation was selected. The automatic path
-is developer-only behind `TEXTEM_EXPERIMENTAL_AUTOMATIC_RECOVERY=1` until a design
-can preserve the primary inbox.
-
-Readable fallback messages and link previews remain in an owner-only local
-store. Textem matches the stable web route first and otherwise accepts only an
-exact or unique label match. Ambiguous matches and cross-account cookie/session
-mismatches fail closed. Direct helper use is read-only and does not run as a
-permanent background service.
 
 ### Explicitly shared phone graphics
 
@@ -278,14 +255,6 @@ controller. Initial controls and their
 verdicts are recorded in the experiment's `PREREGISTRATION.txt`.
 
 #### Local notification preview sample
-
-Previously recovered legacy exports remain available in **Phone-only Message
-Preview…**, explicitly labeled as a library rather than the selected web thread.
-They are not automatically attached by a matching business name. Automatic
-preview display requires an explicit local Textem account binding and the exact
-confirmed route; old exports have no such binding and are not silently migrated.
-An explicit route mismatch never falls back to a title. Existing account-scoped
-shared-image links are unaffected.
 
 The optional developer companion v0.9 can separately save its latest Google
 Messages notification preview after **Enable local content samples** is selected.

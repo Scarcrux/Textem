@@ -16,42 +16,6 @@ final class WebViewController: NSViewController {
     // visible page does not.
     private static let conversationListWidth: CGFloat = 340
     private static let globalToolbarHeight: CGFloat = 64
-    private static let phoneFallbackSnapshotHTML = """
-    <!doctype html><html><head><style>
-    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;
-      background:#202124;color:#e8eaed;font:14px -apple-system,BlinkMacSystemFont,sans-serif}
-    header{height:64px;display:flex;align-items:center;padding:0 24px;border-bottom:1px solid #3c4043;
-      background:#202124;font-size:19px;font-weight:600}header span{margin-left:auto;width:32px;height:32px;
-      border-radius:50%;display:grid;place-items:center;background:#0b57d0;font-size:14px}
-    aside{position:absolute;left:0;top:64px;bottom:0;width:340px;background:#292a2d;
-      border-right:1px solid #3c4043;padding:18px 12px}
-    button{border:0;border-radius:16px;background:#a8c7fa;color:#062e6f;padding:13px 18px;
-      font:600 14px -apple-system;margin:0 8px 18px}
-    .row{height:72px;border-radius:12px;display:flex;align-items:center;gap:12px;padding:0 12px}
-    .row.selected{background:#3c4043}.avatar{width:40px;height:40px;border-radius:50%;
-      background:#7cacf8;display:grid;place-items:center;color:white;font-weight:700}.copy{min-width:0}
-    .name{font-weight:600;margin-bottom:5px}.snippet{color:#bdc1c6;white-space:nowrap;overflow:hidden;
-      text-overflow:ellipsis;width:220px}main{position:absolute;left:340px;right:0;top:64px;bottom:0;
-      background:#202124;display:grid;place-items:center;color:#9aa0a6}
-    </style></head><body><header>☰ &nbsp; Google Messages<span>T</span></header><aside>
-    <button>Start chat</button>
-    <div class="row"><div class="avatar">A</div><div class="copy"><div class="name">Example contact</div><div class="snippet">A regular conversation</div></div></div>
-    <div class="row selected"><div class="avatar">D</div><div class="copy"><div class="name">Demo delivery</div><div class="snippet">View on your phone</div></div></div>
-    <div class="row"><div class="avatar">B</div><div class="copy"><div class="name">Another contact</div><div class="snippet">See you tomorrow</div></div></div>
-    </aside><main>Phone-only conversation</main></body></html>
-    """
-
-    // The separate native helper cannot currently coexist with Google's web
-    // relay: activating either client invalidates the other's listener. Keep
-    // automatic recovery off in normal launches so merely selecting a thread
-    // can never generate another phone pairing prompt. This switch exists only
-    // for isolated developer verification while that protocol limitation is
-    // investigated.
-    private static var experimentalAutomaticRecoveryEnabled: Bool {
-        PhoneOnlyRecoveryPolicy.automaticRecoveryEnabled(
-            environment: ProcessInfo.processInfo.environment)
-    }
-
     // Entry point for every load path (initial, retry, reload-from-origin).
     // TEXTEM_FORCE_LOAD_FAIL=1 swaps in an unresolvable host (.invalid is
     // reserved by RFC 2606, so DNS is guaranteed to fail) to exercise the
@@ -124,7 +88,6 @@ final class WebViewController: NSViewController {
     private var pendingOpenAttempts = 0
     private var loadRetryCount = 0
     private var loadRetryTask: Task<Void, Never>?
-    private var didExportLibGMCookies = false
     private var linkPreviewHost: NSView?
     private var showingPhoneImages = false
     private var phoneImagesModel: PhoneImagesModel?
@@ -133,22 +96,7 @@ final class WebViewController: NSViewController {
     private var displayedImageConversationKey: String?
     private var phoneConversationModel: PhoneConversationModel?
     private var savedPhoneConversationsModel: SavedPhoneConversationsModel?
-    private var displayedLinkPreviewDocument: LinkPreviewDocument?
     private var dismissedPhoneOnlyConversation: String?
-    private struct RecoverySelection {
-        let conversation: String
-        let conversationID: String
-        var key: String {
-            let route = conversationID.trimmingCharacters(in: .whitespacesAndNewlines)
-            return route.isEmpty ? LinkPreviewStore.normalizedConversation(conversation) : route
-        }
-    }
-    private var currentPhoneOnlySelection: RecoverySelection?
-    private var activeRecoveryID: UUID?
-    private var activeRecoveryProcess: Process?
-    private var activeRecoveryFiles: (request: URL, status: URL)?
-    private var recoveryStatusTask: Task<Void, Never>?
-    private var lastRecoveryRequest: [String: Date] = [:]
     private static let maxLoadRetries = 5
 
     init(accountID: UUID, dataStore: WKWebsiteDataStore, initialURL: URL? = nil) {
@@ -177,20 +125,6 @@ final class WebViewController: NSViewController {
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: true
         ))
-
-        // Opt-in, metadata-only diagnostic for messages that Google marks as
-        // phone-only. It must be present at document start to observe receive
-        // traffic; normal launches never install it.
-        if DeveloperHooks.isOn("TEXTEM_PAYLOAD_PROBE") {
-            PayloadProbe.prepareLog()
-            controller.add(WeakScriptMessageHandler(self), name: PayloadProbe.handlerName)
-            controller.addUserScript(WKUserScript(
-                source: PayloadProbe.userScript(targetHint:
-                    DeveloperHooks.value("TEXTEM_PAYLOAD_PROBE_TARGET")),
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: true
-            ))
-        }
 
         // Disable Intelligent Tracking Prevention on the data store. WKWebView
         // partitions/blocks cross-site cookies by default, which severs
@@ -344,20 +278,12 @@ final class WebViewController: NSViewController {
     private func handlePhoneOnlyState(
         visible: Bool, conversation: String, conversationID: String, routeConfirmed: Bool
     ) {
-        if ProcessInfo.processInfo.environment["TEXTEM_PHONE_FALLBACK_SNAPSHOT"] == "1" {
-            return
-        }
-        let normalized = LinkPreviewStore.normalizedConversation(conversation)
+        let normalized = ConversationName.normalized(conversation)
         let imageConversation = PhoneImageConversation(accountID: accountID, route: conversationID, label: conversation)
         currentImageConversation = visible && routeConfirmed && imageConversation.key != nil ? imageConversation : nil
         phoneImagesModel?.setConversation(currentImageConversation)
         if browsingPhoneImageLibrary || savedPhoneConversationsModel != nil { return }
         guard visible else {
-            // The native relay temporarily becomes Google's one active
-            // computer. Keep the recovery pane and route while it works; the
-            // bridge is explicitly reactivated after capture completes.
-            if activeRecoveryID != nil { return }
-            currentPhoneOnlySelection = nil
             dismissedPhoneOnlyConversation = nil
             hideLinkPreviewFallback()
             return
@@ -366,9 +292,6 @@ final class WebViewController: NSViewController {
             hideLinkPreviewFallback()
             return
         }
-        let selection = RecoverySelection(
-            conversation: conversation, conversationID: conversationID)
-        currentPhoneOnlySelection = selection
         if let context = currentImageConversation,
            dismissedPhoneOnlyConversation != normalized,
            ((try? PhoneConversationStore.record(for: context)) != nil || (try? PhoneHistoryStore.record(for: context)) != nil) {
@@ -378,189 +301,10 @@ final class WebViewController: NSViewController {
            let images = try? PhoneImageStore.images(for: context), !images.isEmpty {
             showConversationImages(context); return
         }
-        if dismissedPhoneOnlyConversation != normalized,
-           let context = currentImageConversation,
-           let document = try? LinkPreviewStore.loadAutomatically(for: context) {
-            showLinkPreviewFallback(document)
-        } else if dismissedPhoneOnlyConversation != normalized {
+        if dismissedPhoneOnlyConversation != normalized {
             if let context = currentImageConversation { showPhoneConversation(context) }
             else { hideLinkPreviewFallback() }
         }
-        if Self.experimentalAutomaticRecoveryEnabled {
-            requestPhoneOnlyRecovery(selection)
-        }
-    }
-
-    private func requestPhoneOnlyRecovery(_ selection: RecoverySelection) {
-        guard activeRecoveryID == nil else { return }
-        if let last = lastRecoveryRequest[selection.key], Date().timeIntervalSince(last) < 60 {
-            return
-        }
-        lastRecoveryRequest[selection.key] = Date()
-        guard PhoneOnlyRecoveryFiles.helperIsPrivateExecutable() else {
-            showPhoneOnlyRecovery(selection, status: PhoneOnlyCaptureStatus(
-                schema: 1, state: "error", emoji: nil, errorCode: "helper-not-installed"))
-            return
-        }
-
-        let runID = UUID()
-        activeRecoveryID = runID
-        if displayedLinkPreviewDocument == nil {
-            showPhoneOnlyRecovery(selection, status: PhoneOnlyCaptureStatus(
-                schema: 1, state: "starting", emoji: nil, errorCode: nil))
-        }
-        // A fresh browser cookie handoff repairs a still-paired native session
-        // when Google rotates web credentials; it does not create another
-        // paired device for each conversation.
-        LibGMCookieExporter.export(from: dataStore) { [weak self] result in
-            guard let self, self.activeRecoveryID == runID else { return }
-            switch result {
-            case .success:
-                self.launchPhoneOnlyRecovery(selection, runID: runID)
-            case .failure:
-                self.finishPhoneOnlyRecovery(
-                    selection, runID: runID, succeeded: false,
-                    fallbackErrorCode: "cookie-handoff-failed")
-            }
-        }
-    }
-
-    private func launchPhoneOnlyRecovery(_ selection: RecoverySelection, runID: UUID) {
-        do {
-            let files = try PhoneOnlyRecoveryFiles.makeRequest(
-                conversation: selection.conversation,
-                webConversationID: selection.conversationID)
-            let process = Process()
-            process.executableURL = PhoneOnlyRecoveryFiles.helperURL
-            process.arguments = [
-                "-state-dir", PhoneOnlyRecoveryFiles.stateDirectory.path,
-                "-request", files.request.path,
-                "-status", files.status.path,
-                "-messages", "100",
-                "-listen", "2s",
-                "-timeout", "3m",
-                "-write-previews",
-            ]
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            process.terminationHandler = { [weak self] completed in
-                Task { @MainActor in
-                    self?.finishPhoneOnlyRecovery(
-                        selection, runID: runID,
-                        succeeded: completed.terminationReason == .exit
-                            && completed.terminationStatus == 0,
-                        fallbackErrorCode: "helper-exited")
-                }
-            }
-            activeRecoveryFiles = files
-            activeRecoveryProcess = process
-            try process.run()
-            pollPhoneOnlyRecoveryStatus(selection, runID: runID, statusURL: files.status)
-        } catch {
-            finishPhoneOnlyRecovery(
-                selection, runID: runID, succeeded: false,
-                fallbackErrorCode: "helper-launch-failed")
-        }
-    }
-
-    private func pollPhoneOnlyRecoveryStatus(
-        _ selection: RecoverySelection, runID: UUID, statusURL: URL
-    ) {
-        recoveryStatusTask?.cancel()
-        recoveryStatusTask = Task { @MainActor [weak self] in
-            var previous: PhoneOnlyCaptureStatus?
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 250_000_000)
-                guard let self, self.activeRecoveryID == runID else { return }
-                guard let status = try? PhoneOnlyRecoveryFiles.readStatus(from: statusURL),
-                      status != previous else { continue }
-                previous = status
-                if self.currentPhoneOnlySelection?.key == selection.key,
-                   (self.displayedLinkPreviewDocument == nil
-                    || status.state == "pairing" || status.state == "error") {
-                    self.showPhoneOnlyRecovery(selection, status: status)
-                }
-            }
-        }
-    }
-
-    private func finishPhoneOnlyRecovery(
-        _ selection: RecoverySelection, runID: UUID, succeeded: Bool,
-        fallbackErrorCode: String
-    ) {
-        guard activeRecoveryID == runID else { return }
-        let finalStatus = activeRecoveryFiles.flatMap {
-            try? PhoneOnlyRecoveryFiles.readStatus(from: $0.status)
-        }
-        recoveryStatusTask?.cancel()
-        recoveryStatusTask = nil
-        if let files = activeRecoveryFiles {
-            PhoneOnlyRecoveryFiles.removeRunFiles(request: files.request, status: files.status)
-        }
-        activeRecoveryFiles = nil
-        activeRecoveryProcess = nil
-        activeRecoveryID = nil
-
-        guard currentPhoneOnlySelection?.key == selection.key else {
-            if Self.experimentalAutomaticRecoveryEnabled, let currentPhoneOnlySelection {
-                requestPhoneOnlyRecovery(currentPhoneOnlySelection)
-            }
-            return
-        }
-        if succeeded,
-           let context = currentImageConversation, context.route == selection.conversationID,
-           let document = try? LinkPreviewStore.loadAutomatically(for: context) {
-            showLinkPreviewFallback(document)
-        } else {
-            showPhoneOnlyRecovery(selection, status: PhoneOnlyCaptureStatus(
-                schema: 1, state: "error", emoji: nil,
-                errorCode: succeeded ? "unscoped-preview-use-library" : finalStatus?.errorCode ?? fallbackErrorCode))
-        }
-    }
-
-    private func showPhoneOnlyRecovery(
-        _ selection: RecoverySelection, status: PhoneOnlyCaptureStatus
-    ) {
-        guard dismissedPhoneOnlyConversation
-                != LinkPreviewStore.normalizedConversation(selection.conversation) else { return }
-        let host = NSHostingView(rootView: PhoneOnlyRecoveryView(
-            conversation: selection.conversation,
-            state: status.state,
-            emoji: status.emoji,
-            errorCode: status.errorCode,
-            onClose: { [weak self] in
-                self?.dismissedPhoneOnlyConversation =
-                    LinkPreviewStore.normalizedConversation(selection.conversation)
-                self?.hideLinkPreviewFallback()
-            }
-        ))
-        installLinkPreviewHost(host)
-        displayedLinkPreviewDocument = nil
-    }
-
-    private func showLinkPreviewFallback(_ document: LinkPreviewDocument) {
-        if linkPreviewHost != nil, displayedLinkPreviewDocument == document { return }
-        let host = NSHostingView(rootView: LinkPreviewFallbackView(
-            document: document,
-            onClose: { [weak self] in
-                guard let self else { return }
-                self.dismissedPhoneOnlyConversation =
-                    LinkPreviewStore.normalizedConversation(document.conversation)
-                self.hideLinkPreviewFallback()
-            }
-        ))
-        installLinkPreviewHost(host)
-        displayedLinkPreviewDocument = document
-    }
-
-    func showLinkPreviewLibrary() throws {
-        let documents = try LinkPreviewStore.loadAll()
-        let host = NSHostingView(rootView: LinkPreviewLibraryView(
-            documents: documents,
-            onClose: { [weak self] in self?.hideLinkPreviewFallback() }
-        ))
-        installLinkPreviewHost(host)
-        displayedLinkPreviewDocument = nil
     }
 
     func showPhoneImages() {
@@ -676,7 +420,7 @@ final class WebViewController: NSViewController {
 
     private func dismissPhoneImages() {
         if let context = currentImageConversation {
-            dismissedPhoneOnlyConversation = LinkPreviewStore.normalizedConversation(context.label)
+            dismissedPhoneOnlyConversation = ConversationName.normalized(context.label)
         }
         hideLinkPreviewFallback()
     }
@@ -715,21 +459,12 @@ final class WebViewController: NSViewController {
         browsingPhoneImageLibrary = false; displayedImageConversationKey = nil
         linkPreviewHost?.removeFromSuperview()
         linkPreviewHost = nil
-        displayedLinkPreviewDocument = nil
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         guard !OfflineMode.enabled else { return }
-        let phoneFallbackSnapshot =
-            ProcessInfo.processInfo.environment["TEXTEM_PHONE_FALLBACK_SNAPSHOT"] == "1"
-        let phoneRecoverySnapshot =
-            ProcessInfo.processInfo.environment["TEXTEM_PHONE_RECOVERY_SNAPSHOT"] == "1"
-        if phoneFallbackSnapshot || phoneRecoverySnapshot {
-            webView.loadHTMLString(Self.phoneFallbackSnapshotHTML, baseURL: nil)
-        } else {
-            webView.load(URLRequest(url: initialURL ?? Self.entryURL))
-        }
+        webView.load(URLRequest(url: initialURL ?? Self.entryURL))
         // Diagnostic (TEXTEM_SELFCHECK=1): dump web-view state to a file shortly
         // after launch. Screen recording + accessibility are denied to tooling on
         // this machine, so this is how a "blank window" report becomes an actual
@@ -740,67 +475,6 @@ final class WebViewController: NSViewController {
             self, selector: #selector(applyPrivacyCSS),
             name: Preferences.privacyChanged, object: nil
         )
-        if phoneRecoverySnapshot {
-            let selection = RecoverySelection(
-                conversation: "Example delivery service", conversationID: "fixture-route")
-            currentPhoneOnlySelection = selection
-            showPhoneOnlyRecovery(selection, status: PhoneOnlyCaptureStatus(
-                schema: 1, state: "pairing", emoji: "🦆", errorCode: nil))
-            schedulePhoneFallbackSnapshot()
-        } else if phoneFallbackSnapshot {
-            do {
-                try showLinkPreviewLibrary()
-                schedulePhoneFallbackSnapshot()
-            } catch {
-                let diagnostic = "fallbackLoad=false file=\(LinkPreviewStore.defaultURL.lastPathComponent) "
-                    + "error=\(error.localizedDescription)\n"
-                try? diagnostic.write(
-                    toFile: "/tmp/textem-phone-fallback-snapshot.txt",
-                    atomically: true,
-                    encoding: .utf8)
-            }
-        }
-    }
-
-    private func schedulePhoneFallbackSnapshot() {
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            guard let self,
-                  let host = self.linkPreviewHost else {
-                try? "fallbackHost=false\n".write(
-                    toFile: "/tmp/textem-phone-fallback-snapshot.txt",
-                    atomically: true,
-                    encoding: .utf8)
-                return
-            }
-            let view = self.view
-            view.layoutSubtreeIfNeeded()
-            host.layoutSubtreeIfNeeded()
-            view.displayIfNeeded()
-            host.displayIfNeeded()
-            let diagnostic = "fallbackHost=true frame=\(NSStringFromRect(host.frame)) "
-                + "subviews=\(host.subviews.count)\n"
-            try? diagnostic.write(
-                toFile: "/tmp/textem-phone-fallback-snapshot.txt",
-                atomically: true,
-                encoding: .utf8)
-            guard
-                  let representation = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
-                return
-            }
-            view.cacheDisplay(in: view.bounds, to: representation)
-            guard let data = representation.representation(using: .png, properties: [:]) else {
-                return
-            }
-            let url = URL(fileURLWithPath: "/tmp/textem-phone-fallback-snapshot.png")
-            do {
-                try data.write(to: url, options: .atomic)
-                try FileManager.default.setAttributes(
-                    [.posixPermissions: 0o600], ofItemAtPath: url.path)
-            } catch {
-                NSLog("[Textem] phone-fallback snapshot failed: %@", error.localizedDescription)
-            }
-        }
     }
 
     // Notification replies are queued and run one at a time. The page must
@@ -987,15 +661,6 @@ final class WebViewController: NSViewController {
     func teardown() {
         phoneConversationModel?.cancel(); phoneConversationModel = nil
         bridgeReady = false
-        recoveryStatusTask?.cancel()
-        recoveryStatusTask = nil
-        activeRecoveryProcess?.terminate()
-        if let files = activeRecoveryFiles {
-            PhoneOnlyRecoveryFiles.removeRunFiles(request: files.request, status: files.status)
-        }
-        activeRecoveryProcess = nil
-        activeRecoveryFiles = nil
-        activeRecoveryID = nil
         replyTimeoutTask?.cancel()
         replyTimeoutTask = nil
         if activeReply != nil || !replyQueue.isEmpty {
@@ -1013,7 +678,6 @@ final class WebViewController: NSViewController {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
         controller.removeScriptMessageHandler(forName: WebBridge.handlerName)
-        controller.removeScriptMessageHandler(forName: PayloadProbe.handlerName)
     }
 
     // Reachable via the View > Reload menu item (⌘R) through the responder
@@ -1313,21 +977,6 @@ extension WebViewController: WKNavigationDelegate {
         errorView.isHidden = true
         applyZoom()
         applyPrivacyCSS()
-        exportLibGMCookiesIfRequested()
-    }
-
-    private func exportLibGMCookiesIfRequested() {
-        guard LibGMCookieExporter.isEnabled, !didExportLibGMCookies else { return }
-        didExportLibGMCookies = true
-        LibGMCookieExporter.export(from: dataStore) { [weak self] result in
-            switch result {
-            case .success(let count):
-                NSLog("[Textem] libgm probe cookie handoff ready (%d cookies)", count)
-            case .failure(let error):
-                self?.didExportLibGMCookies = false
-                NSLog("[Textem] libgm probe cookie handoff failed: %@", error.localizedDescription)
-            }
-        }
     }
 
     func webView(_ webView: WKWebView,
@@ -1359,11 +1008,6 @@ extension WebViewController: WKScriptMessageHandler {
               WebNavigationPolicy.isAllowedBridgeOrigin(
                 scheme: message.frameInfo.securityOrigin.protocol,
                 host: message.frameInfo.securityOrigin.host) else { return }
-
-        if message.name == PayloadProbe.handlerName {
-            if let event = message.body as? [String: Any] { PayloadProbe.log(event) }
-            return
-        }
 
         guard message.name == WebBridge.handlerName,
               let body = message.body as? [String: Any] else { return }
