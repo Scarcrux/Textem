@@ -29,7 +29,10 @@ tools/AppIcon.iconset/
 # Release artifact
 *.dmg
 
-# libgm experiment credentials and reports (the defaults live outside the repo)
-Experiments/LibGMProbe/cookies.json
-Experiments/LibGMProbe/session.json
-Experiments/LibGMProbe/report.jsonl
+# Private, local-only: agent tooling state, the Commandem roadmap/manifest,
+# provider instruction mirrors, and research logs from live tests.
+commandem.toml
+.commandem/
+GEMINI.md
+PREREGISTRATION*
+HISTORY-TRANSFER.md

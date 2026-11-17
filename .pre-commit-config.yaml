@@ -1,6 +1,13 @@
 repos:
   - repo: local
     hooks:
+      # Keeps private, generated agent directives out of this public repo:
+      # `commandem brief` appends a managed block to CLAUDE.md/AGENTS.md.
+      - id: no-private-agent-directives
+        name: no private agent directives
+        entry: "commandem:managed:(start|end)"
+        language: pygrep
+        types: [text]
       - id: swift-test
         name: swift test
         entry: xcrun --toolchain XcodeDefault swift test --jobs 4

@@ -251,8 +251,7 @@ use private sinks and never populate the owner's readiness history or code vault
 Remaining live gates: actual shared-Keychain access, owner enablement as an AutoFill provider, a fresh
 real phone code transfer, and an OS-launched extension plus actual target-field
 fill. These are not proven by injected storage, compiling, or rendering a local
-controller. Initial controls and their
-verdicts are recorded in the experiment's `PREREGISTRATION.txt`.
+controller.
 
 #### Local notification preview sample
 

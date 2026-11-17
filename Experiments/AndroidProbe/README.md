@@ -23,7 +23,7 @@ Coverage is explicit: up to 500 SMS and 500 MMS rows, 32 parts per MMS,
 the phone. Attachments are counted as omitted, never guessed from links. The
 Mac retains existing notification graphics independently. RCS-only content may
 be absent; this is **not complete RCS history**. Publish again on the phone to
-update a snapshot. See [criteria and live evidence](HISTORY-TRANSFER.md).
+update a snapshot.
 
 ## Granted notification media and durable connection (v0.14)
 
@@ -177,7 +177,7 @@ notification permissions. That is a lead, **not** proof of business-message or
 link-preview accessibility. The history probe tests public SMS/MMS provider access;
 v0.8 adds a separately opted-in, metadata-only notification readiness check below.
 
-`PREREGISTRATION.md` defines the sample and its stop conditions. Do not turn a
+Do not turn a
 blocked permission, missing thread, or empty cursor into a claim that RCS is absent.
 
 ## Privacy and limitations

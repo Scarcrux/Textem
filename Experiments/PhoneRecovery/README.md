@@ -69,4 +69,4 @@ permissions or competing Google relay is started by selecting a conversation.
 Synthetic store/model/render controls and a no-UI handset instrumentation runner
 validate the mechanism. Actual selected business-thread linkage/reopen, graphics,
 reconnect and web-inbox coexistence still need live evidence; do not substitute
-the tests for those release criteria. See `PREREGISTRATION.md`.
+the tests for those release criteria.
