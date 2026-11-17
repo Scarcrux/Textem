@@ -156,7 +156,13 @@ final class DesignSnapshotTests: XCTestCase {
             scroll.reflectScrolledClipView(scroll.contentView)
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         }
-        let bitmap = try XCTUnwrap(backdrop.bitmapImageRepForCachingDisplay(in: backdrop.bounds))
+        // TEXTEM_DESIGN_SNAPSHOT_SCALE=2 renders Retina-sharp images (for the website).
+        let scale = Double(ProcessInfo.processInfo.environment["TEXTEM_DESIGN_SNAPSHOT_SCALE"] ?? "") ?? 1
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil,
+            pixelsWide: Int(backdrop.bounds.width * scale), pixelsHigh: Int(backdrop.bounds.height * scale),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        bitmap.size = backdrop.bounds.size
         backdrop.cacheDisplay(in: backdrop.bounds, to: bitmap)
         let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
         try png.write(to: output.appendingPathComponent("\(name).png"))

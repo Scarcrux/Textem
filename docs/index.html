@@ -137,6 +137,15 @@
     details.faq summary::after { content: "+"; float: right; color: var(--muted); font-weight: 400; }
     details.faq[open] summary::after { content: "–"; }
     details.faq p { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
+    .shot.tall img { max-width: 340px; }
+    @media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+    .shot { margin: 0; text-align: center; }
+    .shot img { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(0,0,0,.12); }
+    .shot figcaption { color: var(--muted); font-size: 13px; margin-top: 10px; }
+    .ticks { padding-left: 1.1em; margin: 0; }
+    .ticks li { margin: 0 0 12px; }
+    .badge { display: inline-block; font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; vertical-align: 1px; }
   </style>
 </head>
 <body>
@@ -157,10 +166,52 @@
       <div class="grid">
         <div class="feat"><h3>Native notifications + badge</h3><p>Dock unread badge and native banners — click to jump to the thread.</p></div>
         <div class="feat"><h3>Menu bar &amp; background</h3><p>Menu-bar presence, launch at login, run in background, menu-bar-only mode.</p></div>
-        <div class="feat"><h3>Multiple accounts</h3><p>Isolated sessions per Google account with a quick switcher. No other wrapper does this.</p></div>
-        <div class="feat"><h3>Shortcuts</h3><p>Zoom, find in page, new conversation, copy latest 2FA code, global show/hide hotkey.</p></div>
+        <div class="feat"><h3>Verification codes</h3><p>When a text with a code arrives, click <strong>Copy Code</strong> on the notification. Codes expire after 3 minutes.</p></div>
+        <div class="feat"><h3>Multiple accounts</h3><p>Separate, persistent sessions for each Google account, with a quick switcher (macOS 14+).</p></div>
+        <div class="feat"><h3>Shortcuts</h3><p>Global show/hide (⌥⌘M), new conversation, find, zoom, copy latest code, always on top.</p></div>
         <div class="feat"><h3>Private by design</h3><p>Textem adds no telemetry or relay server. Your local session connects directly to Google’s web client.</p></div>
         <div class="feat"><h3>Free &amp; MIT-licensed</h3><p>Every feature paid wrappers lock behind “Pro,” at no cost. Public source is planned for 1.0.</p></div>
+      </div>
+    </section>
+
+    <section id="codes">
+      <h2>Verification codes, one click away</h2>
+      <p class="lead">Apple only suggests codes from its own Messages and Mail apps. Textem gives your Google Messages codes the same shortcut.</p>
+      <div class="split">
+        <div style="padding-top: 24px">
+          <ul class="ticks">
+            <li><strong>Copy Code</strong> appears on the notification as soon as a text with a code arrives. Click, then paste.</li>
+            <li><strong>Textem Codes in AutoFill</strong> <span class="badge">Experimental · macOS 15+</span> lists your fresh codes right in Safari’s code field.</li>
+            <li>Cautious by design: it ignores your own messages, promo codes, phone numbers and amounts, and never offers a code older than 3 minutes.</li>
+          </ul>
+        </div>
+        <figure class="shot">
+          <picture>
+            <source srcset="media/autofill-list-dark.png" media="(prefers-color-scheme: dark)">
+            <img src="media/autofill-list-light.png" width="460" height="360" loading="lazy" alt="Textem Codes AutoFill sheet listing two recent verification codes with Fill buttons">
+          </picture>
+          <figcaption>Choosing a code from Textem Codes.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="settings">
+      <h2>Settings that stay out of the way</h2>
+      <div class="split">
+        <figure class="shot tall">
+          <picture>
+            <source srcset="media/settings-dark.png" media="(prefers-color-scheme: dark)">
+            <img src="media/settings-light.png" width="480" height="760" loading="lazy" alt="Textem Settings: launch at login, start hidden, menu bar only, updates, notifications and verification codes">
+          </picture>
+          <figcaption>Textem’s Settings window.</figcaption>
+        </figure>
+        <div>
+          <ul class="ticks">
+            <li>Launch at login, start hidden, or run from the menu bar with no Dock icon.</li>
+            <li>Hide the sender and text from notifications, blur message previews, or hide avatars.</li>
+            <li><strong>Offline Mode</strong> <span class="badge">Experimental</span> pauses Google Messages and shows phone history you’ve saved to this Mac. Ordinary conversations aren’t stored offline.</li>
+          </ul>
+        </div>
       </div>
     </section>
 
