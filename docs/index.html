@@ -36,32 +36,6 @@
       /* Let form controls, scrollbars and the caret follow the scheme. */
       color-scheme: light dark;
     }
-    /* Dark mode: the page is variable-driven, so overriding the palette covers
-       nearly everything. Only the amber callout and the icon glow hardcode
-       light-scheme colors and need explicit counterparts. */
-    @media (prefers-color-scheme: dark) {
-      :root {
-        /* #4d9bff, not a darker blue: links must clear 4.5:1 on the page bg AND
-           inside cards (#2b7cff measured 4.42 on --card, just under AA). */
-        --blue: #4d9bff;
-        --blue-light: #66b2ff;
-        --ink: #e6eaf0;
-        --muted: #98a2b3;
-        --bg: #0f1319;
-        --card: #171c24;
-        --border: #262d38;
-      }
-      /* Filled controls invert in dark: white-on-blue only reached 3.87:1, so
-         use a lighter blue with dark text (8.3:1). */
-      .btn.primary { background: var(--blue-light); color: #0f1319; border-color: var(--blue-light); }
-      ol.steps li::before { background: var(--blue-light); color: #0f1319; }
-      /* The app icon is brand art, not themed UI — keep it identical in both
-         schemes so it doesn't wash out against the dark page. */
-      .icon { background: linear-gradient(180deg, #33a0fa, #1766db); box-shadow: 0 10px 30px rgba(43,124,255,.22); }
-      .icon::after { background: #1766db; box-shadow: 12px 0 0 #1766db, 24px 0 0 #1766db; }
-      .callout { background: #2a1c0c; border-color: #6b3f10; }
-      .callout strong { color: #fbbf24; }
-    }
     * { box-sizing: border-box; }
     html { -webkit-font-smoothing: antialiased; }
     body {
@@ -146,6 +120,34 @@
     .ticks { padding-left: 1.1em; margin: 0; }
     .ticks li { margin: 0 0 12px; }
     .badge { display: inline-block; font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; vertical-align: 1px; }
+    /* Dark mode: the page is variable-driven, so overriding the palette covers
+       nearly everything. Only the amber callout and the icon glow hardcode
+       light-scheme colors and need explicit counterparts. Keep this block LAST
+       in the stylesheet: its rules have the same specificity as the base
+       rules, so anything after it would silently win in dark mode. */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        /* #4d9bff, not a darker blue: links must clear 4.5:1 on the page bg AND
+           inside cards (#2b7cff measured 4.42 on --card, just under AA). */
+        --blue: #4d9bff;
+        --blue-light: #66b2ff;
+        --ink: #e6eaf0;
+        --muted: #98a2b3;
+        --bg: #0f1319;
+        --card: #171c24;
+        --border: #262d38;
+      }
+      /* Filled controls invert in dark: white-on-blue only reached 3.87:1, so
+         use a lighter blue with dark text (8.3:1). */
+      .btn.primary { background: var(--blue-light); color: #0f1319; border-color: var(--blue-light); }
+      ol.steps li::before { background: var(--blue-light); color: #0f1319; }
+      /* The app icon is brand art, not themed UI — keep it identical in both
+         schemes so it doesn't wash out against the dark page. */
+      .icon { background: linear-gradient(180deg, #33a0fa, #1766db); box-shadow: 0 10px 30px rgba(43,124,255,.22); }
+      .icon::after { background: #1766db; box-shadow: 12px 0 0 #1766db, 24px 0 0 #1766db; }
+      .callout { background: #2a1c0c; border-color: #6b3f10; }
+      .callout strong { color: #fbbf24; }
+    }
   </style>
 </head>
 <body>
@@ -155,9 +157,10 @@
     <h1>Textem</h1>
     <p class="tag">A lightweight macOS wrapper for Google Messages for web — free and MIT-licensed. The tiny-footprint alternative to paid wrappers and dead Electron apps.</p>
     <div class="btns">
-      <span class="btn primary disabled" aria-disabled="true">Signed download coming with 1.0</span>
+      <a class="btn primary" href="https://github.com/Scarcrux/Textem">View source on GitHub</a>
+      <span class="btn disabled" aria-disabled="true">Signed download coming with 1.0</span>
     </div>
-    <p class="note">macOS 13+ · Intel and Apple silicon · public source and signed/notarized download planned for 1.0</p>
+    <p class="note">Alpha · macOS 13+ · Intel and Apple silicon · build from source today; a signed, notarized download comes with 1.0</p>
   </header>
 
   <main class="wrap" id="main">
@@ -170,7 +173,6 @@
         <div class="feat"><h3>Multiple accounts</h3><p>Separate, persistent sessions for each Google account, with a quick switcher (macOS 14+).</p></div>
         <div class="feat"><h3>Shortcuts</h3><p>Global show/hide (⌥⌘M), new conversation, find, zoom, copy latest code, always on top.</p></div>
         <div class="feat"><h3>Private by design</h3><p>Textem adds no telemetry or relay server. Your local session connects directly to Google’s web client.</p></div>
-        <div class="feat"><h3>Free &amp; MIT-licensed</h3><p>Every feature paid wrappers lock behind “Pro,” at no cost. Public source is planned for 1.0.</p></div>
       </div>
     </section>
 
@@ -188,7 +190,7 @@
         <figure class="shot">
           <picture>
             <source srcset="media/autofill-list-dark.png" media="(prefers-color-scheme: dark)">
-            <img src="media/autofill-list-light.png" width="460" height="360" loading="lazy" alt="Textem Codes AutoFill sheet listing two recent verification codes with Fill buttons">
+            <img src="media/autofill-list-light.png" width="460" height="360" alt="Textem Codes AutoFill sheet listing two recent verification codes with Fill buttons">
           </picture>
           <figcaption>Choosing a code from Textem Codes.</figcaption>
         </figure>
@@ -201,7 +203,7 @@
         <figure class="shot tall">
           <picture>
             <source srcset="media/settings-dark.png" media="(prefers-color-scheme: dark)">
-            <img src="media/settings-light.png" width="480" height="760" loading="lazy" alt="Textem Settings: launch at login, start hidden, menu bar only, updates, notifications and verification codes">
+            <img src="media/settings-light.png" width="480" height="760" alt="Textem Settings: launch at login, start hidden, menu bar only, updates, notifications and verification codes">
           </picture>
           <figcaption>Textem’s Settings window.</figcaption>
         </figure>
@@ -264,7 +266,7 @@
 
   <footer>
     <p>Unofficial. Not affiliated with, endorsed by, or sponsored by Google. “Google Messages” is a trademark of Google LLC.</p>
-    <p>MIT License · © 2026 Scarcrux</p>
+    <p><a href="https://github.com/Scarcrux/Textem">Source on GitHub</a> · MIT License · © 2026 Scarcrux</p>
   </footer>
 </body>
 </html>
