@@ -314,30 +314,19 @@ final class WebViewController: NSViewController {
         logSnapshotDiagnostics(rows: rows.count, unread: count,
                                changed: activityTracker.changedContentCount,
                                events: events.count, domRows: domRows)
-        let codes = ReceivedCodes.detect(in: activityTracker.changedRows)
-        for (conversation, row) in codes.rows {
-            Task { await NativeAutoFillCoordinator.shared.observe(message: row.snippet, accountID: accountID,
-                                                                  conversation: conversation) }
+        let plan = ReceivedCodes.plan(events: events, changed: activityTracker.changedRows,
+                                      notify: !NSApp.isActive && !Preferences.notificationsMuted,
+                                      offerCopy: Preferences.copyCodeNotifications)
+        for item in plan.store {
+            Task { await NativeAutoFillCoordinator.shared.observe(message: item.message, accountID: accountID,
+                                                                  conversation: item.conversation) }
         }
-        if !NSApp.isActive, !Preferences.notificationsMuted {
-            let offerCopy = Preferences.copyCodeNotifications
-            for event in events {
-                NotificationManager.shared.notifyNewMessage(
-                    sender: event.sender,
-                    snippet: event.snippet,
-                    accountID: accountID,
-                    conversationID: event.id,
-                    code: offerCopy ? codes.code(for: event.id) : nil
-                )
-            }
-            if offerCopy {
-                for (conversation, row) in codes.rows where !events.contains(where: { $0.id == conversation }) {
-                    if let code = codes.code(for: conversation) {
-                        NotificationManager.shared.notifyCode(code, sender: row.sender, accountID: accountID,
-                                                              conversationID: conversation)
-                    }
-                }
-            }
+        for (event, code) in plan.messageNotifications {
+            NotificationManager.shared.notifyNewMessage(sender: event.sender, snippet: event.snippet,
+                                                        accountID: accountID, conversationID: event.id, code: code)
+        }
+        for (code, row) in plan.codeNotifications {
+            NotificationManager.shared.notifyCode(code, sender: row.sender, accountID: accountID, conversationID: row.id)
         }
         onUnreadCountChanged?(count)
         bridgeReady = true
