@@ -47,6 +47,16 @@ enum DemoMode {
         ("Riley Chen", "Thanks again for dinner!"),
         ("Neighborhood Pharmacy", "Your prescription is ready for pickup."),
         ("Casey Brooks", "See you Saturday"),
+        ("Morgan Diaz", "Did you see the game last night?"),
+        ("Climbing Crew", "Gym at 6? I'll bring the chalk"),
+        ("Priya Shah", "Sent you the recipe!"),
+        ("Dad", "Proud of you, kiddo"),
+        ("Jamie Ortiz", "Lol yes"),
+        ("Avery Johnson", "Can we push to 3pm?"),
+        ("Noah Williams", "Got the tickets 🎟️"),
+        ("Front Desk", "Your package is at the front desk."),
+        ("Emma Davis", "Love that idea"),
+        ("Leo Martin", "On my way"),
     ]
 
     static let sampleThread: [String] = [

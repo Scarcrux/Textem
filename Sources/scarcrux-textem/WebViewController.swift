@@ -259,9 +259,9 @@ final class WebViewController: NSViewController {
         // read as new messages or codes.
         if DemoMode.isEnabled {
             onUnreadCountChanged?(count); bridgeReady = true
-            if DemoMode.capturesAutomatically, !demoCaptureStarted, let first = rows.first {
+            if DemoMode.capturesAutomatically, !demoCaptureStarted, !rows.isEmpty {
                 demoCaptureStarted = true
-                runDemoCapture(open: first.id)
+                runDemoCapture(candidates: rows.prefix(8).map(\.id))
             }
             return
         }
@@ -296,6 +296,12 @@ final class WebViewController: NSViewController {
         let imageConversation = PhoneImageConversation(accountID: accountID, route: conversationID, label: conversation)
         currentImageConversation = visible && routeConfirmed && imageConversation.key != nil ? imageConversation : nil
         phoneImagesModel?.setConversation(currentImageConversation)
+        // Without the phone companion tools, "View on your phone" threads keep
+        // Google's own notice; Textem's companion panels are developer-only.
+        guard Preferences.showPhoneTools else {
+            if linkPreviewHost != nil, !browsingPhoneImageLibrary, savedPhoneConversationsModel == nil { hideLinkPreviewFallback() }
+            return
+        }
         if browsingPhoneImageLibrary || savedPhoneConversationsModel != nil { return }
         guard visible else {
             dismissedPhoneOnlyConversation = nil
@@ -324,7 +330,7 @@ final class WebViewController: NSViewController {
     func showPhoneImages() {
         let model = imageModel()
         model.setConversation(currentImageConversation, only: false); model.reload()
-        let host = NSHostingView(rootView: PhoneImagesView(model: model, onClose: { [weak self] in
+        let host = Self.overlayHost( PhoneImagesView(model: model, onClose: { [weak self] in
             self?.dismissPhoneImages()
         }))
         installLinkPreviewHost(host); showingPhoneImages = true; browsingPhoneImageLibrary = true
@@ -417,7 +423,7 @@ final class WebViewController: NSViewController {
         guard phoneConversationModel?.context.key != context.key else { return }
         let model = PhoneConversationModel(context: context)
         model.validate = { [weak self] context in await self?.validatePhoneConversation(context) ?? false }
-        let host = NSHostingView(rootView: PhoneConversationView(model: model,
+        let host = Self.overlayHost( PhoneConversationView(model: model,
             onClose: { [weak self] in self?.dismissPhoneImages() },
             onImages: { [weak self] in self?.showPhoneImages() }))
         installLinkPreviewHost(host)
@@ -426,7 +432,7 @@ final class WebViewController: NSViewController {
 
     func showSavedPhoneConversations() {
         let model = SavedPhoneConversationsModel(accountID: accountID)
-        let host = NSHostingView(rootView: SavedPhoneConversationsView(model: model,
+        let host = Self.overlayHost( SavedPhoneConversationsView(model: model,
             onClose: { [weak self] in self?.hideLinkPreviewFallback() }))
         installLinkPreviewHost(host)
         savedPhoneConversationsModel = model
@@ -443,10 +449,20 @@ final class WebViewController: NSViewController {
         let model = imageModel(); model.setConversation(context, only: true); model.reload()
         guard !showingPhoneImages || displayedImageConversationKey != context.key else { return }
         model.status = "Saved images explicitly linked to this conversation. No background phone scan."
-        let host = NSHostingView(rootView: PhoneImagesView(model: model,
+        let host = Self.overlayHost( PhoneImagesView(model: model,
             onClose: { [weak self] in self?.dismissPhoneImages() },
             onOpenLibrary: { [weak self] in self?.showPhoneImages() }))
         installLinkPreviewHost(host); showingPhoneImages = true; displayedImageConversationKey = context.key
+    }
+
+    /// Panels laid over the web view must never resize the window. By default
+    /// an NSHostingView pushes its SwiftUI content's ideal size (a full-size
+    /// picture, say) onto the window, which grew Textem's window whenever a
+    /// saved phone image was shown.
+    static func overlayHost<Content: View>(_ content: Content) -> NSHostingView<Content> {
+        let host = NSHostingView(rootView: content)
+        host.sizingOptions = []
+        return host
     }
 
     private func installLinkPreviewHost(_ host: NSView) {
@@ -757,16 +773,24 @@ final class WebViewController: NSViewController {
 
     private var demoCaptureStarted = false
 
-    // Lets the page settle and the demo rewrite apply, saves the list, opens
-    // the most recent conversation, saves again, then records what it wrote.
-    private func runDemoCapture(open conversation: String) {
+    // Lets the page settle and the demo rewrite apply, saves the list, then
+    // opens recent conversations in order until one shows real chat bubbles
+    // (skipping "use your phone" threads), saves it, and records the files.
+    private func runDemoCapture(candidates: [String]) {
         Task { @MainActor [weak self] in
             var saved: [String] = []
             try? await Task.sleep(for: .seconds(8))
             if let url = await self?.captureDemo() { saved.append(url.lastPathComponent) }
-            self?.openConversation(conversation)
-            try? await Task.sleep(for: .seconds(8))
-            if let url = await self?.captureDemo() { saved.append(url.lastPathComponent) }
+            for conversation in candidates {
+                self?.openConversation(conversation)
+                try? await Task.sleep(for: .seconds(6))
+                let parts = (try? await self?.webView.evaluateJavaScript(
+                    "document.querySelectorAll('mws-text-message-part').length") as? Int) ?? 0
+                if parts >= 3 {
+                    if let url = await self?.captureDemo() { saved.append(url.lastPathComponent) }
+                    break
+                }
+            }
             let report = try? JSONSerialization.data(withJSONObject: ["files": saved, "at": Date().timeIntervalSince1970])
             if let report {
                 FileManager.default.createFile(atPath: DemoMode.captureDirectory.appendingPathComponent("done.json").path,
