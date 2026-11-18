@@ -781,15 +781,38 @@ final class WebViewController: NSViewController {
             var saved: [String] = []
             try? await Task.sleep(for: .seconds(8))
             if let url = await self?.captureDemo() { saved.append(url.lastPathComponent) }
+            // Prefer a two-way chat. The structure probe reports only element and
+            // attribute NAMES around messages (no text, no attribute values) so the
+            // outgoing marker can be identified without reading content.
+            let probe = """
+            (function(){
+              var parts = document.querySelectorAll('mws-text-message-part'), shape = {};
+              parts.forEach(function(p){
+                for (var e = p, depth = 0; e && depth < 6; e = e.parentElement, depth++) {
+                  var key = e.tagName.toLowerCase() + '[' + Array.from(e.attributes).map(function(a){ return a.name; }).sort().join(',') + ']';
+                  shape[key] = (shape[key] || 0) + 1;
+                }
+              });
+              var outgoing = document.querySelectorAll('[is-outgoing="true"], [data-e2e-is-outgoing="true"], mws-message-wrapper[is-outgoing]').length;
+              return JSON.stringify({parts: parts.length, outgoing: outgoing, shape: shape});
+            })();
+            """
+            var fallback: String?, shapes: [String] = []
             for conversation in candidates {
                 self?.openConversation(conversation)
                 try? await Task.sleep(for: .seconds(6))
-                let parts = (try? await self?.webView.evaluateJavaScript(
-                    "document.querySelectorAll('mws-text-message-part').length") as? Int) ?? 0
-                if parts >= 3 {
-                    if let url = await self?.captureDemo() { saved.append(url.lastPathComponent) }
-                    break
-                }
+                let json = (try? await self?.webView.evaluateJavaScript(probe) as? String) ?? "{}"
+                shapes.append(json)
+                let info = (try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]) ?? [:]
+                let parts = info["parts"] as? Int ?? 0, outgoing = info["outgoing"] as? Int ?? 0
+                if parts >= 3, outgoing > 0, outgoing < parts { fallback = nil; break }
+                if parts >= 3, fallback == nil { fallback = conversation }
+            }
+            if let fallback { self?.openConversation(fallback); try? await Task.sleep(for: .seconds(6)) }
+            if let url = await self?.captureDemo() { saved.append(url.lastPathComponent) }
+            if let data = try? JSONSerialization.data(withJSONObject: ["probes": shapes]) {
+                FileManager.default.createFile(atPath: DemoMode.captureDirectory.appendingPathComponent("structure.json").path,
+                                               contents: data, attributes: [.posixPermissions: 0o600])
             }
             let report = try? JSONSerialization.data(withJSONObject: ["files": saved, "at": Date().timeIntervalSince1970])
             if let report {

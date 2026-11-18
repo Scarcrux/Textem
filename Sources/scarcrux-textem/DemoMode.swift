@@ -85,7 +85,16 @@ enum DemoMode {
           document.documentElement.appendChild(style);
           function setText(el, value) {
             if (!el || (el.dataset.textemDemo === value && el.textContent === value)) return;
-            el.textContent = value; el.dataset.textemDemo = value;
+            // Rewrite the words, not the element: keep Google's inner spans so
+            // bubbles keep their colours and shape. First text node gets the
+            // sample, the rest are emptied.
+            var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), node, first = true;
+            while ((node = walker.nextNode())) {
+              if (!node.nodeValue.trim()) continue;
+              node.nodeValue = first ? value : ''; first = false;
+            }
+            if (first) el.textContent = value;
+            el.dataset.textemDemo = value;
           }
           var phone = /\\+?\\d[\\d\\s().-]{6,}\\d/g, email = /[\\w.+-]+@[\\w-]+\\.[\\w.]+/g;
           function scrubTextNodes() {

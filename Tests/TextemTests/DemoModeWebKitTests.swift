@@ -23,7 +23,7 @@ final class DemoModeWebKitTests: XCTestCase {
           <mws-avatar><div>M</div></mws-avatar>
           <span data-e2e-conversation-name>\(realNames[1])</span>
           <span data-e2e-conversation-snippet>\(realText[1])</span></a></mws-conversation-list-item>
-        <main><mws-text-message-part>\(realText[1])</mws-text-message-part>
+        <main><mws-text-message-part><div class="bubble outgoing"><span>\(realText[1])</span><span> </span><span>(edited)</span></div></mws-text-message-part>
           <div class="details">Call \(realNames[1]) at +1 (415) 555-2671 or marcus.o@gmail.com</div></main>
         </body></html>
         """
@@ -68,6 +68,10 @@ final class DemoModeWebKitTests: XCTestCase {
         let initials = try await web.evaluateJavaScript(
             "Array.from(document.querySelectorAll('mws-avatar div')).map(d => d.textContent).join('')") as? String
         XCTAssertEqual(initials, "AJ")
+        // Google's bubble markup inside a message survives; only the words change.
+        let bubble = try await web.evaluateJavaScript(
+            "(function(){var b=document.querySelector('mws-text-message-part .bubble.outgoing');return b ? b.textContent.trim() : 'missing';})()") as? String
+        XCTAssertEqual(bubble, "Hey! Are we still on for tonight?")
         let imageVisibility = try await web.evaluateJavaScript(
             "getComputedStyle(document.querySelector('img')).visibility") as? String
         XCTAssertEqual(imageVisibility, "hidden")
