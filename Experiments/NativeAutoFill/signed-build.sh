@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${BUILD_NUMBER:?Set BUILD_NUMBER to a new numeric build version}"
 [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]{0,12}$ ]]
-textem_version="${VERSION:-0.1.0}"
+textem_version="${VERSION:-1.0b1}"
 [[ "$textem_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 textem_reference_app="${TEXTEM_REFERENCE_APP:-/Applications/Textem.app}"
 textem_release_root="$PWD/.build.nosync/native-autofill-release-$BUILD_NUMBER"
