@@ -73,7 +73,7 @@ bundle: build
 	@# Ad-hoc sign so WKWebView/WebKit XPC services launch under a stable
 	@# identity. Replace with a real Developer ID for distribution.
 	@codesign --force --deep --sign - $(APP_BUNDLE)
-	@for arch in $(ARCHS); do lipo -verify_arch "$$arch" $(CONTENTS)/MacOS/$(APP); done
+	@for arch in $(ARCHS); do lipo $(CONTENTS)/MacOS/$(APP) -verify_arch "$$arch"; done
 	@echo "built $(APP_BUNDLE) $(VERSION) ($(BUILD_NUMBER)) for $(ARCHS)"
 
 run: bundle

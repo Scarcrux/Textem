@@ -127,7 +127,7 @@ do {
             try require(frameworkInfo["CFBundleShortVersionString"] as? String == "2.10.0", "updater framework version mismatch")
             let frameworkSignature = try signing(framework)
             try require(frameworkSignature[kSecCodeInfoTeamIdentifier as String] as? String == DeveloperIDPolicy.team, "updater framework team mismatch")
-            for arch in ["arm64", "x86_64"] { _ = try run("/usr/bin/lipo", ["-verify_arch", arch, framework.appendingPathComponent("Sparkle").path]) }
+            for arch in ["arm64", "x86_64"] { _ = try run("/usr/bin/lipo", [framework.appendingPathComponent("Sparkle").path, "-verify_arch", arch]) }
             let sourceInfo = try object(Data(contentsOf: URL(fileURLWithPath: "Resources/Info.plist")))
             for key in ["SUFeedURL", "SUPublicEDKey", "SURequireSignedFeed", "SUVerifyUpdateBeforeExtraction", "SUEnableAutomaticChecks", "SUAllowsAutomaticUpdates", "SUEnableSystemProfiling"] {
                 try require((info[key] as? NSObject)?.isEqual(sourceInfo[key]) == true, "updater policy differs from source")
@@ -135,7 +135,7 @@ do {
             print("updater_framework_signature_team_version_arches_and_policy=PASS")
         }
         guard let binary = info["CFBundleExecutable"] as? String, !binary.contains("/") else { throw Refused.check("invalid executable") }
-        for arch in ["arm64", "x86_64"] { _ = try run("/usr/bin/lipo", ["-verify_arch", arch, bundle.appendingPathComponent("Contents/MacOS/" + binary).path]) }
+        for arch in ["arm64", "x86_64"] { _ = try run("/usr/bin/lipo", [bundle.appendingPathComponent("Contents/MacOS/" + binary).path, "-verify_arch", arch]) }
         let signed = try signing(bundle)
         guard let entitlements = signed[kSecCodeInfoEntitlementsDict as String] as? [String: Any],
               let certificates = signed[kSecCodeInfoCertificates as String] as? [SecCertificate], let leaf = certificates.first else { throw Refused.check("signer/entitlements absent") }
