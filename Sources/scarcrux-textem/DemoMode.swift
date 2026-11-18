@@ -10,7 +10,13 @@ import Foundation
 // would otherwise look like new messages). View → Save Demo Screenshot writes
 // the page to a private folder for review before any use.
 enum DemoMode {
-    static var isEnabled: Bool { ProcessInfo.processInfo.arguments.contains("--demo") }
+    static var isEnabled: Bool {
+        ProcessInfo.processInfo.arguments.contains("--demo") || capturesAutomatically
+    }
+    /// `--demo-capture`: demo mode that saves its own screenshots — the
+    /// conversation list, then the most recent conversation opened — and
+    /// writes `done.json` listing them, so no one has to press anything.
+    static var capturesAutomatically: Bool { ProcessInfo.processInfo.arguments.contains("--demo-capture") }
 
     static var captureDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

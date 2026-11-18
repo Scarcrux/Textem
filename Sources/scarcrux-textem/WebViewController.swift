@@ -257,7 +257,14 @@ final class WebViewController: NSViewController {
                                events: events.count, domRows: domRows)
         // Demo mode rewrites names and previews on screen; those edits must not
         // read as new messages or codes.
-        if DemoMode.isEnabled { onUnreadCountChanged?(count); bridgeReady = true; return }
+        if DemoMode.isEnabled {
+            onUnreadCountChanged?(count); bridgeReady = true
+            if DemoMode.capturesAutomatically, !demoCaptureStarted, let first = rows.first {
+                demoCaptureStarted = true
+                runDemoCapture(open: first.id)
+            }
+            return
+        }
         if let latest = ReceivedCodes.detect(in: activityTracker.changedRows).rows.last,
            let code = CodeDetector.detect(latest.row.snippet)?.code {
             lastReceivedCode = (code, Date())
@@ -746,6 +753,39 @@ final class WebViewController: NSViewController {
             if let detection = CodeDetector.detect(text) { return detection.code }
         }
         return nil
+    }
+
+    private var demoCaptureStarted = false
+
+    // Lets the page settle and the demo rewrite apply, saves the list, opens
+    // the most recent conversation, saves again, then records what it wrote.
+    private func runDemoCapture(open conversation: String) {
+        Task { @MainActor [weak self] in
+            var saved: [String] = []
+            try? await Task.sleep(for: .seconds(8))
+            if let url = await self?.captureDemo() { saved.append(url.lastPathComponent) }
+            self?.openConversation(conversation)
+            try? await Task.sleep(for: .seconds(8))
+            if let url = await self?.captureDemo() { saved.append(url.lastPathComponent) }
+            let report = try? JSONSerialization.data(withJSONObject: ["files": saved, "at": Date().timeIntervalSince1970])
+            if let report {
+                FileManager.default.createFile(atPath: DemoMode.captureDirectory.appendingPathComponent("done.json").path,
+                                               contents: report, attributes: [.posixPermissions: 0o600])
+            }
+        }
+    }
+
+    private func captureDemo() async -> URL? {
+        await withCheckedContinuation { (done: CheckedContinuation<URL?, Never>) in
+            webView.takeSnapshot(with: nil) { image, _ in
+                MainActor.assumeIsolated {
+                    guard let image, let tiff = image.tiffRepresentation,
+                          let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+                    else { done.resume(returning: nil); return }
+                    done.resume(returning: try? DemoMode.save(png: png))
+                }
+            }
+        }
     }
 
     // View → Save Demo Screenshot (only in demo mode).
