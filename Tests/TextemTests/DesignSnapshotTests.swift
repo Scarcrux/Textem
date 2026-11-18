@@ -38,6 +38,7 @@ final class DesignSnapshotTests: XCTestCase {
         let codes = NativeAutoFillCoordinator(
             vault: CodeVault(storage: MemoryStorage()), publisher: NoPublisher(), available: true)
         let updates = AppUpdatesTests.fixture()
+        updates.setAutomaticChecks(true)  // the shipped default (SUEnableAutomaticChecks)
         let unavailableUpdates = AppUpdates(configuration: { throw AppUpdateConfiguration.Invalid.key })
         unavailableUpdates.start()
         let notification = PhoneNotificationModel(

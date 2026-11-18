@@ -1,13 +1,19 @@
 // Generates docs/og-image.png (1200x630) — the social-share card for
-// textem.scarcrux.com. Matches the landing page's CSS icon + wordmark.
+// textem.scarcrux.com: the real app icon plus wordmark.
 // Run: swift tools/gen-og-image.swift
 import AppKit
 
 _ = NSApplication.shared  // init graphics context for offscreen text drawing
 
 let W = 1200, H = 630
-let img = NSImage(size: NSSize(width: W, height: H))
-img.lockFocus()
+// Draw into an sRGB bitmap. Drawing via NSImage.lockFocus used the display's
+// colour space (Display P3 here) and saved the PNG untagged, so browsers read
+// P3 values as sRGB and the icon came out more saturated than the app's.
+let canvas = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: W, pixelsHigh: H, bitsPerSample: 8,
+    samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .calibratedRGB,
+    bytesPerRow: 0, bitsPerPixel: 0)!.retagging(with: .sRGB)!
+NSGraphicsContext.saveGraphicsState()
+NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: canvas)
 
 func color(_ hex: UInt32) -> NSColor {
     NSColor(srgbRed: CGFloat((hex >> 16) & 0xff) / 255,
@@ -19,27 +25,14 @@ func color(_ hex: UInt32) -> NSColor {
 color(0xf6f8fb).setFill()
 NSRect(x: 0, y: 0, width: W, height: H).fill()
 
-// Icon: rounded blue square with vertical gradient
-let iconSize: CGFloat = 190
-let iconX = (CGFloat(W) - iconSize) / 2
-let iconY: CGFloat = 350
-let iconRect = NSRect(x: iconX, y: iconY, width: iconSize, height: iconSize)
-let iconPath = NSBezierPath(roundedRect: iconRect, xRadius: 44, yRadius: 44)
-NSGradient(starting: color(0x33a0fa), ending: color(0x1766db))!.draw(in: iconPath, angle: -90)
-
-// White speech bubble
-let bw: CGFloat = 108, bh: CGFloat = 70
-let bx = iconX + (iconSize - bw) / 2
-let by = iconY + (iconSize - bh) / 2
-NSColor.white.setFill()
-NSBezierPath(roundedRect: NSRect(x: bx, y: by, width: bw, height: bh), xRadius: 22, yRadius: 22).fill()
-
-// Three dots
-color(0x1766db).setFill()
-for i in 0..<3 {
-    let d: CGFloat = 13
-    NSBezierPath(ovalIn: NSRect(x: bx + 26 + CGFloat(i) * 26, y: by + bh / 2 - d / 2, width: d, height: d)).fill()
+// The real app icon (Resources/AppIcon.icns), so the card matches the app.
+let iconSize: CGFloat = 210
+let iconRect = NSRect(x: (CGFloat(W) - iconSize) / 2, y: 340, width: iconSize, height: iconSize)
+guard let appIcon = NSImage(contentsOfFile: "Resources/AppIcon.icns") else {
+    FileHandle.standardError.write("Resources/AppIcon.icns not found; run from the repo root\n".data(using: .utf8)!)
+    exit(1)
 }
+appIcon.draw(in: iconRect)
 
 func draw(_ s: String, size: CGFloat, weight: NSFont.Weight, hex: UInt32, y: CGFloat) {
     let attrs: [NSAttributedString.Key: Any] = [
@@ -53,11 +46,9 @@ func draw(_ s: String, size: CGFloat, weight: NSFont.Weight, hex: UInt32, y: CGF
 draw("Textem", size: 96, weight: .bold, hex: 0x14181f, y: 210)
 draw("A macOS wrapper for Google Messages — free & open-source", size: 34, weight: .regular, hex: 0x5b6472, y: 140)
 
-img.unlockFocus()
+NSGraphicsContext.restoreGraphicsState()
 
-guard let tiff = img.tiffRepresentation,
-      let rep = NSBitmapImageRep(data: tiff),
-      let png = rep.representation(using: .png, properties: [:]) else {
+guard let png = canvas.representation(using: .png, properties: [:]) else {
     FileHandle.standardError.write("failed to render PNG\n".data(using: .utf8)!)
     exit(1)
 }

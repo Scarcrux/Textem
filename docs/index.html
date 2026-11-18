@@ -6,7 +6,9 @@
   <title>Textem — a macOS wrapper for Google Messages</title>
   <meta name="description" content="A lightweight, free, MIT-licensed macOS wrapper for Google Messages for web. Dock badge, native notifications, menu bar, multiple accounts.">
   <link rel="canonical" href="https://textem.scarcrux.com/">
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="favicon.png" type="image/png" sizes="64x64">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Textem","applicationCategory":"CommunicationApplication","operatingSystem":"macOS 13 or later","description":"A free macOS wrapper for Google Messages for web.","url":"https://textem.scarcrux.com/","license":"https://opensource.org/licenses/MIT","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Organization","name":"Scarcrux LLC"}}</script>
   <meta name="theme-color" content="#f6f8fb" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0f1319" media="(prefers-color-scheme: dark)">
   <!-- Open Graph -->
@@ -54,20 +56,10 @@
       overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
     }
     .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px; }
-    header { text-align: center; padding: 72px 20px 40px; }
-    .icon {
-      width: 96px; height: 96px; border-radius: 22px; display: inline-block;
-      background: linear-gradient(180deg, var(--blue-light), var(--blue));
-      box-shadow: 0 10px 30px rgba(23,102,219,.28); position: relative; margin-bottom: 22px;
-    }
-    .icon::before {
-      content: ""; position: absolute; left: 22px; top: 30px; width: 52px; height: 34px;
-      background: #fff; border-radius: 11px;
-    }
-    .icon::after {
-      content: ""; position: absolute; left: 30px; top: 40px; width: 6px; height: 6px; border-radius: 50%;
-      background: var(--blue); box-shadow: 12px 0 0 var(--blue), 24px 0 0 var(--blue);
-    }
+    /* header.wrap, not header: .wrap's padding (a class) beat the bare
+       element selector and pinned the logo to the top edge. */
+    header.wrap { text-align: center; padding: 64px 20px 40px; }
+    .app-icon { width: 112px; height: 112px; display: block; margin: 0 auto 18px; filter: drop-shadow(0 10px 24px rgba(23,102,219,.25)); }
     h1 { font-size: 44px; margin: 0 0 8px; letter-spacing: -.02em; }
     .tag { font-size: 20px; color: var(--muted); margin: 0 auto 28px; max-width: 620px; }
     .btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
@@ -124,7 +116,7 @@
     .hero-shot img { width: 100%; height: auto; display: block; }
     .hero-shot figcaption { color: var(--muted); font-size: 13px; margin-top: 4px; }
     /* Dark mode: the page is variable-driven, so overriding the palette covers
-       nearly everything. Only the amber callout and the icon glow hardcode
+       nearly everything. Only the amber callout hardcodes
        light-scheme colors and need explicit counterparts. Keep this block LAST
        in the stylesheet: its rules have the same specificity as the base
        rules, so anything after it would silently win in dark mode. */
@@ -144,10 +136,6 @@
          use a lighter blue with dark text (8.3:1). */
       .btn.primary { background: var(--blue-light); color: #0f1319; border-color: var(--blue-light); }
       ol.steps li::before { background: var(--blue-light); color: #0f1319; }
-      /* The app icon is brand art, not themed UI — keep it identical in both
-         schemes so it doesn't wash out against the dark page. */
-      .icon { background: linear-gradient(180deg, #33a0fa, #1766db); box-shadow: 0 10px 30px rgba(43,124,255,.22); }
-      .icon::after { background: #1766db; box-shadow: 12px 0 0 #1766db, 24px 0 0 #1766db; }
       .callout { background: #2a1c0c; border-color: #6b3f10; }
       .callout strong { color: #fbbf24; }
     }
@@ -156,14 +144,14 @@
 <body>
   <a class="skip" href="#main">Skip to main content</a>
   <header class="wrap">
-    <span class="icon" aria-hidden="true"></span>
+    <img class="app-icon" src="media/app-icon.png" width="112" height="112" alt="">
     <h1>Textem</h1>
     <p class="tag">A lightweight macOS wrapper for Google Messages for web — free and MIT-licensed. The tiny-footprint alternative to paid wrappers and dead Electron apps.</p>
     <div class="btns">
       <a class="btn primary" href="https://github.com/Scarcrux/Textem">View source on GitHub</a>
       <span class="btn disabled" aria-disabled="true">Signed download coming with 1.0</span>
     </div>
-    <p class="note">Alpha · macOS 13+ · Intel and Apple silicon · build from source today; a signed, notarized download comes with 1.0</p>
+    <p class="note">For Android phones with Google Messages · macOS 13+ · Intel and Apple silicon<br>Alpha: <a href="https://github.com/Scarcrux/Textem#building-from-source">build it from source</a> today; a signed, notarized download comes with 1.0</p>
     <figure class="hero-shot">
       <img src="media/textem-window.png" width="1376" height="954" alt="The Textem window showing Google Messages with a conversation list and an open chat (sample conversations)">
       <figcaption>Sample conversations, shown with Textem’s demo mode.</figcaption>
@@ -179,7 +167,7 @@
         <div class="feat"><h3>Verification codes</h3><p>When a text with a code arrives, click <strong>Copy Code</strong> on the notification. Codes expire after 3 minutes.</p></div>
         <div class="feat"><h3>Multiple accounts</h3><p>Separate, persistent sessions for each Google account, with a quick switcher (macOS 14+).</p></div>
         <div class="feat"><h3>Shortcuts</h3><p>Global show/hide (⌥⌘M), new conversation, find, zoom, copy latest code, always on top.</p></div>
-        <div class="feat"><h3>Private by design</h3><p>Textem adds no telemetry or relay server. Your local session connects directly to Google’s web client.</p></div>
+        <div class="feat"><h3>Private by design</h3><p>No telemetry, accounts or relay servers. Your session talks directly to Google; the only other request is a daily update check.</p></div>
       </div>
     </section>
 
@@ -238,7 +226,7 @@
         <li><strong>Start on your phone.</strong> Open Google Messages, tap your <em>account menu</em> (top right), then <em>Device pairing</em>.</li>
         <li><strong>Sign in to Textem with the same Google account</strong> and choose “Enter your password” — not the passkey option.</li>
         <li><strong>Pick a non-passkey second step:</strong> a Google prompt (“Tap Yes” on your phone), an SMS or email code, or an authenticator app.</li>
-        <li><strong>Tap the matching emoji.</strong> Your phone shows three emoji — tap the one that matches what Textem shows. Your phone vibrates when pairing completes.</li>
+        <li><strong>Tap the matching emoji.</strong> Your phone shows three emoji — tap the one that matches what Textem shows.</li>
       </ol>
     </section>
 
@@ -273,7 +261,7 @@
 
   <footer>
     <p>Unofficial. Not affiliated with, endorsed by, or sponsored by Google. “Google Messages” is a trademark of Google LLC.</p>
-    <p><a href="https://github.com/Scarcrux/Textem">Source on GitHub</a> · MIT License · © 2026 Scarcrux</p>
+    <p><a href="https://github.com/Scarcrux/Textem">Source on GitHub</a> · MIT License · © 2026 Scarcrux LLC</p>
   </footer>
 </body>
 </html>

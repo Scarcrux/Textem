@@ -174,5 +174,5 @@ in [DEVELOPING.md](DEVELOPING.md). The roadmap lives in
 
 ## License
 
-Textem is [MIT](LICENSE) © 2026 Scarcrux. It includes
+Textem is [MIT](LICENSE) © 2026 Scarcrux LLC. It includes
 [Sparkle](https://sparkle-project.org) for updates (MIT).
