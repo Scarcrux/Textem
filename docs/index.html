@@ -120,6 +120,9 @@
     .ticks { padding-left: 1.1em; margin: 0; }
     .ticks li { margin: 0 0 12px; }
     .badge { display: inline-block; font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; vertical-align: 1px; }
+    .hero-shot { margin: 34px auto 0; max-width: 980px; }
+    .hero-shot img { width: 100%; height: auto; display: block; }
+    .hero-shot figcaption { color: var(--muted); font-size: 13px; margin-top: 4px; }
     /* Dark mode: the page is variable-driven, so overriding the palette covers
        nearly everything. Only the amber callout and the icon glow hardcode
        light-scheme colors and need explicit counterparts. Keep this block LAST
@@ -161,6 +164,10 @@
       <span class="btn disabled" aria-disabled="true">Signed download coming with 1.0</span>
     </div>
     <p class="note">Alpha · macOS 13+ · Intel and Apple silicon · build from source today; a signed, notarized download comes with 1.0</p>
+    <figure class="hero-shot">
+      <img src="media/textem-window.png" width="1376" height="954" alt="The Textem window showing Google Messages with a conversation list and an open chat (sample conversations)">
+      <figcaption>Sample conversations, shown with Textem’s demo mode.</figcaption>
+    </figure>
   </header>
 
   <main class="wrap" id="main">
