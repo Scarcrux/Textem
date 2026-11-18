@@ -793,7 +793,7 @@ final class WebViewController: NSViewController {
                   shape[key] = (shape[key] || 0) + 1;
                 }
               });
-              var outgoing = document.querySelectorAll('[is-outgoing="true"], [data-e2e-is-outgoing="true"], mws-message-wrapper[is-outgoing]').length;
+              var outgoing = document.querySelectorAll('[data-e2e-message-outgoing="true"], mws-message-wrapper[is-outgoing="true"]').length;
               return JSON.stringify({parts: parts.length, outgoing: outgoing, shape: shape});
             })();
             """
