@@ -15,9 +15,9 @@ bundled Chromium.
 > Unofficial. Not affiliated with, endorsed by, or sponsored by Google.
 > "Google Messages" is a trademark of Google LLC.
 
-**Status: alpha.** Textem is used daily but is not yet publicly released.
-There is no public download yet; a signed, notarized download is planned for
-1.0. Until then you can [build it from source](#building-from-source).
+**Status: alpha (0.1.0).** Download the signed, notarized app from
+[GitHub Releases](https://github.com/Scarcrux/Textem/releases/latest). Textem
+checks for updates once a day and asks before installing one.
 
 ## Requirements
 
@@ -29,9 +29,9 @@ There is no public download yet; a signed, notarized download is planned for
 
 ### 1. Install
 
-Download Textem, open the disk image and drag **Textem** to Applications.
-*(Public download coming with 1.0 — see [Building from source](#building-from-source)
-in the meantime.)*
+[Download **Textem.dmg**](https://github.com/Scarcrux/Textem/releases/latest/download/Textem.dmg),
+open it and drag **Textem** to Applications. It is signed with a Developer ID
+and notarized by Apple, so it opens without security warnings.
 
 ### 2. Sign in and pair with your phone
 
