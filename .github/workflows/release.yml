@@ -7,9 +7,11 @@ name: release
 # embedded Textem Codes AutoFill extension. The public release is the signed,
 # notarized build from Experiments/NativeAutoFill/signed-build.sh (see
 # DEVELOPING.md); attach that DMG to the release instead.
+# Manual only. Publishing a v* tag must NOT trigger this: the real release
+# attaches the signed, notarized Textem.dmg, and this job would upload an
+# unsigned Textem.dmg under the same name into that same release.
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,7 +28,7 @@ jobs:
       - name: Package .dmg
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${GITHUB_REF_NAME#v}"; [[ "$version" =~ ^[0-9] ]] || version=0.0.0
           version="${version%%-*}"
           make dmg VERSION="$version" BUILD_NUMBER="${GITHUB_RUN_NUMBER}"
           shasum -a 256 Textem.dmg > Textem.dmg.sha256
@@ -44,6 +46,7 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           draft: true
+          tag_name: ci-test-${{ github.run_number }}
           prerelease: true
           name: Textem ${{ github.ref_name }} (CI unsigned test build)
           files: |

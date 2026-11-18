@@ -95,8 +95,8 @@ struct SettingsView: View {
                 Toggle(isOn: Binding(
                     get: { nativeCodes.enabled }, set: { value in Task { await nativeCodes.setEnabled(value) } }
                 )) {
-                    row("AutoFill verification codes",
-                        "Offer codes from your texts in Safari and other apps, through Textem Codes.")
+                    row("AutoFill verification codes (Experimental)",
+                        "Offer codes from your texts in Safari and other apps, through Textem Codes. Not yet confirmed working in every app.")
                 }.disabled(!nativeCodes.available).accessibilityIdentifier("native-code-autofill-toggle")
                 Button("Delete native codes and source links", role: .destructive) {
                     Task { await nativeCodes.setEnabled(false) }
