@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import NativeAutoFillCore
-import AuthenticationServices
+@preconcurrency import AuthenticationServices
 @testable import scarcrux_textem
 
 @Suite("Private native AutoFill readiness") @MainActor

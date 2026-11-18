@@ -1,5 +1,5 @@
 import AppKit
-import AuthenticationServices
+@preconcurrency import AuthenticationServices
 import NativeAutoFillCore
 import NativeAutoFillProvider
 import WebKit
