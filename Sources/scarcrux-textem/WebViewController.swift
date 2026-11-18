@@ -89,11 +89,9 @@ final class WebViewController: NSViewController {
     private var loadRetryCount = 0
     private var loadRetryTask: Task<Void, Never>?
     private var linkPreviewHost: NSView?
-    private var showingPhoneImages = false
     private var phoneImagesModel: PhoneImagesModel?
     private var browsingPhoneImageLibrary = false
     private var currentImageConversation: PhoneImageConversation?
-    private var displayedImageConversationKey: String?
     private var phoneConversationModel: PhoneConversationModel?
     private var savedPhoneConversationsModel: SavedPhoneConversationsModel?
     private var dismissedPhoneOnlyConversation: String?
@@ -292,7 +290,6 @@ final class WebViewController: NSViewController {
     private func handlePhoneOnlyState(
         visible: Bool, conversation: String, conversationID: String, routeConfirmed: Bool
     ) {
-        let normalized = ConversationName.normalized(conversation)
         let imageConversation = PhoneImageConversation(accountID: accountID, route: conversationID, label: conversation)
         currentImageConversation = visible && routeConfirmed && imageConversation.key != nil ? imageConversation : nil
         phoneImagesModel?.setConversation(currentImageConversation)
@@ -308,32 +305,27 @@ final class WebViewController: NSViewController {
             hideLinkPreviewFallback()
             return
         }
-        guard !normalized.isEmpty else {
+        guard let context = currentImageConversation else {
             hideLinkPreviewFallback()
             return
         }
-        if let context = currentImageConversation,
-           dismissedPhoneOnlyConversation != normalized,
-           ((try? PhoneConversationStore.record(for: context)) != nil || (try? PhoneHistoryStore.record(for: context)) != nil) {
-            showPhoneConversation(context); return
-        }
-        if let context = currentImageConversation, dismissedPhoneOnlyConversation != normalized,
-           let images = try? PhoneImageStore.images(for: context), !images.isEmpty {
-            showConversationImages(context); return
-        }
-        if dismissedPhoneOnlyConversation != normalized {
-            if let context = currentImageConversation { showPhoneConversation(context) }
-            else { hideLinkPreviewFallback() }
-        }
+        guard dismissedPhoneOnlyConversation != context.key else { return }
+        dismissedPhoneOnlyConversation = nil
+        showPhoneConversation(context)
     }
 
-    func showPhoneImages() {
+    func showPhoneImages(returnToConversation: Bool = false) {
         let model = imageModel()
-        model.setConversation(currentImageConversation, only: false); model.reload()
+        model.setConversation(currentImageConversation); model.reload()
         let host = Self.overlayHost( PhoneImagesView(model: model, onClose: { [weak self] in
-            self?.dismissPhoneImages()
+            guard let self else { return }
+            if returnToConversation, let context = self.currentImageConversation, Preferences.showPhoneTools {
+                self.showPhoneConversation(context)
+            } else {
+                self.dismissPhoneImages()
+            }
         }))
-        installLinkPreviewHost(host); showingPhoneImages = true; browsingPhoneImageLibrary = true
+        installLinkPreviewHost(host); browsingPhoneImageLibrary = true
         // Owner-invoked local verification only: normal launches never transfer automatically.
         if ProcessInfo.processInfo.environment["TEXTEM_PHONE_IMAGE_CHECK"] == "1" {
             if let endpoint = ProcessInfo.processInfo.environment["TEXTEM_PHONE_IMAGE_ENDPOINT"] { model.endpoint = endpoint }
@@ -402,8 +394,17 @@ final class WebViewController: NSViewController {
         evidence.visible = true
         evidence.routeValidated = await validatePhoneConversation(model.context)
         guard evidence.routeValidated else { return evidence }
-        if model.historyCandidate == nil, model.history != nil, model.showHistory || model.record == nil {
+        let importedPictures = model.pictures.filter { picture in
+            guard let data = try? PhoneImageStore.imageData(picture, in: model.imageDirectory) else { return false }
+            return NSImage(data: data) != nil
+        }.count
+        let capturedPictures = model.record?.samples.filter { sample in
+            guard let data = sample.image?.data else { return false }
+            return NSImage(data: data) != nil
+        }.count ?? 0
+        if model.historyCandidate == nil, model.candidate == nil, model.history != nil, model.showHistory || model.record == nil {
             evidence.selectedHistory = true; evidence.historyRows = model.history?.snapshot.messages.count ?? 0
+            evidence.decodedPictures = importedPictures + capturedPictures
             return evidence
         }
         evidence.savedPreviews = model.record?.samples.count ?? 0
@@ -425,7 +426,7 @@ final class WebViewController: NSViewController {
         model.validate = { [weak self] context in await self?.validatePhoneConversation(context) ?? false }
         let host = Self.overlayHost( PhoneConversationView(model: model,
             onClose: { [weak self] in self?.dismissPhoneImages() },
-            onImages: { [weak self] in self?.showPhoneImages() }))
+            onImages: { [weak self] in self?.showPhoneImages(returnToConversation: true) }))
         installLinkPreviewHost(host)
         phoneConversationModel = model
     }
@@ -440,19 +441,9 @@ final class WebViewController: NSViewController {
 
     private func dismissPhoneImages() {
         if let context = currentImageConversation {
-            dismissedPhoneOnlyConversation = ConversationName.normalized(context.label)
+            dismissedPhoneOnlyConversation = context.key
         }
         hideLinkPreviewFallback()
-    }
-
-    private func showConversationImages(_ context: PhoneImageConversation) {
-        let model = imageModel(); model.setConversation(context, only: true); model.reload()
-        guard !showingPhoneImages || displayedImageConversationKey != context.key else { return }
-        model.status = "Saved images explicitly linked to this conversation. No background phone scan."
-        let host = Self.overlayHost( PhoneImagesView(model: model,
-            onClose: { [weak self] in self?.dismissPhoneImages() },
-            onOpenLibrary: { [weak self] in self?.showPhoneImages() }))
-        installLinkPreviewHost(host); showingPhoneImages = true; displayedImageConversationKey = context.key
     }
 
     /// Panels laid over the web view must never resize the window. By default
@@ -485,8 +476,7 @@ final class WebViewController: NSViewController {
     private func hideLinkPreviewFallback() {
         phoneConversationModel?.cancel(); phoneConversationModel = nil
         savedPhoneConversationsModel = nil
-        showingPhoneImages = false
-        browsingPhoneImageLibrary = false; displayedImageConversationKey = nil
+        browsingPhoneImageLibrary = false
         linkPreviewHost?.removeFromSuperview()
         linkPreviewHost = nil
     }

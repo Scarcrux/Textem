@@ -4,14 +4,15 @@ import SwiftUI
 struct PhonePreviewMessageView: View {
     let message: PhoneNotificationSnapshot.Message
     let capturedAtMS: Int64
+    var inTimeline = false
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(PhoneConversationSampleView.linkedText(message.text)).textSelection(.enabled)
             HStack {
                 if message.timestampMS > 0 {
-                    Text(Date(timeIntervalSince1970: Double(message.timestampMS) / 1000).formatted(date: .abbreviated, time: .shortened))
+                    Text(Date(timeIntervalSince1970: Double(message.timestampMS) / 1000).formatted(date: inTimeline ? .omitted : .abbreviated, time: .shortened))
                 } else {
-                    Text("Captured \(Date(timeIntervalSince1970: Double(capturedAtMS) / 1000).formatted(date: .abbreviated, time: .shortened)) · message time unavailable")
+                    Text("Captured \(Date(timeIntervalSince1970: Double(capturedAtMS) / 1000).formatted(date: inTimeline ? .omitted : .abbreviated, time: .shortened)) · message time unavailable")
                 }
                 if message.truncated { Text("Shortened preview") }
             }.font(.caption).foregroundStyle(.secondary)

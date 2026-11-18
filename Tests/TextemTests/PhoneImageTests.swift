@@ -347,18 +347,84 @@ struct PhoneImageTests {
         #expect(try PhoneImageStore.loadBindings(in: root).count == 1)
     }
     @Test func conversationViewRendersOnlyItsExplicitlyLinkedGraphic() throws {
-        let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
+        let root = try temporary()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (manifest, png) = try fixture()
+        let image = try PhoneImageStore.importImage(manifest: manifest, png: png, in: root)
+        let context = PhoneImageConversation(accountID: UUID(), route: "A", label: "Example conversation")
+        try PhoneImageStore.link(image, to: context, in: root)
+        let history = try PhoneHistoryTests().fixture()
+        let historyDirectory = root.appendingPathComponent("history")
+        try PhoneHistoryStore.link(history, to: context, in: historyDirectory)
+
+        let other = PhoneImageConversation(accountID: UUID(), route: "A", label: context.label)
+        for selected in [context, other] {
+            let model = PhoneConversationModel(context: selected, directory: root.appendingPathComponent("previews"),
+                                               historyDirectory: historyDirectory, imageDirectory: root)
+            let matches = selected == context
+            #expect(model.pictures == (matches ? [image] : []))
+            #expect((model.history != nil) == matches)
+
+            for (width, appearance) in [(460, NSAppearance.Name.aqua), (720, .darkAqua)] {
+                let hosting = WebViewController.overlayHost(PhoneConversationView(model: model, onClose: {}, onImages: {}))
+                hosting.frame = CGRect(x: 0, y: 0, width: width, height: 720)
+                let window = NSWindow(contentRect: hosting.frame, styleMask: [.titled], backing: .buffered, defer: false)
+                window.appearance = NSAppearance(named: appearance)
+                window.contentView = hosting
+                hosting.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+                let bitmap = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+                hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+                let graphic = stride(from: 0, to: bitmap.pixelsHigh, by: 10).contains { y in
+                    stride(from: 0, to: bitmap.pixelsWide, by: 10).contains { x in
+                        guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { return false }
+                        // Window capture color profiles can shift absolute RGB values.
+                        return color.redComponent - color.greenComponent > 0.18
+                            && color.greenComponent - color.blueComponent > 0.18
+                    }
+                }
+                #expect(graphic == matches)
+                if matches, let folder = ProcessInfo.processInfo.environment["TEXTEM_TIMELINE_SNAPSHOTS"] {
+                    let file = URL(fileURLWithPath: folder).appendingPathComponent("timeline-\(width).png")
+                    try #require(bitmap.representation(using: .png, properties: [:])).write(to: file)
+                }
+                window.contentView = nil
+            }
+        }
+    }
+
+    @Test func timelineSortsSavedPicturesWithMessageDates() throws {
+        let history = try PhoneHistoryTests().fixture()
+        let picture = ImportedPhoneImage(id: UUID(), sourceID: UUID(),
+            importedAt: Date(timeIntervalSince1970: Double(history.messages[0].timestampMS) / 1000 + 10),
+            width: 8, height: 6, bytes: 10, sha256: "")
+        let timeline = SavedPhoneTimeline(history: history, samples: [], pictures: [picture], showOriginalCaptures: false)
+        #expect(timeline.items.map(\.id) == [
+            "history-" + history.messages[0].id, "import-" + picture.id.uuidString,
+            "history-" + history.messages[1].id, "history-" + history.messages[2].id,
+        ])
+    }
+
+    @Test func conversationPictureActionsRevalidateAndUnlinkWithoutRemovingCopy() async throws {
+        let root = try temporary()
+        defer { try? FileManager.default.removeItem(at: root) }
         let (manifest, png) = try fixture()
         let image = try PhoneImageStore.importImage(manifest: manifest, png: png, in: root)
         let context = PhoneImageConversation(accountID: UUID(), route: "A", label: "Example")
         try PhoneImageStore.link(image, to: context, in: root)
-        let model = PhoneImagesModel(directory: root)
-        model.setConversation(context, only: true)
-        #expect(try orangeSamples(in: model) > 100)
-        model.setConversation(PhoneImageConversation(accountID: UUID(), route: "A", label: "Example"))
-        #expect(model.images.isEmpty && model.graphic == nil)
-        #expect(try orangeSamples(in: model) == 0)
-        model.setConversation(nil)
-        #expect(model.images.isEmpty)
+        let model = PhoneConversationModel(context: context, directory: root.appendingPathComponent("previews"),
+                                           imageDirectory: root)
+        await model.changePicture(image, removeMacCopy: true)
+        #expect(try PhoneImageStore.images(for: context, in: root) == [image])
+        model.validate = { $0 == context }
+        await model.changePicture(image, removeMacCopy: false)
+        #expect(model.pictures.isEmpty)
+        #expect(try PhoneImageStore.imageData(image, in: root) == png)
+        try PhoneImageStore.link(image, to: context, in: root)
+        model.reload()
+        await model.changePicture(image, removeMacCopy: true)
+        #expect(model.pictures.isEmpty)
+        #expect(try PhoneImageStore.load(in: root).isEmpty)
     }
 }

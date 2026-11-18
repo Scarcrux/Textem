@@ -4,6 +4,9 @@ import SwiftUI
 @MainActor final class PhoneConversationModel: ObservableObject {
     let context: PhoneImageConversation
     let directory: URL
+    let imageDirectory: URL
+    @Published private(set) var pictures: [ImportedPhoneImage] = []
+    @Published private(set) var pictureError: String?
     @Published private(set) var record: PhoneConversationStore.Record?
     @Published private(set) var candidate: PhoneNotificationSnapshot?
     @Published private(set) var candidates: [PhoneNotificationSnapshot] = []
@@ -28,23 +31,55 @@ import SwiftUI
     init(context: PhoneImageConversation, directory: URL = PhoneConversationStore.directory,
          endpoint: @escaping @MainActor () -> String = { UserDefaults.standard.string(forKey: "phoneImageEndpoint") ?? "" },
          fetch: @escaping @Sendable (String) async throws -> PhoneNotificationJournal = { try await CompanionJournalTransport().fetch(developerEndpoint: $0) },
-         historyDirectory: URL? = nil,
+         historyDirectory: URL? = nil, imageDirectory: URL? = nil,
          fetchHistory: @escaping @Sendable () async throws -> [PhoneHistorySnapshot] = { try await CompanionHistoryTransport().fetch() }) {
         self.context = context; self.directory = directory; self.endpoint = endpoint; self.fetch = fetch
         self.historyDirectory = historyDirectory ?? (directory == PhoneConversationStore.directory ? PhoneHistoryStore.directory : directory.appendingPathComponent("SelectedHistory"))
         self.fetchHistory = fetchHistory
+        self.imageDirectory = imageDirectory ?? (directory == PhoneConversationStore.directory
+            ? PhoneImageStore.directory : directory.appendingPathComponent("PhoneImages"))
         reload()
         showHistory = history != nil
-        if history != nil { status = "Saved messages for this conversation." }
-        else if record != nil { status = "Saved phone previews for this account and conversation." }
+        if hasSavedContent { status = "" }
     }
+    var hasSavedContent: Bool { record != nil || history != nil || !pictures.isEmpty }
+
     func reload() {
+        reloadPictures()
         do {
             record = try PhoneConversationStore.record(for: context, in: directory)
             history = try PhoneHistoryStore.record(for: context, in: historyDirectory)
         }
         catch { record = nil; history = nil; status = error.localizedDescription }
     }
+    private func reloadPictures() {
+        do {
+            pictures = try PhoneImageStore.images(for: context, in: imageDirectory)
+            pictureError = nil
+        } catch {
+            pictures = []
+            pictureError = error.localizedDescription
+        }
+    }
+
+    func changePicture(_ picture: ImportedPhoneImage, removeMacCopy: Bool) async {
+        guard !stopped, !busy, pictures.contains(picture) else { return }
+        let id = UUID()
+        generation = id
+        busy = true
+        defer { if generation == id { busy = false } }
+        guard await validate(context), generation == id, !Task.isCancelled else { return }
+        do {
+            guard try PhoneImageStore.images(for: context, in: imageDirectory).contains(picture) else {
+                reloadPictures()
+                return
+            }
+            if removeMacCopy { try PhoneImageStore.remove(picture, in: imageDirectory) }
+            else { try PhoneImageStore.unlink(picture, in: imageDirectory) }
+            reloadPictures()
+        } catch { pictureError = error.localizedDescription }
+    }
+
     func cancel() { stopped = true; generation = UUID(); busy = false; candidate = nil; candidates = []; historyCandidates = []; historyCandidateKey = nil }
     func connectionChanged() {
         generation = UUID(); busy = false; candidate = nil; candidates = []; historyCandidates = []; historyCandidateKey = nil
@@ -100,6 +135,7 @@ import SwiftUI
             status = "Source unlinked and this conversation’s cached previews deleted. Phone originals and shared images are unchanged."
         } catch { status = error.localizedDescription }
     }
+    func dismissPreviewSelection() { candidate = nil; candidates = []; status = "" }
     func dismissHistorySelection() { historyCandidates = []; historyCandidateKey = nil }
     func readHistory() async {
         guard !stopped, !busy else { return }
@@ -160,29 +196,24 @@ struct PhoneConversationView: View {
     var onClose: () -> Void
     var onImages: () -> Void
     @State private var connection: CompanionConnectionModel?
+    @State private var pictureToRemove: ImportedPhoneImage?
+    private var confirmingSource: Bool { model.historyCandidate != nil || model.candidate != nil }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PhonePanelHeader(symbol: "iphone.and.arrow.forward", title: "Phone conversation previews",
-                subtitle: model.context.label, onClose: onClose, closeLabel: "Close phone conversation previews",
+            PhonePanelHeader(symbol: "iphone", title: model.context.label,
+                subtitle: model.hasSavedContent ? "Saved from your phone" : "Phone conversation",
+                onClose: onClose, closeLabel: "Close saved conversation",
                 trailingActions: AnyView(headerActions)).padding(.horizontal, 20).padding(.vertical, 14)
             Divider()
-            HStack(alignment: .top, spacing: 12) {
-                if model.busy { ProgressView().controlSize(.small) }
-                Text(model.status).font(.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                if model.record == nil && model.history == nil {
-                    Button("Read phone preview") { Task { await model.read() } }.disabled(model.busy)
-                }
-            }.padding(.horizontal, 20).padding(.vertical, 10)
-            Divider()
+            if !model.status.isEmpty || model.busy || model.pictureError != nil {
+                HStack(alignment: .top, spacing: 8) {
+                    if model.busy { ProgressView().controlSize(.small) }
+                    Text(model.pictureError ?? model.status).font(.caption).foregroundStyle(.secondary)
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.vertical, 8)
+            }
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if model.historyCandidates.isEmpty && model.candidate == nil && model.history != nil && model.record != nil {
-                        Picker("Messages", selection: $model.showHistory) {
-                            Text("Saved messages").tag(true)
-                            Text("Recent previews").tag(false)
-                        }.pickerStyle(.segmented).labelsHidden()
-                    }
+                LazyVStack(alignment: .leading, spacing: 14) {
                     if let selected = model.historyCandidate {
                         Text("Confirm conversation").font(.headline)
                         Picker("From your phone", selection: $model.historyCandidateKey) {
@@ -193,8 +224,6 @@ struct PhoneConversationView: View {
                         Button("Save messages to this conversation") { Task { await model.linkHistory() } }.disabled(model.busy)
                         Button("Cancel") { model.dismissHistorySelection() }.disabled(model.busy)
                         PhoneHistoryView(snapshot: selected)
-                    } else if model.history != nil && (model.showHistory || model.record == nil) {
-                        if let history = model.history { PhoneHistoryView(snapshot: history.snapshot) }
                     } else if let candidate = model.candidate {
                         Text("Confirm phone source").font(.headline)
                         Picker("Captured phone source", selection: Binding(get: { PhoneConversationStore.sourceKey(candidate) }, set: { model.chooseSource($0) })) {
@@ -205,12 +234,14 @@ struct PhoneConversationView: View {
                         Text(verbatim: candidate.title.isEmpty ? "Unnamed phone source" : candidate.title).font(.subheadline)
                         PhoneConversationSampleView(sample: candidate)
                         Button("This belongs here — link and refresh previews") { Task { await model.link() } }.disabled(model.busy)
-                    } else if let record = model.record {
-                        PhonePreviewListView(samples: record.samples, showOriginalCaptures: model.showOriginalCaptures)
+                        Button("Cancel") { model.dismissPreviewSelection() }.disabled(model.busy)
+                    } else if model.hasSavedContent {
+                        savedTimeline
                     } else {
                         Text("No phone source linked").font(.headline)
                         Text("Read a phone preview, check its source and content, then explicitly link it here. Textem will not guess from a sender name.")
                             .foregroundStyle(.secondary)
+                        Button("Read phone preview") { Task { await model.read() } }.disabled(model.busy)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
             }
@@ -218,35 +249,102 @@ struct PhoneConversationView: View {
             .sheet(isPresented: Binding(get: { connection != nil }, set: { if !$0 { connection = nil } })) {
                 if let connection { CompanionConnectionView(model: connection, onChanged: model.connectionChanged, onClose: { self.connection = nil }) }
             }
+            .confirmationDialog("Remove this picture from your Mac?", isPresented: Binding(
+                get: { pictureToRemove != nil }, set: { if !$0 { pictureToRemove = nil } }
+            ), presenting: pictureToRemove) { picture in
+                Button("Remove Mac copy", role: .destructive) {
+                    Task { await model.changePicture(picture, removeMacCopy: true) }
+                }
+            } message: { _ in
+                Text("The picture on your phone will stay there.")
+            }
             .task { await model.run() }.onDisappear { model.cancel() }
     }
-    private var headerActions: some View {
-        HStack(spacing: 8) {
-            if model.record != nil || model.history != nil {
-                Button { Task { if model.showHistory { await model.readHistory() } else { await model.read() } } } label: {
-                    Image(systemName: "arrow.clockwise").frame(width: 28, height: 28)
-                }.buttonStyle(.plain).disabled(model.busy)
-                    .help("Refresh phone previews").accessibilityLabel("Refresh phone previews")
+
+    @ViewBuilder private var savedTimeline: some View {
+        let history = model.showHistory || model.record == nil ? model.history?.snapshot : nil
+        let samples = model.record?.samples ?? []
+        let originals = history == nil && model.showOriginalCaptures
+        let timeline = SavedPhoneTimeline(history: history, samples: samples, pictures: model.pictures,
+                                          showOriginalCaptures: originals)
+        if originals { PhonePreviewListView(samples: samples, showOriginalCaptures: true) }
+        ForEach(Array(timeline.items.enumerated()), id: \.element.id) { index, item in
+            if let date = item.date,
+               index == 0 || timeline.items[index - 1].date.map({ !Calendar.current.isDate($0, inSameDayAs: date) }) != false {
+                Text(date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityAddTraits(.isHeader)
             }
-            Menu {
-                Button("Phone connection…") { connection = CompanionConnectionModel() }
-                Button("Shared graphics", action: onImages)
-                Button("Read saved messages from phone…") { Task { await model.readHistory() } }.disabled(model.busy)
-                if model.history != nil {
-                    Button("Remove saved messages from this Mac", role: .destructive) { model.unlinkHistory() }.disabled(model.busy)
+            switch item {
+            case .history(let message):
+                PhoneHistoryMessageView(row: message, inTimeline: true)
+            case .preview(let row):
+                PhonePreviewMessageView(message: row.message, capturedAtMS: row.capturedAtMS, inTimeline: true)
+            case .capturedPicture(let sample, _):
+                if let data = sample.image?.data, let image = NSImage(data: data) {
+                    SavedPhonePictureBubble(image: image, caption: "Captured \(formatted(item.date, timeOnly: true))")
                 }
-                if model.record != nil {
-                    Divider()
-                    Toggle("Refresh while open", isOn: $model.automatic)
-                    Toggle("Show every saved preview", isOn: $model.showOriginalCaptures)
-                    Divider()
-                    Button("Unlink source and delete cached previews", role: .destructive) { model.unlink() }.disabled(model.busy)
+            case .importedPicture(let picture):
+                if let data = try? PhoneImageStore.imageData(picture, in: model.imageDirectory),
+                   let image = NSImage(data: data) {
+                    SavedPhonePictureBubble(image: image, caption: "Saved \(formatted(item.date, timeOnly: true))")
+                } else {
+                    Text("Saved picture unavailable").font(.caption).foregroundStyle(.secondary)
                 }
-            } label: {
-                Image(systemName: "ellipsis").frame(width: 28, height: 28)
-            }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .help("Conversation options").accessibilityLabel("Conversation options")
+            }
         }
+        if history != nil || !samples.isEmpty {
+            Text("Some messages or pictures may be missing.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func formatted(_ date: Date?, timeOnly: Bool = false) -> String {
+        date?.formatted(date: timeOnly ? .omitted : .abbreviated, time: .shortened) ?? "Time unavailable"
+    }
+
+    private var headerActions: some View {
+        Menu {
+            if model.record != nil || model.history != nil {
+                Button("Refresh saved conversation") {
+                    Task { if model.showHistory { await model.readHistory() } else { await model.read() } }
+                }
+            }
+            if model.history != nil && model.record != nil {
+                Toggle("Show saved messages", isOn: $model.showHistory)
+            }
+            if model.record == nil && model.hasSavedContent {
+                Button("Read phone preview…") { Task { await model.read() } }
+            }
+            Button("Read saved messages from phone…") { Task { await model.readHistory() } }
+            Button("Phone connection…") { connection = CompanionConnectionModel() }
+            Button("Manage picture library…", action: onImages)
+            if !model.pictures.isEmpty {
+                Menu("Saved pictures") {
+                    ForEach(Array(model.pictures.enumerated()), id: \.element.id) { index, picture in
+                        Menu("Picture \(index + 1) · \(formatted(picture.importedAt))") {
+                            Button("Unlink from conversation") {
+                                Task { await model.changePicture(picture, removeMacCopy: false) }
+                            }
+                            Button("Remove Mac copy…", role: .destructive) { pictureToRemove = picture }
+                        }
+                    }
+                }
+            }
+            if model.history != nil {
+                Button("Remove saved messages from this Mac", role: .destructive) { model.unlinkHistory() }
+            }
+            if model.record != nil {
+                Divider()
+                Toggle("Refresh while open", isOn: $model.automatic)
+                Toggle("Show every saved preview", isOn: $model.showOriginalCaptures)
+                Button("Unlink source and delete cached previews", role: .destructive) { model.unlink() }
+            }
+        } label: {
+            Image(systemName: "ellipsis").frame(width: 28, height: 28)
+        }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .disabled(model.busy || confirmingSource)
+            .help("Conversation options").accessibilityLabel("Conversation options")
     }
 }
 
