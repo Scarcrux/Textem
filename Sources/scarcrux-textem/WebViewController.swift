@@ -125,6 +125,10 @@ final class WebViewController: NSViewController {
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: true
         ))
+        if DemoMode.isEnabled {
+            controller.addUserScript(WKUserScript(source: DemoMode.userScript,
+                                                  injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
 
         // Disable Intelligent Tracking Prevention on the data store. WKWebView
         // partitions/blocks cross-site cookies by default, which severs
@@ -251,6 +255,9 @@ final class WebViewController: NSViewController {
         logSnapshotDiagnostics(rows: rows.count, unread: count,
                                changed: activityTracker.changedContentCount,
                                events: events.count, domRows: domRows)
+        // Demo mode rewrites names and previews on screen; those edits must not
+        // read as new messages or codes.
+        if DemoMode.isEnabled { onUnreadCountChanged?(count); bridgeReady = true; return }
         if let latest = ReceivedCodes.detect(in: activityTracker.changedRows).rows.last,
            let code = CodeDetector.detect(latest.row.snippet)?.code {
             lastReceivedCode = (code, Date())
@@ -739,6 +746,19 @@ final class WebViewController: NSViewController {
             if let detection = CodeDetector.detect(text) { return detection.code }
         }
         return nil
+    }
+
+    // View → Save Demo Screenshot (only in demo mode).
+    @objc func saveDemoScreenshot(_ sender: Any?) {
+        guard DemoMode.isEnabled else { return }
+        webView.takeSnapshot(with: nil) { image, _ in
+            Task { @MainActor in
+                guard let image, let tiff = image.tiffRepresentation,
+                      let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]),
+                      let url = try? DemoMode.save(png: png) else { NSSound.beep(); return }
+                NotificationManager.shared.notifyInfo("Saved demo screenshot: \(url.lastPathComponent)")
+            }
+        }
     }
 
     private func finishCopy(_ code: String?) {

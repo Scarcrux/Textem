@@ -59,6 +59,10 @@ enum MainMenu {
         command(view, "Zoom In", #selector(WebViewController.zoomIn(_:)), "+")
         command(view, "Zoom Out", #selector(WebViewController.zoomOut(_:)), "-")
         command(view, "Actual Size", #selector(WebViewController.zoomReset(_:)), "0")
+        if DemoMode.isEnabled {
+            view.addItem(.separator())
+            command(view, "Save Demo Screenshot", #selector(WebViewController.saveDemoScreenshot(_:)), "d", [.command, .shift])
+        }
 
         // The delegate refreshes this on opening; construction never reads accounts.
         _ = section("Accounts")
