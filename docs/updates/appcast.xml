@@ -1,0 +1,19 @@
+<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Textem</title>
+        <item>
+            <title>1.0b2</title>
+            <pubDate>Thu, 19 Nov 2026 14:57:19 -0500</pubDate>
+            <link>https://textem.scarcrux.com/</link>
+            <sparkle:version>2026111901</sparkle:version>
+            <sparkle:shortVersionString>1.0b2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://textem.scarcrux.com/updates/Textem-2026111901.zip" length="3067732" type="application/octet-stream" sparkle:edSignature="vWhw1DFPd/edXz/Y0jgZ45ZHbvCiLzcWYtqi/dZ34tBBSwOjleK1O8MYPKc2gVUARC9VYE0SDUnpesBBoEeBDA=="></enclosure>
+        </item>
+    </channel>
+</rss><!-- sparkle-signatures:
+edSignature: ZvymD+9bx2UWF60pGcrEWH9i2vWntAqSvt/HaOGB1AK2W+hJAmbmRgX0e+asFLB48NE2kIyqvLWytwL485FvAg==
+length: 1079
+-->
