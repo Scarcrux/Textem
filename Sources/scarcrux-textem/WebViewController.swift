@@ -68,6 +68,10 @@ final class WebViewController: NSViewController {
     private var lastDiagnosticRows: Int?
     private var lastDiagnosticDOMRows: Int?
     private var bridgeReady = false
+    // Blank-inbox recovery (see PageStallPolicy).
+    private var renderedRowsSinceLoad = 0
+    private var stallReloads = 0
+    private var stallCheck: Task<Void, Never>?
     // Find-in-page overlay (⌘F).
     private var findBar: FindBar!
     // Load-failure recovery. WKWebView paints a FAILED navigation as a blank
@@ -248,6 +252,9 @@ final class WebViewController: NSViewController {
     }
 
     private func handleSnapshot(_ count: Int, rows: [ConversationSnapshot], domRows: Int) {
+        renderedRowsSinceLoad = max(renderedRowsSinceLoad, domRows)
+        // Conversations on screen mean the page works: clear any stall notice.
+        if domRows > 0, !errorView.isHidden, loadRetryTask == nil { errorView.isHidden = true }
         NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
         let events = activityTracker.update(rows)
         logSnapshotDiagnostics(rows: rows.count, unread: count,
@@ -1074,6 +1081,37 @@ extension WebViewController: WKNavigationDelegate {
         errorView.isHidden = true
         applyZoom()
         applyPrivacyCSS()
+        scheduleStallCheck()
+    }
+
+    private func scheduleStallCheck() {
+        stallCheck?.cancel()
+        renderedRowsSinceLoad = 0
+        stallCheck = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(PageStallPolicy.grace))
+            guard let self, !Task.isCancelled, !OfflineMode.enabled else { return }
+            let probe = (try? await self.webView.evaluateJavaScript(
+                "JSON.stringify({path: location.pathname, signIn: !!document.querySelector('input[type=email], input[type=password], #identifierId'), body: (document.body && document.body.innerText || '').length, ready: document.readyState})")
+                as? String) ?? "{}"
+            let info = (try? JSONSerialization.jsonObject(with: Data(probe.utf8)) as? [String: Any]) ?? [:]
+            let path = info["path"] as? String ?? self.webView.url?.path ?? ""
+            let action = PageStallPolicy.decide(path: path, renderedRows: self.renderedRowsSinceLoad,
+                                                signInVisible: info["signIn"] as? Bool ?? false,
+                                                reloadsUsed: self.stallReloads)
+            guard action != .healthy else { return }
+            // Counts and states only: no URL, text or titles.
+            NotificationDiagnostics.record(action == .reload ? "page_stalled_reload" : "page_stalled_error", values: [
+                "bodyChars": min(info["body"] as? Int ?? -1, 100_000),
+                "readyComplete": (info["ready"] as? String) == "complete" ? 1 : 0,
+                "reloads": self.stallReloads,
+            ])
+            if action == .reload {
+                self.stallReloads += 1
+                self.webView.reloadFromOrigin()
+            } else {
+                self.errorView.present(message: "Google Messages loaded but your conversations never appeared. Try Again reloads it; quitting and reopening Textem also works.", isRetrying: false)
+            }
+        }
     }
 
     func webView(_ webView: WKWebView,
