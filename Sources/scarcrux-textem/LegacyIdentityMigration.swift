@@ -14,7 +14,9 @@ import Foundation
 // permission, the Textem Codes AutoFill enablement, launch at login, and
 // Keychain items such as a paired phone companion.
 enum LegacyIdentityMigration {
-    static let legacyIdentifier = "com.scarcrux.textem"  // the original identifier, needed to find old data
+    // The original identifier, needed to find old data. Assembled from parts so
+    // a whole-history rename of the identifier cannot rewrite it too.
+    static let legacyIdentifier = ["ai", "scarpelli", "textem"].joined(separator: ".")
     static let currentIdentifier = "com.scarcrux.textem"
     static let doneKey = "migratedFromLegacyIdentifier"
 
