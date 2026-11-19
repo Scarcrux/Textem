@@ -24,7 +24,7 @@ final class DemoModeWebKitTests: XCTestCase {
           <span data-e2e-conversation-name>\(realNames[1])</span>
           <span data-e2e-conversation-snippet>\(realText[1])</span></a></mws-conversation-list-item>
         <main><mws-text-message-part><div class="bubble outgoing"><span>\(realText[1])</span><span> </span><span>(edited)</span></div></mws-text-message-part>
-          <div class="details">Call \(realNames[1]) at +1 (415) 555-2671 or marcus.o@gmail.com</div></main>
+          <div class="details">Call \(realNames[1]) at +1 (415) 555-2671 or marcus.o@example.net</div></main>
         </body></html>
         """
     }
@@ -58,7 +58,7 @@ final class DemoModeWebKitTests: XCTestCase {
     func testDemoHidesNamesTextNumbersEmailsAndImagesIncludingLaterContent() async throws {
         let web = try await page(demo: true)
         var text = try await visibleText(web)
-        for value in realNames + realText + ["415", "2671", "4471", "marcus.o@gmail.com"] {
+        for value in realNames + realText + ["415", "2671", "4471", "marcus.o@example.net"] {
             XCTAssertFalse(text.contains(value), "leaked: \(value)")
         }
         XCTAssertTrue(text.contains("Alex Rivera") && text.contains("Jordan Lee"))
