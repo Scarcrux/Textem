@@ -1,6 +1,9 @@
 import AppKit
 
-// Textem — native AppKit shell for Google Messages for web.
+// Textem — a macOS wrapper for Google Messages for web.
+
+// Before anything touches WebKit or preferences.
+LegacyIdentityMigration.runIfNeeded()
 
 let app = NSApplication.shared
 let delegate = AppDelegate()
