@@ -97,19 +97,42 @@ do {
         print("current_mac_in_both_signed_target_profiles=PASS device_identifiers_not_printed=true")
         exit(0)
     }
-    try require(args.count == 4, "usage: verify candidate.app installed.app expected-build")
+    let migration = args.count == 5 && args[4] == "--migrate-identifier"
+    try require(args.count == 4 || migration, "usage: verify candidate.app installed.app expected-build [--migrate-identifier]")
     let app = URL(fileURLWithPath: args[1]), installed = URL(fileURLWithPath: args[2])
     let expectedBuild = args[3]
     guard let version = Int(expectedBuild) else { throw Refused.check("invalid expected build") }
     _ = try run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path])
+    let oldInfo = try object(Data(contentsOf: installed.appendingPathComponent("Contents/Info.plist")))
+    try require(version > (Int(oldInfo["CFBundleVersion"] as? String ?? "") ?? Int.max), "build did not advance installed version")
+    let currentID = "com.scarcrux.textem"
+    let expectedRequirement: SecRequirement
     let originalRequirement = try requirement(installed)
-    try require(try requirementText(requirement(app)) == requirementText(originalRequirement), "installed designated requirement changed")
+    if migration {
+        let legacyID = ["ai", "scarpelli", "textem"].joined(separator: ".")
+        try require(oldInfo["CFBundleIdentifier"] as? String == legacyID, "migration requires the original Textem identifier")
+        let originalSigning = try signing(installed)
+        try require(originalSigning[kSecCodeInfoTeamIdentifier as String] as? String == DeveloperIDPolicy.team,
+                    "migration reference team mismatch")
+        let original = try requirementText(originalRequirement)
+        let prefix = "identifier \"\(legacyID)\""
+        try require(original.hasPrefix(prefix + " and "), "migration reference requirement has an unexpected form")
+        let expected = "identifier \"\(currentID)\"" + original.dropFirst(prefix.count)
+        var compiled: SecRequirement?
+        try require(SecRequirementCreateWithString(expected as CFString, [], &compiled) == errSecSuccess,
+                    "migration requirement could not be compiled")
+        guard let compiled else { throw Refused.check("migration requirement absent") }
+        expectedRequirement = compiled
+    } else {
+        try require(oldInfo["CFBundleIdentifier"] as? String == currentID, "reference identifier changed without migration flag")
+        expectedRequirement = originalRequirement
+    }
+    try require(try requirementText(requirement(app)) == requirementText(expectedRequirement), "candidate designated requirement differs from expected")
     var candidateCode: SecStaticCode?
     try require(SecStaticCodeCreateWithPath(app as CFURL, [], &candidateCode) == errSecSuccess, "requirement target")
     guard let candidateCode else { throw Refused.check("requirement target absent") }
-    try require(SecStaticCodeCheckValidity(candidateCode, SecCSFlags(rawValue: kSecCSStrictValidate), originalRequirement) == errSecSuccess, "installed OS requirement refused candidate")
-    let oldInfo = try object(Data(contentsOf: installed.appendingPathComponent("Contents/Info.plist")))
-    try require(version > (Int(oldInfo["CFBundleVersion"] as? String ?? "") ?? Int.max), "build did not advance installed version")
+    try require(SecStaticCodeCheckValidity(candidateCode, SecCSFlags(rawValue: kSecCSStrictValidate), expectedRequirement) == errSecSuccess,
+                "operating system refused the expected designated requirement")
     let bundles = [app, app.appendingPathComponent("Contents/PlugIns/TextemCodeProvider.appex")]
     for (index, bundle) in bundles.enumerated() {
         let id = index == 0 ? "com.scarcrux.textem" : "com.scarcrux.textem.codeprovider"
@@ -144,7 +167,7 @@ do {
                                              signer: SecCertificateCopyData(leaf) as Data, now: Date()), "Developer ID certificate/profile/entitlement policy refused")
         print("target=\(index == 0 ? "host" : "provider") signature_profile_capabilities_arches_version=PASS")
     }
-    print("installed_designated_requirement=UNCHANGED deployment_candidate=PASS notarization_not_assessed=true")
+    print("installed_designated_requirement=\(migration ? "IDENTIFIER_MIGRATED" : "UNCHANGED") deployment_candidate=PASS notarization_not_assessed=true")
 } catch Refused.check(let reason) {
     print("candidate=REFUSED reason=\(reason)"); exit(1)
 } catch { print("candidate=REFUSED reason=artifact_read_failed"); exit(1) }
