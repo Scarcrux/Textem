@@ -32,8 +32,13 @@ enum LegacyIdentityMigration {
                             defaults: UserDefaults = .standard,
                             legacyPreferences: () -> [String: Any] = Self.legacyPreferences) -> Report {
         var report = Report()
-        guard bundleIdentifier == currentIdentifier, !defaults.bool(forKey: doneKey) else {
+        guard bundleIdentifier == currentIdentifier else {
             report.skipped = true; return report
+        }
+        if defaults.bool(forKey: doneKey) {
+            backfillCopiedData(in: library, defaults: defaults)
+            report.skipped = true
+            return report
         }
         // Preferences: copy each old key the new app doesn't already have.
         for (key, value) in legacyPreferences() where defaults.object(forKey: key) == nil {
@@ -55,12 +60,21 @@ enum LegacyIdentityMigration {
                 NSLog("[Textem] legacy identity migration could not copy %@: %@", relative, error.localizedDescription)
             }
         }
-        if report.preferences > 0 || !report.copied.isEmpty {
-            defaults.set(true, forKey: MigrationFollowUp.copiedDataKey)
-        }
+        defaults.set(report.preferences > 0 || !report.copied.isEmpty, forKey: MigrationFollowUp.copiedDataKey)
         defaults.set(true, forKey: doneKey)
         NSLog("[Textem] legacy identity migration: %d preferences, %d data folders", report.preferences, report.copied.count)
         return report
+    }
+
+    // Beta 2 only recorded that the check ran. If that record exists, look
+    // for a legacy install once without reading or moving its data.
+    private static func backfillCopiedData(in library: URL, defaults: UserDefaults) {
+        guard defaults.object(forKey: MigrationFollowUp.copiedDataKey) == nil else { return }
+        let evidence = ["WebKit/\(legacyIdentifier)", "Preferences/\(legacyIdentifier).plist"]
+        let hasLegacyData = evidence.contains {
+            FileManager.default.fileExists(atPath: library.appendingPathComponent($0).path)
+        }
+        defaults.set(hasLegacyData, forKey: MigrationFollowUp.copiedDataKey)
     }
 
     static func legacyPreferences() -> [String: Any] {

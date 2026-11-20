@@ -54,6 +54,41 @@ struct LegacyIdentityMigrationTests {
         #expect(!MigrationFollowUp.isAvailable(in: defaults))
     }
 
+    @Test(arguments: ["WebKit", "Preferences"])
+    func betaTwoMigrationBackfillsFromLegacyInstall(_ category: String) throws {
+        let (library, defaults, suite) = try sandbox()
+        defer { try? FileManager.default.removeItem(at: library); defaults.removePersistentDomain(forName: suite) }
+        let folder = library.appendingPathComponent(category)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        if category == "WebKit" {
+            try FileManager.default.createDirectory(at: folder.appendingPathComponent(old), withIntermediateDirectories: false)
+        } else {
+            try Data().write(to: folder.appendingPathComponent(old + ".plist"))
+        }
+        defaults.set(true, forKey: LegacyIdentityMigration.doneKey)
+        let report = LegacyIdentityMigration.runIfNeeded(library: library, bundleIdentifier: new, defaults: defaults,
+                                                         legacyPreferences: { ["untouched": true] })
+        #expect(report.skipped)
+        #expect(defaults.object(forKey: "untouched") == nil)
+        #expect(MigrationFollowUp.shouldPresent(in: defaults))
+        MigrationFollowUp.markOffered(in: defaults)
+        _ = LegacyIdentityMigration.runIfNeeded(library: library, bundleIdentifier: new, defaults: defaults)
+        #expect(!MigrationFollowUp.shouldPresent(in: defaults))
+    }
+
+    @Test func betaTwoFreshInstallBackfillStaysOff() throws {
+        let (library, defaults, suite) = try sandbox()
+        defer { try? FileManager.default.removeItem(at: library); defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: LegacyIdentityMigration.doneKey)
+        _ = LegacyIdentityMigration.runIfNeeded(library: library, bundleIdentifier: new, defaults: defaults)
+        #expect(defaults.object(forKey: MigrationFollowUp.copiedDataKey) as? Bool == false)
+        #expect(!MigrationFollowUp.isAvailable(in: defaults))
+        let legacy = library.appendingPathComponent("WebKit/\(old)")
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        _ = LegacyIdentityMigration.runIfNeeded(library: library, bundleIdentifier: new, defaults: defaults)
+        #expect(!MigrationFollowUp.shouldPresent(in: defaults), "A completed backfill should not run again")
+    }
+
     @Test func neverOverwritesNewDataAndNeverRunsUnderTheOldIdentifier() throws {
         let (library, defaults, suite) = try sandbox()
         defer { try? FileManager.default.removeItem(at: library); defaults.removePersistentDomain(forName: suite) }
