@@ -76,6 +76,11 @@ final class DesignSnapshotTests: XCTestCase {
 
         for (suffix, name) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let appearance = try XCTUnwrap(NSAppearance(named: name))
+            try render(NSHostingView(rootView: MigrationFollowUpView(
+                notifications: suffix == "light" ? .notDetermined : .denied,
+                showAutoFill: true, autoFillEnabled: false, launchAtLogin: .constant(false),
+                showPhoneTools: true, onNotifications: {}, onAutoFill: {}, onDone: {})),
+                "after-updating-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: PhoneConversationView(model: overlap, onClose: {}, onImages: {}).frame(width: 760, height: 900)),
                        "phone-overlap-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: PhoneConversationView(model: overlap, onClose: {}, onImages: {}).frame(width: 430, height: 720)),

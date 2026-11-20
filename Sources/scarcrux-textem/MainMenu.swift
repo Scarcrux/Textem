@@ -81,6 +81,9 @@ enum MainMenu {
 
         let help = section("Help")
         command(help, "Sign-in Help…", #selector(AppDelegate.showSignInHelp(_:)))
+        if MigrationFollowUp.isAvailable() {
+            command(help, "After Updating…", #selector(AppDelegate.showMigrationFollowUp(_:)))
+        }
         help.addItem(.separator())
         let diagnostics = NSMenuItem(title: "Diagnostics", action: nil, keyEquivalent: "")
         diagnostics.submenu = NSMenu(title: "Diagnostics")

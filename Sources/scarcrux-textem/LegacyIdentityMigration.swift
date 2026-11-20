@@ -55,6 +55,9 @@ enum LegacyIdentityMigration {
                 NSLog("[Textem] legacy identity migration could not copy %@: %@", relative, error.localizedDescription)
             }
         }
+        if report.preferences > 0 || !report.copied.isEmpty {
+            defaults.set(true, forKey: MigrationFollowUp.copiedDataKey)
+        }
         defaults.set(true, forKey: doneKey)
         NSLog("[Textem] legacy identity migration: %d preferences, %d data folders", report.preferences, report.copied.count)
         return report

@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
@@ -6,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var statusItemController: StatusItemController?
     private var settingsWindowController: SettingsWindowController?
     private var onboardingWindowController: OnboardingWindowController?
+    private var migrationSheet: NSWindow?
+    private var launchFinished = false
     private var globalHotkey: GlobalHotkey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -69,7 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                     text, accountID: accountID, conversationID: conversationID)
             }
         )
-        NotificationManager.shared.requestAuthorization()
+        // Let a migrated user choose in the sheet before macOS asks again.
+        if !MigrationFollowUp.isAvailable() { NotificationManager.shared.requestAuthorization() }
         if ProcessInfo.processInfo.arguments.contains("--check-phone-connection") {
             Task { await runPhoneConnectionCheck(present: false) }
         }
@@ -98,9 +102,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             try? OfflineDiagnostics.save(OfflineDiagnostics.collect(controller))
         }
         // First-run: steer the user away from the passkey dead-end.
+        launchFinished = true
         if !Preferences.hasSeenOnboarding {
             showOnboarding()
+        } else {
+            offerMigrationFollowUp()
         }
+    }
+
+    @objc func showMigrationFollowUp(_ sender: Any?) {
+        guard MigrationFollowUp.isAvailable() else { return }
+        showMainWindow()
+        presentMigrationFollowUp()
+    }
+
+    private func offerMigrationFollowUp() {
+        guard launchFinished, Preferences.hasSeenOnboarding, MigrationFollowUp.shouldPresent() else { return }
+        presentMigrationFollowUp()
+    }
+
+    private func presentMigrationFollowUp() {
+        guard migrationSheet == nil, let parent = windowController?.window,
+              parent.isVisible, parent.attachedSheet == nil else { return }
+        let hosting = NSHostingController(rootView: MigrationFollowUpSheet(onDone: { [weak self, weak parent] in
+            guard let sheet = self?.migrationSheet else { return }
+            parent?.endSheet(sheet)
+        }, showAutoFill: NativeCodeRuntime.available))
+        let sheet = NSWindow(contentViewController: hosting)
+        sheet.title = "After Updating Textem"
+        migrationSheet = sheet
+        parent.beginSheet(sheet) { [weak self] _ in self?.migrationSheet = nil }
+        MigrationFollowUp.markOffered()
     }
 
     @objc func showSignInHelp(_ sender: Any?) {
@@ -121,8 +153,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func showOnboarding() {
-        let controller = OnboardingWindowController(onDone: {
+        let controller = OnboardingWindowController(onDone: { [weak self] in
             Preferences.hasSeenOnboarding = true
+            self?.offerMigrationFollowUp()
         })
         onboardingWindowController = controller
         controller.showWindow(nil)
@@ -339,6 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        offerMigrationFollowUp()
     }
 
     // Keep running in the background when the window closes, unless the user

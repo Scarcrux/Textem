@@ -25,6 +25,7 @@ struct LegacyIdentityMigrationTests {
         let report = LegacyIdentityMigration.runIfNeeded(library: library, bundleIdentifier: new, defaults: defaults,
             legacyPreferences: { ["blurMessages": true, "hideAvatars": false, "zoom": 1.2] })
         #expect(report.preferences == 2)
+        #expect(MigrationFollowUp.shouldPresent(in: defaults))
         #expect(defaults.bool(forKey: "blurMessages") && defaults.bool(forKey: "hideAvatars") && defaults.double(forKey: "zoom") == 1.2)
         #expect(report.copied == ["WebKit/\(old)", "HTTPStorages/\(old).binarycookies"])
         let copied = library.appendingPathComponent("WebKit/\(new)/WebsiteData/Default/cookies.db")
@@ -35,6 +36,22 @@ struct LegacyIdentityMigrationTests {
         let again = LegacyIdentityMigration.runIfNeeded(library: library, bundleIdentifier: new, defaults: defaults,
             legacyPreferences: { ["blurMessages": false] })
         #expect(again.skipped && defaults.bool(forKey: "blurMessages"))
+        #expect(MigrationFollowUp.shouldPresent(in: defaults), "An unopened app window may leave the sheet pending")
+        MigrationFollowUp.markOffered(in: defaults)
+        let relaunched = try #require(UserDefaults(suiteName: suite))
+        #expect(!MigrationFollowUp.shouldPresent(in: relaunched))
+        #expect(MigrationFollowUp.isAvailable(in: relaunched), "Help remains available after the first offer")
+    }
+
+    @Test func emptyMigrationDoesNotOfferFollowUp() throws {
+        let (library, defaults, suite) = try sandbox()
+        defer { try? FileManager.default.removeItem(at: library); defaults.removePersistentDomain(forName: suite) }
+        let report = LegacyIdentityMigration.runIfNeeded(library: library, bundleIdentifier: new, defaults: defaults,
+                                                         legacyPreferences: { [:] })
+        #expect(report.preferences == 0 && report.copied.isEmpty)
+        #expect(defaults.bool(forKey: LegacyIdentityMigration.doneKey))
+        #expect(!MigrationFollowUp.shouldPresent(in: defaults))
+        #expect(!MigrationFollowUp.isAvailable(in: defaults))
     }
 
     @Test func neverOverwritesNewDataAndNeverRunsUnderTheOldIdentifier() throws {
