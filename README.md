@@ -169,8 +169,8 @@ make run      # build, wrap into Textem.app, and launch it
 
 Developer documentation — building, releasing, updates, how Textem works, and
 the experimental Android companion, phone-recovery and AutoFill research — is
-in [DEVELOPING.md](DEVELOPING.md). The roadmap lives in
-[`commandem.toml`](commandem.toml).
+in [DEVELOPING.md](DEVELOPING.md). Bug reports and ideas are welcome in
+[GitHub Issues](https://github.com/Scarcrux/Textem/issues).
 
 ## License
 
