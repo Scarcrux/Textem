@@ -30,6 +30,9 @@ final class DesignSnapshotTests: XCTestCase {
             throw XCTSkip("Set TEXTEM_DESIGN_SNAPSHOT_DIR to render design snapshots.")
         }
         let output = URL(fileURLWithPath: path, isDirectory: true)
+        // The test runner has no app icon; views that show NSApp's icon (the
+        // sign-in guide) would otherwise render a generic folder.
+        if let icon = NSImage(contentsOfFile: "Resources/AppIcon.icns") { NSApplication.shared.applicationIconImage = icon }
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("textem-design-\(UUID().uuidString)", isDirectory: true)
