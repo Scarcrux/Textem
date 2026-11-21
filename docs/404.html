@@ -1,5 +1,19 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Page not found · Textem</title><link rel="icon" href="/favicon.png" type="image/png">
-<style>:root{color-scheme:light dark}body{font:17px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;text-align:center;padding:24px}img{width:88px;height:88px}h1{margin:16px 0 6px;font-size:28px}p{color:#5b6472;margin:0 0 18px}@media(prefers-color-scheme:dark){p{color:#98a2b3}}a{color:#2b7cff}</style>
-</head><body><main><img src="/media/app-icon.png" alt=""><h1>Page not found</h1><p>That page doesn’t exist.</p><a href="/">Go to the Textem home page</a> · <a href="/docs/">Read the guides</a></main></body></html>
+<title>Page not found · Textem</title>
+<link rel="icon" href="/favicon.png" type="image/png"><link rel="stylesheet" href="/topbar.css">
+<style>
+:root{color-scheme:light dark}
+body{margin:0;background:#f6f8fb;color:#14181f;font:17px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.notfound{min-height:calc(100vh - 60px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:6px}
+.notfound img{width:88px;height:88px}
+.notfound h1{margin:14px 0 2px;font-size:28px}
+.notfound p{color:#5b6472;margin:0 0 12px}
+.notfound a{color:#1f6fe5}
+@media(prefers-color-scheme:dark){body{background:#0f1319;color:#e6eaf0}.notfound p{color:#98a2b3}.notfound a{color:#66b2ff}}
+</style>
+</head><body>
+<header class="site-topbar"><a class="tb-brand" href="/"><img src="/media/app-icon.png" width="28" height="28" alt="">Textem</a><nav aria-label="Site"><a href="/">Overview</a><a href="/docs/">Documentation</a><a href="https://github.com/Scarcrux/Textem" class="tb-github">GitHub</a><a class="tb-download" href="https://github.com/Scarcrux/Textem/releases/latest/download/Textem.dmg">Download</a></nav></header>
+<main class="notfound"><img src="/media/app-icon.png" alt=""><h1>Page not found</h1><p>That page doesn’t exist.</p>
+<p><a href="/">Go to the Textem home page</a> · <a href="/docs/">Documentation</a></p></main>
+</body></html>

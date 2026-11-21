@@ -15,7 +15,7 @@ bundled Chromium.
 > Unofficial. Not affiliated with, endorsed by, or sponsored by Google.
 > "Google Messages" is a trademark of Google LLC.
 
-**Guides:** step-by-step help is at [textem.scarcrux.com/docs](https://textem.scarcrux.com/docs/).
+**Documentation:** step-by-step help is at [textem.scarcrux.com/docs](https://textem.scarcrux.com/docs/).
 
 **Status: 1.0 public beta (1.0b3).** Download the signed, notarized app from
 [GitHub Releases](https://github.com/Scarcrux/Textem/releases/latest). Textem

@@ -1,0 +1,39 @@
+/* Site-wide top navigation, shared by the home page, the documentation and
+   the 404 page so they can't drift apart. Self-contained colours: pages
+   include it alongside their own stylesheet. */
+.site-topbar {
+  --tb-bg: rgba(246, 248, 251, .88); --tb-line: #e3e8ef; --tb-text: #14181f;
+  --tb-muted: #5b6472; --tb-accent: #1f6fe5; --tb-button-text: #ffffff;
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: .7rem max(1.25rem, calc((100vw - 1260px) / 2));
+  background: var(--tb-bg); border-bottom: 1px solid var(--tb-line);
+  -webkit-backdrop-filter: saturate(160%) blur(12px); backdrop-filter: saturate(160%) blur(12px);
+  font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  .site-topbar {
+    --tb-bg: rgba(15, 19, 25, .88); --tb-line: #262d38; --tb-text: #e6eaf0;
+    --tb-muted: #98a2b3; --tb-accent: #66b2ff; --tb-button-text: #0f1319;
+  }
+}
+.site-topbar .tb-brand {
+  display: flex; align-items: center; gap: .55rem;
+  color: var(--tb-text); font-weight: 700; font-size: 1.1rem; text-decoration: none;
+}
+.site-topbar .tb-brand img { width: 28px; height: 28px; display: block; }
+.site-topbar nav { display: flex; align-items: center; gap: 1.35rem; }
+.site-topbar nav a { color: var(--tb-muted); text-decoration: none; font-weight: 550; }
+.site-topbar nav a:hover { color: var(--tb-text); }
+.site-topbar nav a[aria-current] { color: var(--tb-text); font-weight: 700; }
+.site-topbar nav a.tb-download {
+  color: var(--tb-button-text); background: var(--tb-accent);
+  padding: .4rem .9rem; border-radius: 999px; font-weight: 650;
+}
+.site-topbar nav a.tb-download:hover { filter: brightness(1.08); color: var(--tb-button-text); }
+.site-topbar a:focus-visible { outline: 3px solid var(--tb-accent); outline-offset: 3px; border-radius: 6px; }
+@media (max-width: 560px) {
+  .site-topbar { padding: .6rem 1rem; }
+  .site-topbar nav { gap: .9rem; font-size: 14px; }
+  .site-topbar .tb-github { display: none; }
+}

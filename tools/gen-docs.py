@@ -187,7 +187,7 @@ def slug_id(title):
     return re.sub(r"[^a-z0-9]+", "-", plain.lower()).strip("-")
 
 def nav(current):
-    parts = ['<a class="all-guides" href="/docs/">All guides</a>']
+    parts = ['<a class="all-guides" href="/docs/">Documentation home</a>']
     for _, name, slugs in GROUPS:
         items = "".join(
             f'<li><a href="/docs/{s}/"{" aria-current=\"page\"" if s == current else ""}>{html.escape(PAGES[s]["title"])}</a></li>'
@@ -209,16 +209,16 @@ def head(title, description, path):
 <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.png" type="image/png"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="stylesheet" href="/docs/docs.css">
+<link rel="stylesheet" href="/topbar.css"><link rel="stylesheet" href="/docs/docs.css">
 </head><body>
 <a class="skip-link" href="#main-content">Skip to content</a>
-<header class="topbar"><a class="brand" href="/"><img src="/media/app-icon.png" width="28" height="28" alt="">Textem</a>
-<nav aria-label="Website"><a href="/">Overview</a><a href="/docs/" aria-current="true">Guides</a><a href="https://github.com/Scarcrux/Textem/releases/latest/download/Textem.dmg">Download</a></nav></header>
+<header class="site-topbar"><a class="tb-brand" href="/"><img src="/media/app-icon.png" width="28" height="28" alt="">Textem</a>
+<nav aria-label="Site"><a href="/">Overview</a><a href="/docs/" aria-current="page">Documentation</a><a class="tb-github" href="https://github.com/Scarcrux/Textem">GitHub</a><a class="tb-download" href="https://github.com/Scarcrux/Textem/releases/latest/download/Textem.dmg">Download</a></nav></header>
 """
 
-FOOT = f"""<footer><p>Textem user guides · Updated {UPDATED}</p>
+FOOT = f"""<footer><p>Textem documentation · Updated {UPDATED}</p>
 <p>Unofficial. Not affiliated with, endorsed by, or sponsored by Google. “Google Messages” is a trademark of Google LLC.</p>
-<a href="/docs/">All guides</a> · <a href="/">Back to Textem</a> · <a href="https://github.com/Scarcrux/Textem">GitHub</a> · <a href="https://github.com/Scarcrux/Textem/issues">Report a problem</a> · © 2026 Scarcrux LLC</footer>"""
+<a href="/docs/">Documentation</a> · <a href="/">Back to Textem</a> · <a href="https://github.com/Scarcrux/Textem">GitHub</a> · <a href="https://github.com/Scarcrux/Textem/issues">Report a problem</a> · © 2026 <a href="https://scarcrux.com">Scarcrux LLC</a></footer>"""
 
 def page(slug):
     p = PAGES[slug]
@@ -226,10 +226,10 @@ def page(slug):
     toc = "".join(f'<li><a href="#{slug_id(h)}">{h}</a></li>' for h, _ in p["sections"])
     body = "".join(f'<section id="{slug_id(h)}"><h2>{h}</h2>{c.strip()}</section>' for h, c in p["sections"])
     related = "".join(f'<li><a href="/docs/{r}/">{html.escape(PAGES[r]["title"])}</a></li>' for r in p["related"])
-    return (head(f'{p["title"]} | Textem Guides', p["lead"], f"/docs/{slug}/")
-        + f'<div class="doc-layout"><aside class="sidebar"><nav aria-label="Guide topics">{nav(slug)}</nav></aside>'
-        + f'<div class="reading"><details class="mobile-nav"><summary>Browse all guides</summary><nav aria-label="Guide topics">{nav(slug)}</nav></details>'
-        + f'<main id="main-content" tabindex="-1"><nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/docs/">Guides</a><span>/</span><a href="/docs/#{group[0]}">{group[1]}</a></nav>'
+    return (head(f'{p["title"]} | Textem Documentation', p["lead"], f"/docs/{slug}/")
+        + f'<div class="doc-layout"><aside class="sidebar"><nav aria-label="Documentation topics">{nav(slug)}</nav></aside>'
+        + f'<div class="reading"><details class="mobile-nav"><summary>Browse the documentation</summary><nav aria-label="Documentation topics">{nav(slug)}</nav></details>'
+        + f'<main id="main-content" tabindex="-1"><nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/docs/">Documentation</a><span>/</span><a href="/docs/#{group[0]}">{group[1]}</a></nav>'
         + f'<article><h1>{html.escape(p["title"])}</h1><p class="lead">{html.escape(p["lead"])}</p>'
         + f'<nav class="contents" aria-label="On this page"><h2>On this page</h2><ul>{toc}</ul></nav>{body}'
         + f'<aside class="related"><h2>Related</h2><ul>{related}</ul></aside></article></main>'
@@ -242,9 +242,9 @@ def index():
             f'<a class="guide-card" href="/docs/{s}/"><h3>{html.escape(PAGES[s]["title"])}</h3><p>{html.escape(PAGES[s]["lead"])}</p></a>'
             for s in slugs)
         cards.append(f'<section class="category" id="{gid}"><h2>{name}</h2><div class="guide-grid">{items}</div></section>')
-    return (head("Guides | Textem", "Step-by-step guides for Textem, the free macOS wrapper for Google Messages for web.", "/docs/")
-        + f'<div class="doc-layout"><aside class="sidebar"><nav aria-label="Guide topics">{nav(None)}</nav></aside>'
-        + f'<div class="reading"><details class="mobile-nav"><summary>Browse all guides</summary><nav aria-label="Guide topics">{nav(None)}</nav></details>'
+    return (head("Documentation | Textem", "Step-by-step documentation for Textem, the free macOS wrapper for Google Messages for web.", "/docs/")
+        + f'<div class="doc-layout"><aside class="sidebar"><nav aria-label="Documentation topics">{nav(None)}</nav></aside>'
+        + f'<div class="reading"><details class="mobile-nav"><summary>Browse the documentation</summary><nav aria-label="Documentation topics">{nav(None)}</nav></details>'
         + '<main id="main-content" tabindex="-1"><h1>Learn your way around.</h1>'
         + '<p class="lead">Install Textem, pair it with your phone, and get the most out of notifications, verification codes and shortcuts.</p>'
         + "".join(cards) + "</main>" + FOOT + "</div></div>\n</body></html>\n")
