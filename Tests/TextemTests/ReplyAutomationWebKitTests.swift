@@ -15,8 +15,9 @@ import XCTest
 // one real end-to-end message.
 @MainActor
 final class ReplyAutomationWebKitTests: XCTestCase {
-    private static let fast = ReplyAutomation.Timeouts(
-        selectMilliseconds: 1_500, sendMilliseconds: 800, confirmMilliseconds: 800)
+    // Keep deliberate non-confirmation cases fast. Successful sends get more
+    // time for the native click and WebKit's observation of the composer clear.
+    private static let expectedNoConfirmationMilliseconds = 800
 
     // .invalid (RFC 2606) origin: nothing here can reach Google or any network.
     private static let origin = "https://textem-fixture.invalid"
@@ -31,7 +32,7 @@ final class ReplyAutomationWebKitTests: XCTestCase {
     <button id="unrelated" data-e2e-send-button>Unrelated action</button>
     <script>
     window.__fixture = { navigateOnClick: true, renderComposer: true, acceptText: true,
-                         clearOnSend: true, hijackRouteOnInput: null,
+                         clearOnSend: true, clearDelayMS: 0, hijackRouteOnInput: null,
                          measurementFirst: false, modernSendMarker: false,
                          hiddenSendFirst: false, sendDisabled: false,
                          ambiguousSend: false, omitSend: false, richEditor: false,
@@ -63,7 +64,10 @@ final class ReplyAutomationWebKitTests: XCTestCase {
         __sendTrust.push(event.isTrusted);
         if (__fixture.requireTrustedSend && !event.isTrusted) return;
         __sent.push({ thread: id, route: currentConv(), text: composerText() });
-        if (__fixture.clearOnSend) clearComposer();
+        if (__fixture.clearOnSend) {
+          if (__fixture.clearDelayMS) setTimeout(clearComposer, __fixture.clearDelayMS);
+          else clearComposer();
+        }
       });
       if (__fixture.measurementFirst) {
         var measurement = document.createElement('textarea');
@@ -104,18 +108,29 @@ final class ReplyAutomationWebKitTests: XCTestCase {
         weak var webView: WKWebView?
         var useNativeInput = true
         var nativeDispatched = false
+        var sendRequests = 0
+        var sendTargets = 0
+
+        var diagnosticSummary: String {
+            let result = results.first ?? [:]
+            return ReplyAutomationWebKitTests.diagnosticSummary(result)
+                + " results=\(results.count) sendRequests=\(sendRequests) sendTargets=\(sendTargets)"
+                + " nativeDispatched=\(nativeDispatched)"
+        }
         var nativeRequestID = "req-1"
         var invalidateRouteAtNativeSend = false
         func userContentController(_ userContentController: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
             guard let body = message.body as? [String: Any] else { return }
             if body["type"] as? String == "replySend", let webView {
+                sendRequests += 1
                 let id = ReplyAutomation.jsonString(nativeRequestID)!
                 let invalidate = invalidateRouteAtNativeSend
                     ? "history.pushState({}, '', '/web/conversations/Z');" : ""
                 webView.evaluateJavaScript("\(invalidate) window.__textemReplySendTarget(\(id))") {
                     [weak self, weak webView] result, _ in
                     guard let self, let webView, let target = result as? [String: Any] else { return }
+                    self.sendTargets += 1
                     if self.useNativeInput {
                         self.nativeDispatched = NativeWebClick.send(in: webView, target: target)
                     } else {
@@ -144,6 +159,16 @@ final class ReplyAutomationWebKitTests: XCTestCase {
 
     @MainActor private final class Box { var result: Any?; var error: Error? }
 
+    private static func diagnosticSummary(_ result: [String: Any]) -> String {
+        let reason = result["reason"] as? String ?? (result.isEmpty ? "no-result" : "none")
+        let counters = (result["diagnostics"] as? [String: Any] ?? [:])
+            .compactMap { key, value in (value as? NSNumber).map { (key, $0) } }
+            .sorted { $0.0 < $1.0 }
+            .map { "\($0.0)=\($0.1)" }
+            .joined(separator: ", ")
+        return "reason=\(reason) diagnostics=[\(counters)]"
+    }
+
     private struct Outcome {
         var result: [String: Any]
         var resultCount: Int
@@ -153,6 +178,7 @@ final class ReplyAutomationWebKitTests: XCTestCase {
         var composerValues: [String]
         var sendTrust: [Bool]
         var nativeDispatched: Bool
+        var diagnostics: String
     }
 
     private func evaluate(_ webView: WKWebView, _ source: String) -> Box {
@@ -169,7 +195,8 @@ final class ReplyAutomationWebKitTests: XCTestCase {
                           startOpen: String = "B", fixture: String = "{}",
                           nativeInput: Bool = true, zoom: Double = 1,
                           nativeRequestID: String = "req-1",
-                          invalidateRouteAtNativeSend: Bool = false) throws -> Outcome {
+                          invalidateRouteAtNativeSend: Bool = false,
+                          confirmMilliseconds: Int = 2_500) throws -> Outcome {
         let collector = ResultCollector()
         let config = WKWebViewConfiguration()
         config.userContentController.add(collector, name: WebBridge.handlerName)
@@ -202,13 +229,15 @@ final class ReplyAutomationWebKitTests: XCTestCase {
         let setup = evaluate(webView, "Object.assign(window.__fixture, \(fixture)); true")
         XCTAssertNil(setup.error, "fixture setup failed: \(String(describing: setup.error))")
 
+        let timeouts = ReplyAutomation.Timeouts(
+            selectMilliseconds: 1_500, sendMilliseconds: 800, confirmMilliseconds: confirmMilliseconds)
         let script = try XCTUnwrap(ReplyAutomation.script(
-            requestID: "req-1", text: text, conversationID: target, timeouts: Self.fast))
+            requestID: "req-1", text: text, conversationID: target, timeouts: timeouts))
         let posted = expectation(description: "replyResult")
         collector.expectation = posted
         // Evaluate exactly as WebViewController does: the raw script, no suffix.
         let evaluation = evaluate(webView, script)
-        wait(for: [posted], timeout: 8)
+        XCTAssertEqual(XCTWaiter.wait(for: [posted], timeout: 8), .completed, collector.diagnosticSummary)
 
         // Let any stray second post land before counting (there must be one).
         let settle = expectation(description: "settle"); settle.isInverted = true
@@ -219,8 +248,8 @@ final class ReplyAutomationWebKitTests: XCTestCase {
               values: Array.from(document.querySelectorAll('textarea, [contenteditable="true"]'))
                 .map(function (t) { return 'value' in t ? t.value : (t.textContent || ''); }) })
             """)
-        let json = try XCTUnwrap((state.result as? String)?.data(using: .utf8))
-        let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+        let json = try XCTUnwrap((state.result as? String)?.data(using: .utf8), collector.diagnosticSummary)
+        let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any], collector.diagnosticSummary)
         _ = waiter
         return Outcome(
             result: collector.results.first ?? [:],
@@ -230,155 +259,166 @@ final class ReplyAutomationWebKitTests: XCTestCase {
             clicks: decoded["clicks"] as? [String] ?? [],
             composerValues: decoded["values"] as? [String] ?? [],
             sendTrust: decoded["sendTrust"] as? [Bool] ?? [],
-            nativeDispatched: collector.nativeDispatched)
+            nativeDispatched: collector.nativeDispatched,
+            diagnostics: collector.diagnosticSummary + " fixtureSends=\((decoded["sent"] as? [Any] ?? []).count)")
     }
 
     // MARK: Tests
 
     func testRepliesIntoTheNotifiedThreadNotTheOpenOne() throws {
         let o = try runReply(target: "A", startOpen: "B")
-        XCTAssertTrue(o.nativeDispatched)
-        XCTAssertEqual(o.result["ok"] as? Bool, true)
-        XCTAssertEqual(o.result["requestId"] as? String, "req-1")
-        XCTAssertEqual(o.clicks, ["A"])
-        XCTAssertEqual(o.sent.count, 1)
-        XCTAssertEqual(o.sent.first?["thread"] as? String, "A", "typed into the wrong thread's composer")
-        XCTAssertEqual(o.sent.first?["text"] as? String, "On my way")
-        XCTAssertEqual(o.resultCount, 1)
-        XCTAssertEqual(o.sendTrust, [true])
+        XCTAssertTrue(o.nativeDispatched, o.diagnostics)
+        XCTAssertEqual(o.result["ok"] as? Bool, true, o.diagnostics)
+        XCTAssertEqual(o.result["requestId"] as? String, "req-1", o.diagnostics)
+        XCTAssertEqual(o.clicks, ["A"], o.diagnostics)
+        XCTAssertEqual(o.sent.count, 1, o.diagnostics)
+        XCTAssertEqual(o.sent.first?["thread"] as? String, "A", "typed into the wrong thread's composer; \(o.diagnostics)")
+        XCTAssertEqual(o.sent.first?["text"] as? String, "On my way", o.diagnostics)
+        XCTAssertEqual(o.resultCount, 1, o.diagnostics)
+        XCTAssertEqual(o.sendTrust, [true], o.diagnostics)
     }
 
     func testSyntheticClickIsRejectedByObservedTrustGate() throws {
         let o = try runReply(target: "A", fixture:
             "{measurementFirst:true, modernSendMarker:true, hiddenSendFirst:true, richEditor:true}",
-            nativeInput: false)
-        XCTAssertEqual(o.sendTrust, [false])
-        XCTAssertTrue(o.sent.isEmpty)
-        XCTAssertEqual(o.result["reason"] as? String, "submission-unconfirmed")
+            nativeInput: false, confirmMilliseconds: Self.expectedNoConfirmationMilliseconds)
+        XCTAssertEqual(o.sendTrust, [false], o.diagnostics)
+        XCTAssertTrue(o.sent.isEmpty, o.diagnostics)
+        XCTAssertEqual(o.result["reason"] as? String, "submission-unconfirmed", o.diagnostics)
     }
 
     func testNativeSendUsesViewportCoordinatesAtZoom() throws {
         let o = try runReply(target: "A", fixture:
             "{measurementFirst:true, modernSendMarker:true, hiddenSendFirst:true, richEditor:true}",
             zoom: 1.5)
-        XCTAssertEqual(o.result["ok"] as? Bool, true)
-        XCTAssertEqual(o.sendTrust, [true])
-        XCTAssertEqual(o.sent.first?["thread"] as? String, "A")
+        XCTAssertEqual(o.result["ok"] as? Bool, true, o.diagnostics)
+        XCTAssertEqual(o.sendTrust, [true], o.diagnostics)
+        XCTAssertEqual(o.sent.first?["thread"] as? String, "A", o.diagnostics)
     }
 
     func testNativeSendRejectsInvalidGeometryAndDetachedView() {
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
         XCTAssertFalse(NativeWebClick.send(in: web, target: [
-            "x": 50, "y": 50, "viewportWidth": 100, "viewportHeight": 100]))
+            "x": 50, "y": 50, "viewportWidth": 100, "viewportHeight": 100]), "Detached test view accepted a native click")
         XCTAssertFalse(NativeWebClick.send(in: web, target: [
-            "x": -1, "y": 50, "viewportWidth": 100, "viewportHeight": 100]))
+            "x": -1, "y": 50, "viewportWidth": 100, "viewportHeight": 100]), "Invalid fixture geometry accepted a native click")
     }
 
     func testNativeSendRejectsMismatchedRequestNonce() throws {
-        let o = try runReply(target: "A", nativeRequestID: "other-request")
-        XCTAssertFalse(o.nativeDispatched)
-        XCTAssertTrue(o.sent.isEmpty)
-        XCTAssertTrue(o.sendTrust.isEmpty)
+        let o = try runReply(target: "A", nativeRequestID: "other-request",
+                             confirmMilliseconds: Self.expectedNoConfirmationMilliseconds)
+        XCTAssertFalse(o.nativeDispatched, o.diagnostics)
+        XCTAssertTrue(o.sent.isEmpty, o.diagnostics)
+        XCTAssertTrue(o.sendTrust.isEmpty, o.diagnostics)
     }
 
     func testNativeSendRevalidatesRouteBeforeGettingClickTarget() throws {
-        let o = try runReply(target: "A", invalidateRouteAtNativeSend: true)
-        XCTAssertFalse(o.nativeDispatched)
-        XCTAssertTrue(o.sent.isEmpty)
-        XCTAssertTrue(o.sendTrust.isEmpty)
+        let o = try runReply(target: "A", invalidateRouteAtNativeSend: true,
+                             confirmMilliseconds: Self.expectedNoConfirmationMilliseconds)
+        XCTAssertFalse(o.nativeDispatched, o.diagnostics)
+        XCTAssertTrue(o.sent.isEmpty, o.diagnostics)
+        XCTAssertTrue(o.sendTrust.isEmpty, o.diagnostics)
     }
 
     func testAlreadyOpenThreadIsNotReclicked() throws {
         let o = try runReply(target: "A", startOpen: "A")
-        XCTAssertEqual(o.result["ok"] as? Bool, true)
-        XCTAssertEqual(o.clicks, [])
-        XCTAssertEqual(o.sent.first?["thread"] as? String, "A")
+        XCTAssertEqual(o.result["ok"] as? Bool, true, o.diagnostics)
+        XCTAssertEqual(o.clicks, [], o.diagnostics)
+        XCTAssertEqual(o.sent.first?["thread"] as? String, "A", o.diagnostics)
     }
 
     func testObservedComposerSkipsMeasurementFieldAndHiddenSendButton() throws {
         let o = try runReply(target: "A", fixture:
             "{measurementFirst:true, modernSendMarker:true, hiddenSendFirst:true, richEditor:true}")
-        XCTAssertEqual(o.result["ok"] as? Bool, true)
-        XCTAssertEqual(o.sent.count, 1)
-        XCTAssertEqual(o.sent.first?["thread"] as? String, "A")
-        XCTAssertEqual(o.sent.first?["text"] as? String, "On my way")
-        XCTAssertEqual(o.composerValues, ["", ""], "hidden sizing field must remain untouched")
+        XCTAssertEqual(o.result["ok"] as? Bool, true, o.diagnostics)
+        XCTAssertEqual(o.sent.count, 1, o.diagnostics)
+        XCTAssertEqual(o.sent.first?["thread"] as? String, "A", o.diagnostics)
+        XCTAssertEqual(o.sent.first?["text"] as? String, "On my way", o.diagnostics)
+        XCTAssertEqual(o.composerValues, ["", ""], "hidden sizing field must remain untouched; \(o.diagnostics)")
     }
 
     func testDisabledModernSendDoesNotClickHiddenOrUnrelatedButtons() throws {
         let o = try runReply(target: "A", fixture:
             "{measurementFirst:true, modernSendMarker:true, hiddenSendFirst:true, sendDisabled:true, richEditor:true}")
-        XCTAssertEqual(o.result["reason"] as? String, "send-button-unavailable")
-        XCTAssertTrue(o.sent.isEmpty)
-        XCTAssertEqual(o.composerValues, ["", "On my way"])
+        XCTAssertEqual(o.result["reason"] as? String, "send-button-unavailable", o.diagnostics)
+        XCTAssertTrue(o.sent.isEmpty, o.diagnostics)
+        XCTAssertEqual(o.composerValues, ["", "On my way"], o.diagnostics)
     }
 
     func testMissingScopedSendDoesNotUseUnrelatedPageButton() throws {
         let o = try runReply(target: "A", fixture: "{omitSend:true}")
-        XCTAssertEqual(o.result["reason"] as? String, "send-button-unavailable")
-        XCTAssertTrue(o.sent.isEmpty)
+        XCTAssertEqual(o.result["reason"] as? String, "send-button-unavailable", o.diagnostics)
+        XCTAssertTrue(o.sent.isEmpty, o.diagnostics)
     }
 
     func testAmbiguousVisibleSendButtonsFailClosed() throws {
         let o = try runReply(target: "A", fixture: "{ambiguousSend:true}")
-        XCTAssertEqual(o.result["reason"] as? String, "send-button-ambiguous")
-        XCTAssertTrue(o.sent.isEmpty)
+        XCTAssertEqual(o.result["reason"] as? String, "send-button-ambiguous", o.diagnostics)
+        XCTAssertTrue(o.sent.isEmpty, o.diagnostics)
     }
 
     func testUnknownConversationFailsWithoutTouchingThePage() throws {
         let o = try runReply(target: "Z")
-        XCTAssertEqual(o.result["ok"] as? Bool, false)
-        XCTAssertEqual(o.result["reason"] as? String, "conversation-not-found")
-        XCTAssertEqual(o.clicks, [])
-        XCTAssertTrue(o.sent.isEmpty)
-        XCTAssertEqual(o.resultCount, 1)
+        XCTAssertEqual(o.result["ok"] as? Bool, false, o.diagnostics)
+        XCTAssertEqual(o.result["reason"] as? String, "conversation-not-found", o.diagnostics)
+        XCTAssertEqual(o.clicks, [], o.diagnostics)
+        XCTAssertTrue(o.sent.isEmpty, o.diagnostics)
+        XCTAssertEqual(o.resultCount, 1, o.diagnostics)
     }
 
     func testRouteThatNeverArrivesFailsClosedInsteadOfTypingIntoTheOpenThread() throws {
         let o = try runReply(target: "A", startOpen: "B", fixture: "{navigateOnClick: false}")
-        XCTAssertEqual(o.result["reason"] as? String, "conversation-not-selected")
-        XCTAssertTrue(o.sent.isEmpty)
-        XCTAssertEqual(o.composerValues, [""], "text leaked into thread B's composer")
+        XCTAssertEqual(o.result["reason"] as? String, "conversation-not-selected", o.diagnostics)
+        XCTAssertTrue(o.sent.isEmpty, o.diagnostics)
+        XCTAssertEqual(o.composerValues, [""], "text leaked into thread B's composer; \(o.diagnostics)")
     }
 
     func testMissingComposerFails() throws {
         let o = try runReply(target: "A", fixture: "{renderComposer: false}")
-        XCTAssertEqual(o.result["reason"] as? String, "composer-not-found")
-        XCTAssertTrue(o.sent.isEmpty)
+        XCTAssertEqual(o.result["reason"] as? String, "composer-not-found", o.diagnostics)
+        XCTAssertTrue(o.sent.isEmpty, o.diagnostics)
     }
 
     func testComposerRejectingTheTextFailsBeforeSend() throws {
         let o = try runReply(target: "A", fixture: "{acceptText: false}")
-        XCTAssertEqual(o.result["reason"] as? String, "composer-rejected-text")
-        XCTAssertTrue(o.sent.isEmpty)
+        XCTAssertEqual(o.result["reason"] as? String, "composer-rejected-text", o.diagnostics)
+        XCTAssertTrue(o.sent.isEmpty, o.diagnostics)
     }
 
     func testRouteChangingMidReplyAbortsBeforeSend() throws {
         let o = try runReply(target: "A", fixture: "{hijackRouteOnInput: 'B'}")
-        XCTAssertEqual(o.result["reason"] as? String, "conversation-changed")
-        XCTAssertTrue(o.sent.isEmpty)
+        XCTAssertEqual(o.result["reason"] as? String, "conversation-changed", o.diagnostics)
+        XCTAssertTrue(o.sent.isEmpty, o.diagnostics)
     }
 
     func testUnclearedComposerReportsUnknownRatherThanFailure() throws {
-        let o = try runReply(target: "A", fixture: "{clearOnSend: false}")
-        XCTAssertEqual(o.result["ok"] as? Bool, false)
-        XCTAssertEqual(o.result["unknown"] as? Bool, true, "Send was pressed; must not claim 'not sent'")
-        XCTAssertEqual(o.result["reason"] as? String, "submission-unconfirmed")
-        XCTAssertEqual(o.sent.count, 1)
-        let counters = try XCTUnwrap(o.result["diagnostics"] as? [String: Any])
-        XCTAssertEqual(counters["originalConnected"] as? Int, 1)
-        XCTAssertEqual(counters["originalStillReply"] as? Int, 1)
-        XCTAssertEqual(counters["freshStillReply"] as? Int, 1)
-        XCTAssertEqual(counters["routeMatches"] as? Int, 1)
+        let o = try runReply(target: "A", fixture: "{clearOnSend: false}",
+                             confirmMilliseconds: Self.expectedNoConfirmationMilliseconds)
+        XCTAssertEqual(o.result["ok"] as? Bool, false, o.diagnostics)
+        XCTAssertEqual(o.result["unknown"] as? Bool, true, "Send was pressed; must not claim 'not sent'; \(o.diagnostics)")
+        XCTAssertEqual(o.result["reason"] as? String, "submission-unconfirmed", o.diagnostics)
+        XCTAssertEqual(o.sent.count, 1, o.diagnostics)
+        let counters = try XCTUnwrap(o.result["diagnostics"] as? [String: Any], o.diagnostics)
+        XCTAssertEqual(counters["originalConnected"] as? Int, 1, o.diagnostics)
+        XCTAssertEqual(counters["originalStillReply"] as? Int, 1, o.diagnostics)
+        XCTAssertEqual(counters["freshStillReply"] as? Int, 1, o.diagnostics)
+        XCTAssertEqual(counters["routeMatches"] as? Int, 1, o.diagnostics)
         XCTAssertTrue(counters.values.allSatisfy { $0 is NSNumber },
-                      "confirmation diagnostics must not contain message text or IDs")
+                      "confirmation diagnostics must not contain message text or IDs; \(o.diagnostics)")
     }
 
     func testReplyTextIsInjectedVerbatim() throws {
         let tricky = "He said \"hi\" & it's 5\\6 </script>\nline 2\u{2028}end 😀 ' \u{0}x"
         let o = try runReply(target: "A", text: tricky)
-        XCTAssertEqual(o.result["ok"] as? Bool, true)
-        XCTAssertEqual(o.sent.first?["text"] as? String, tricky)
+        XCTAssertEqual(o.result["ok"] as? Bool, true, o.diagnostics)
+        XCTAssertEqual(o.sent.first?["text"] as? String, tricky, o.diagnostics)
+    }
+
+    func testReplyConfirmsAfterDelayedComposerClear() throws {
+        let o = try runReply(target: "A", fixture: "{clearDelayMS:1200}")
+        XCTAssertEqual(o.sent.count, 1, o.diagnostics)
+        XCTAssertEqual(o.sendTrust, [true], o.diagnostics)
+        XCTAssertEqual(o.result["ok"] as? Bool, true, o.diagnostics)
     }
 
     // WebViewController treats ANY evaluateJavaScript error as a failed reply
@@ -388,7 +428,7 @@ final class ReplyAutomationWebKitTests: XCTestCase {
     func testScriptEvaluationReportsNoErrorToTheApp() throws {
         let o = try runReply(target: "A")
         XCTAssertNil(o.evaluationError,
-                     "evaluateJavaScript errored: \(String(describing: o.evaluationError))")
-        XCTAssertEqual(o.result["ok"] as? Bool, true)
+                     "evaluateJavaScript errored: \(String(describing: o.evaluationError)); \(o.diagnostics)")
+        XCTAssertEqual(o.result["ok"] as? Bool, true, o.diagnostics)
     }
 }
