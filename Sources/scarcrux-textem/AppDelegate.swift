@@ -3,10 +3,12 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
+    private let appLock = AppLock.shared
     private var windowController: MainWindowController?
     private var statusItemController: StatusItemController?
     private var settingsWindowController: SettingsWindowController?
     private var onboardingWindowController: OnboardingWindowController?
+    private var activityMonitor: Any?
     private var migrationSheet: NSWindow?
     private var launchFinished = false
     private var globalHotkey: GlobalHotkey?
@@ -34,6 +36,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
         let controller = MainWindowController()
         windowController = controller
+        appLock.onLockChanged = { [weak self] in self?.appLockChanged() }
+        activityMonitor = NSEvent.addLocalMonitorForEvents(matching: [
+            .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .mouseMoved,
+        ]) { [weak self] event in
+            MainActor.assumeIsolated { self?.appLock.noteActivity() }
+            return event
+        }
+        let workspace = NSWorkspace.shared.notificationCenter
+        for event in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
+                      NSWorkspace.sessionDidResignActiveNotification] {
+            workspace.addObserver(self, selector: #selector(lockForSessionChange(_:)), name: event, object: nil)
+        }
+        DistributedNotificationCenter.default().addObserver(self, selector: #selector(lockForSessionChange(_:)),
+            name: Notification.Name("com.apple.screenIsLocked"), object: nil, suspensionBehavior: .deliverImmediately)
+        NotificationCenter.default.addObserver(self, selector: #selector(mainWindowWillClose(_:)),
+            name: NSWindow.willCloseNotification, object: controller.window)
+        NotificationCenter.default.addObserver(self, selector: #selector(mainWindowWasMinimized(_:)),
+            name: NSWindow.didMiniaturizeNotification, object: controller.window)
+        NotificationCenter.default.addObserver(self, selector: #selector(mainWindowWasRestored(_:)),
+            name: NSWindow.didDeminiaturizeNotification, object: controller.window)
 
         // Route unread-count changes to the dock badge (in the web VC) and the
         // menu-bar item. Set on the window controller so it survives account
@@ -70,8 +92,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             onReply: { [weak self] text, accountID, conversationID in
                 self?.replyFromNotification(
                     text, accountID: accountID, conversationID: conversationID)
+            },
+            onUnlockRequired: { [weak self] in
+                guard let self else { return false }
+                self.showMainWindow()
+                return await self.appLock.unlock()
             }
         )
+        if appLock.isLocked { NotificationManager.shared.hideDeliveredForAppLock() }
         // Let a migrated user choose in the sheet before macOS asks again.
         if !MigrationFollowUp.isAvailable() { NotificationManager.shared.requestAuthorization() }
         if ProcessInfo.processInfo.arguments.contains("--check-phone-connection") {
@@ -103,21 +131,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         // First-run: steer the user away from the passkey dead-end.
         launchFinished = true
-        if !Preferences.hasSeenOnboarding {
+        if !Preferences.hasSeenOnboarding && !appLock.isLocked {
             showOnboarding()
         } else {
             offerMigrationFollowUp()
         }
     }
 
+    @objc func lockTextem(_ sender: Any?) {
+        appLock.lock()
+    }
+
+    @objc private func lockForSessionChange(_ notification: Notification) {
+        appLock.lock()
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        appLock.setAway(true)
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        appLock.setAway(windowController?.window?.isVisible != true || windowController?.window?.isMiniaturized == true)
+    }
+
+    @objc private func mainWindowWillClose(_ notification: Notification) {
+        appLock.cancelAuthentication()
+        appLock.setAway(true)
+    }
+
+    @objc private func mainWindowWasMinimized(_ notification: Notification) {
+        appLock.cancelAuthentication()
+        appLock.setAway(true)
+    }
+
+    @objc private func mainWindowWasRestored(_ notification: Notification) {
+        appLock.setAway(!NSApp.isActive)
+    }
+
+    private func appLockChanged() {
+        windowController?.refreshLockPresentation()
+        if appLock.isLocked {
+            NotificationManager.shared.hideDeliveredForAppLock()
+            settingsWindowController?.close()
+            phoneNotificationWindow?.close()
+            onboardingWindowController?.close()
+            if NSApp.modalWindow != nil { NSApp.abortModal() }
+        } else if launchFinished && !Preferences.hasSeenOnboarding {
+            showOnboarding()
+        } else {
+            offerMigrationFollowUp()
+        }
+        statusItemController?.rebuild()
+    }
+
+    private func requireUnlocked() -> Bool {
+        guard appLock.isLocked else { return true }
+        showMainWindow()
+        return false
+    }
+
     @objc func showMigrationFollowUp(_ sender: Any?) {
-        guard MigrationFollowUp.isAvailable() else { return }
+        guard requireUnlocked(), MigrationFollowUp.isAvailable() else { return }
         showMainWindow()
         presentMigrationFollowUp()
     }
 
     private func offerMigrationFollowUp() {
-        guard launchFinished, Preferences.hasSeenOnboarding, MigrationFollowUp.shouldPresent() else { return }
+        guard !appLock.isLocked, launchFinished, Preferences.hasSeenOnboarding, MigrationFollowUp.shouldPresent() else { return }
         presentMigrationFollowUp()
     }
 
@@ -136,13 +216,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc func showSignInHelp(_ sender: Any?) {
-        showOnboarding()
+        if requireUnlocked() { showOnboarding() }
     }
 
     @objc func checkForUpdates(_ sender: Any?) { AppUpdates.shared.check() }
 
     @objc func toggleOfflineMode(_ sender: Any?) { OfflineMode.setEnabled(!OfflineMode.enabled) }
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(lockTextem(_:)) { return appLock.isEnabled && !appLock.isLocked }
         if menuItem.action == #selector(toggleOfflineMode(_:)) { menuItem.state = OfflineMode.enabled ? .on : .off; return true }
         if OfflineMode.enabled && [#selector(dockCompose), #selector(showPhoneNotification(_:)), #selector(checkPhoneConnection(_:))].contains(menuItem.action) { return false }
         return menuItem.action == #selector(checkForUpdates(_:)) ? AppUpdates.shared.canCheck : true
@@ -171,6 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         compose.target = self
         menu.addItem(compose)
 
+        guard !appLock.isLocked else { return menu }
         let store = AccountStore.shared
         if store.accounts.count > 1 {
             menu.addItem(.separator())
@@ -186,6 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc private func dockCompose() {
+        guard requireUnlocked() else { return }
         windowController?.webViewController.compose(nil)
         showMainWindow()
     }
@@ -199,7 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @discardableResult
     private func switchAccount(_ id: UUID, show: Bool = true) -> Bool {
-        guard AccountStore.shared.accounts.contains(where: { $0.id == id }) else { return false }
+        guard requireUnlocked(), AccountStore.shared.accounts.contains(where: { $0.id == id }) else { return false }
         if AccountStore.shared.activeID != id {
             AccountStore.shared.setActive(id)
             windowController?.switchTo(AccountStore.shared.active)
@@ -210,6 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func openNotification(accountID: UUID?, conversationID: String?) {
+        guard requireUnlocked() else { return }
         if let accountID, !switchAccount(accountID, show: false) {
             NotificationManager.shared.notifyInfo(
                 "That notification belongs to an account that has been removed.")
@@ -220,6 +304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     private func replyFromNotification(_ text: String, accountID: UUID?,
                                        conversationID: String?) {
+        guard !appLock.isLocked else { return }
         if let accountID, !switchAccount(accountID, show: false) {
             NotificationManager.shared.notifyInfo(
                 "Reply not sent: its account has been removed.")
@@ -231,6 +316,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu.title == "Accounts" else { return }
+        if appLock.isLocked {
+            menu.removeAllItems()
+            return
+        }
         let store = AccountStore.shared
         MainMenu.populateAccounts(menu, accounts: store.accounts, activeID: store.activeID, canAdd: store.canAddAccounts)
     }
@@ -244,6 +333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc func removeAccountFromMenu(_ sender: Any?) { removeAccount() }
 
     private func addAccount() {
+        guard requireUnlocked() else { return }
         guard AccountStore.shared.canAddAccounts else {
             presentInfo("Multiple accounts require macOS 14 or later.")
             return
@@ -256,6 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func renameAccount() {
+        guard requireUnlocked() else { return }
         let current = AccountStore.shared.active
         guard let name = promptForText(title: "Rename Account", message: "New name:", defaultValue: current.name),
               !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
@@ -265,6 +356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func removeAccount() {
+        guard requireUnlocked() else { return }
         let current = AccountStore.shared.active
         let store = AccountStore.shared
         guard store.accounts.count > 1,
@@ -303,6 +395,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func presentInfo(_ text: String) {
+        guard !appLock.isLocked else { return }
         let alert = NSAlert()
         alert.messageText = text
         alert.addButton(withTitle: "OK")
@@ -310,6 +403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc func showSettings(_ sender: Any?) {
+        guard requireUnlocked() else { return }
         if settingsWindowController == nil {
             settingsWindowController = SettingsWindowController()
         }
@@ -328,6 +422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc func checkPhoneConnection(_ sender: Any?) {
+        guard requireUnlocked() else { return }
         Task { await runPhoneConnectionCheck(present: true) }
     }
     private func runPhoneConnectionCheck(present: Bool) async {
@@ -336,7 +431,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         })
         do { try PhoneRecoveryCheck.save(report) }
         catch { if present { presentInfo("Couldn’t save the private connection check.") }; return }
-        if present {
+        if present && !appLock.isLocked {
             if report.state == .connected {
                 presentInfo("Phone connection working. Received \(report.previews) captured previews from \(report.sources) sources, including \(report.pictures) pictures. This does not establish complete history.")
             } else {
@@ -346,12 +441,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc func showPhoneImages(_ sender: Any?) {
+        guard requireUnlocked() else { return }
         if OfflineMode.enabled { windowController?.showOfflineLibrary(pictures: true); showMainWindow(); return }
         windowController?.webViewController.showPhoneImages()
         showMainWindow()
     }
 
     @objc func showSavedPhoneConversations(_ sender: Any?) {
+        guard requireUnlocked() else { return }
         if OfflineMode.enabled { windowController?.showOfflineLibrary(); showMainWindow(); return }
         windowController?.webViewController.showSavedPhoneConversations()
         showMainWindow()
@@ -359,19 +456,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     private var phoneNotificationWindow: PhoneNotificationWindowController?
     @objc func showPhoneNotification(_ sender: Any?) {
+        guard requireUnlocked() else { return }
         guard !OfflineMode.enabled else { return }
         if phoneNotificationWindow == nil { phoneNotificationWindow = PhoneNotificationWindowController() }
         phoneNotificationWindow?.showWindow(nil); phoneNotificationWindow?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func applicationWillTerminate(_ notification: Notification) { PhoneImageADBClient.shared.stop() }
+    func applicationWillTerminate(_ notification: Notification) {
+        if let activityMonitor { NSEvent.removeMonitor(activityMonitor) }
+        PhoneImageADBClient.shared.stop()
+    }
 
     private func showMainWindow() {
         guard let controller = windowController else { return }
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        appLock.setAway(false)
         offerMigrationFollowUp()
     }
 

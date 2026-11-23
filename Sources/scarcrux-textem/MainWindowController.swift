@@ -3,6 +3,7 @@ import SwiftUI
 import WebKit
 
 final class MainWindowController: NSWindowController {
+    private let appLock: AppLock
     private let initialURL: URL?
     private let offlineLibrary: (UUID) -> OfflineLibraryModel
     private var displayedAccount: Account
@@ -19,9 +20,10 @@ final class MainWindowController: NSWindowController {
     }
 
     init(account: Account? = nil, storeForAccount: @escaping (Account) -> WKWebsiteDataStore = { AccountStore.shared.dataStore(for: $0) },
-         initialURL: URL? = nil, offlineLibrary: @escaping (UUID) -> OfflineLibraryModel = { OfflineLibraryModel(accountID: $0) }) {
+         initialURL: URL? = nil, appLock: AppLock = .shared, offlineLibrary: @escaping (UUID) -> OfflineLibraryModel = { OfflineLibraryModel(accountID: $0) }) {
         let account = account ?? AccountStore.shared.active
         self.displayedAccount = account; self.storeForAccount = storeForAccount
+        self.appLock = appLock
         self.initialURL = initialURL; self.offlineLibrary = offlineLibrary
         webViewController = WebViewController(
             accountID: account.id,
@@ -59,10 +61,38 @@ final class MainWindowController: NSWindowController {
         webViewController = new
         old.teardown()
         presentContent(for: account)
-        window?.title = OfflineMode.enabled ? "Textem — Offline Mode" : "Textem — \(account.name)"
+        if !appLock.isLocked { window?.title = OfflineMode.enabled ? "Textem — Offline Mode" : "Textem — \(account.name)" }
+    }
+
+    func refreshLockPresentation() {
+        if appLock.isLocked {
+            webViewController.prepareForAppLock()
+            if let sheet = window?.attachedSheet { window?.endSheet(sheet) }
+        }
+        presentContent(for: displayedAccount)
     }
 
     private func presentContent(for account: Account) {
+        let frameBeforeSwap = appLock.isEnabled ? window?.frame : nil
+        defer {
+            if let frameBeforeSwap, window?.frame != frameBeforeSwap {
+                window?.setFrame(frameBeforeSwap, display: true)
+            }
+        }
+        if appLock.isLocked {
+            offlineModel = nil
+            window?.title = "Textem — Locked"
+            window?.makeFirstResponder(nil)
+            let cover = NSHostingController(rootView: AppLockView(lock: appLock) { [weak appLock] in
+                Task { await appLock?.unlock() }
+            })
+            // The cover fills the existing window instead of sizing it to its
+            // intrinsic text width.
+            cover.sizingOptions = []
+            if let size = window?.contentView?.bounds.size { cover.view.frame.size = size }
+            window?.contentViewController = cover
+            return
+        }
         if OfflineMode.enabled {
             clearUnreadIndicators()
             let model = offlineLibrary(account.id)

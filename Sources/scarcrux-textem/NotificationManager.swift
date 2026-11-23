@@ -11,6 +11,7 @@ final class NotificationManager: NSObject {
     nonisolated private static let messageCategoryID = "textem.message"
     nonisolated private static let messageWithCodeCategoryID = "textem.message.code"
     nonisolated private static let codeCategoryID = "textem.code"
+    nonisolated private static let redactedKey = "textemRedactedForAppLock"
     nonisolated private static let replyActionID = "textem.reply"
     nonisolated private static let copyCodeActionID = "textem.copy-code"
     // A code is offered for as long as AutoFill would offer it.
@@ -19,6 +20,7 @@ final class NotificationManager: NSObject {
     nonisolated private static let conversationKey = "conversationID"
 
     private var onOpen: ((UUID?, String?) -> Void)?
+    private var onUnlockRequired: (() async -> Bool)?
     private var onReply: ((String, UUID?, String?) -> Void)?
     // Codes live only in memory, keyed by notification, never in the
     // notification's stored userInfo; they stop copying when they expire.
@@ -27,9 +29,11 @@ final class NotificationManager: NSObject {
     var pasteboard: NSPasteboard = .general
 
     func configure(onOpen: @escaping (UUID?, String?) -> Void,
-                   onReply: @escaping (String, UUID?, String?) -> Void) {
+                   onReply: @escaping (String, UUID?, String?) -> Void,
+                   onUnlockRequired: @escaping () async -> Bool = { false }) {
         self.onOpen = onOpen
         self.onReply = onReply
+        self.onUnlockRequired = onUnlockRequired
         let center = UNUserNotificationCenter.current()
         center.delegate = self
 
@@ -158,6 +162,7 @@ final class NotificationManager: NSObject {
 
     /// Copy the code a notification carries, if it is still fresh.
     @discardableResult func copyCode(forNotification id: String) -> Bool {
+        guard !AppLock.shared.isLocked else { return false }
         let now = clock()
         codes = codes.filter { $0.value.expires > now }
         guard let entry = codes[id] else { NSSound.beep(); return false }
@@ -171,7 +176,31 @@ final class NotificationManager: NSObject {
         codes[id] = (code, now.addingTimeInterval(Self.codeLifetime))
     }
 
+    func hideDeliveredForAppLock() {
+        let center = UNUserNotificationCenter.current()
+        center.removeAllPendingNotificationRequests()
+        center.removeAllDeliveredNotifications()
+    }
+
+    private func unlockForNotificationAction() async -> Bool {
+        await AppLock.shared.authorizeAction {
+            await onUnlockRequired?() == true
+        }
+    }
+
+    // Apply at the final delivery boundary, including informational and code
+    // notifications. Preserve identifiers so actions can revalidate on unlock.
+    static func redactForAppLock(_ content: UNMutableNotificationContent) {
+        content.title = "Textem"
+        content.subtitle = ""
+        content.body = "Unlock Textem to see details."
+        content.attachments = []
+        content.userInfo[Self.redactedKey] = true
+    }
+
     private func add(_ content: UNMutableNotificationContent, kind: String, code: String? = nil) {
+        let redacted = AppLock.shared.isLocked
+        if redacted { Self.redactForAppLock(content) }
         let request = UNNotificationRequest(
             identifier: UUID().uuidString, content: content, trigger: nil)
         let requestID = request.identifier
@@ -179,6 +208,9 @@ final class NotificationManager: NSObject {
         NotificationDiagnostics.record("request_" + kind)
         UNUserNotificationCenter.current().add(request) { error in
             Task { @MainActor in
+                if !redacted && AppLock.shared.isLocked {
+                    UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [requestID])
+                }
                 NotificationDiagnostics.record(
                     error == nil ? "accepted_" + kind : "rejected_" + kind,
                     values: ["error": (error as NSError?)?.code ?? 0])
@@ -209,12 +241,14 @@ final class NotificationManager: NSObject {
 extension NotificationManager: UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler:
-            @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        Task { @MainActor in NotificationDiagnostics.record("foreground_presentation") }
-        completionHandler([.banner, .sound])
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        // A pre-lock request can be in flight while delivered previews are removed.
+        let isRedacted = notification.request.content.userInfo[Self.redactedKey] as? Bool == true
+        return await MainActor.run {
+            NotificationDiagnostics.record("foreground_presentation")
+            return AppLock.shared.isLocked && !isRedacted ? [] : [.banner, .sound]
+        }
     }
 
     nonisolated func userNotificationCenter(
@@ -226,7 +260,10 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         if response.actionIdentifier == Self.copyCodeActionID {
             let id = response.notification.request.identifier
             completionHandler()
-            Task { @MainActor in self.copyCode(forNotification: id) }
+            Task { @MainActor in
+                guard await self.unlockForNotificationAction() else { return }
+                self.copyCode(forNotification: id)
+            }
             return
         }
         if response.actionIdentifier == Self.replyActionID,
@@ -234,6 +271,7 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
             let text = textResponse.userText
             completionHandler()
             Task { @MainActor in
+                guard await self.unlockForNotificationAction() else { return }
                 self.onReply?(text, accountID, conversationID)
             }
             return

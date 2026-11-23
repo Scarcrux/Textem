@@ -18,6 +18,7 @@ enum MainMenu {
         command(app, "About \(appName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:)))
         command(app, "Check for Updates…", #selector(AppDelegate.checkForUpdates(_:)))
         app.addItem(.separator())
+        command(app, "Lock Textem", #selector(AppDelegate.lockTextem(_:)))
         command(app, "Settings…", #selector(AppDelegate.showSettings(_:)), ",")
         app.addItem(.separator())
         let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")

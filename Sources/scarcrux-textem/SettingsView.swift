@@ -5,6 +5,7 @@ import SwiftUI
 // effects (login item registration, activation policy). Custom bindings
 // avoid the macOS 13-vs-14 `onChange` signature split.
 struct SettingsView: View {
+    @ObservedObject private var appLock: AppLock
     @AppStorage("startHidden") private var startHidden = false
     @AppStorage("quitOnClose") private var quitOnClose = false
     @AppStorage("menuBarOnly") private var menuBarOnly = false
@@ -18,7 +19,9 @@ struct SettingsView: View {
     @StateObject private var nativeCodes: NativeAutoFillCoordinator
     @StateObject private var updates: AppUpdates
 
-    init(nativeCodes: NativeAutoFillCoordinator = .shared, updates: AppUpdates = .shared) {
+    init(nativeCodes: NativeAutoFillCoordinator = .shared, updates: AppUpdates = .shared,
+         appLock: AppLock = .shared) {
+        self.appLock = appLock
         _nativeCodes = StateObject(wrappedValue: nativeCodes)
         _updates = StateObject(wrappedValue: updates)
     }
@@ -108,6 +111,18 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Require Touch ID or your Mac password to open Textem", isOn: Binding(
+                    get: { appLock.isEnabled },
+                    set: { enabled in Task { await appLock.setEnabled(enabled) } }
+                )).disabled(appLock.isAuthenticating)
+                if appLock.isEnabled {
+                    Toggle("Lock after 5 minutes of inactivity in Textem", isOn: $appLock.lockWhenAway)
+                }
+                if appLock.authenticationFailed {
+                    Text("macOS didn’t confirm the change. Try again.").font(.caption)
+                }
+                Text("The lock protects Textem’s window. Your Google session and saved files still rely on your Mac login and FileVault.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle(isOn: Binding(
                     get: { blurMessages },
                     set: { blurMessages = $0; privacyChanged() }

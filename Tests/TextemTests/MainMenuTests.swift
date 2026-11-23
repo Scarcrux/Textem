@@ -14,7 +14,7 @@ import XCTest
         XCTAssertEqual(root.items.map(\.title), ["Textem", "File", "Edit", "View", "Accounts", "Phone", "Window", "Help"])
         let app = try XCTUnwrap(root.items.first?.submenu)
         XCTAssertEqual(app.items.filter { !$0.isSeparatorItem }.map(\.title),
-            ["About Textem", "Check for Updates…", "Settings…", "Services", "Hide Textem", "Hide Others", "Show All", "Quit Textem"])
+            ["About Textem", "Check for Updates…", "Lock Textem", "Settings…", "Services", "Hide Textem", "Hide Others", "Show All", "Quit Textem"])
         for (group, title) in [("File", "New Conversation"), ("Edit", "Copy Latest Code"), ("Edit", "Find…"),
                                ("View", "Reload"), ("Phone", "Shared Phone Images…"), ("Window", "Always on Top"), ("Help", "Sign-in Help…")] {
             XCTAssertNotNil(root.item(withTitle: group)?.submenu?.item(withTitle: title))

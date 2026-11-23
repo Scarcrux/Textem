@@ -15,6 +15,7 @@ final class StatusItemController: NSObject {
 
     private let statusItem: NSStatusItem
     private let actions: Actions
+    private var unreadCount = 0
     private var unreadItem: NSMenuItem?
 
     init(actions: Actions) {
@@ -35,6 +36,7 @@ final class StatusItemController: NSObject {
     }
 
     func updateUnread(_ count: Int) {
+        unreadCount = count
         statusItem.button?.title = count > 0 ? " \(count)" : ""
         unreadItem?.title = count > 0 ? "\(count) unread" : "No unread messages"
     }
@@ -47,30 +49,33 @@ final class StatusItemController: NSObject {
         show.target = self
         menu.addItem(show)
 
-        let unread = NSMenuItem(title: "No unread messages", action: nil, keyEquivalent: "")
+        let unread = NSMenuItem(title: unreadCount > 0 ? "\(unreadCount) unread" : "No unread messages", action: nil, keyEquivalent: "")
         unread.isEnabled = false
         unreadItem = unread
         menu.addItem(unread)
 
-        // Accounts section.
-        let store = AccountStore.shared
-        menu.addItem(.separator())
-        let header = NSMenuItem(title: "Accounts", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
-        for account in store.accounts {
-            let item = NSMenuItem(title: account.name, action: #selector(switchAccount(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = account.id.uuidString
-            item.state = account.id == store.activeID ? .on : .off
-            menu.addItem(item)
-        }
-        if store.canAddAccounts {
-            menu.addItem(actionItem("Add Account…", #selector(addAccount)))
-        }
-        menu.addItem(actionItem("Rename Current Account…", #selector(renameAccount)))
-        if store.accounts.count > 1 {
-            menu.addItem(actionItem("Remove Current Account…", #selector(removeAccount)))
+        if !AppLock.shared.isLocked {
+            // Accounts section.
+            let store = AccountStore.shared
+            menu.addItem(.separator())
+            let header = NSMenuItem(title: "Accounts", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            for account in store.accounts {
+                let item = NSMenuItem(title: account.name, action: #selector(switchAccount(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = account.id.uuidString
+                item.state = account.id == store.activeID ? .on : .off
+                menu.addItem(item)
+            }
+            if store.canAddAccounts {
+                menu.addItem(actionItem("Add Account…", #selector(addAccount)))
+            }
+            menu.addItem(actionItem("Rename Current Account…", #selector(renameAccount)))
+            if store.accounts.count > 1 {
+                menu.addItem(actionItem("Remove Current Account…", #selector(removeAccount)))
+            }
+
         }
 
         // Reachable from here because in menu-bar-only mode there is no app

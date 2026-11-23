@@ -508,6 +508,7 @@ final class WebViewController: NSViewController {
     // report a real Messages snapshot before automation starts, which also lets
     // a reply switch back to its originating account without racing page load.
     func quickReply(_ text: String, conversationID: String?) {
+        guard !AppLock.shared.isLocked else { return }
         guard !OfflineMode.enabled else { NotificationManager.shared.notifyInfo("Reply not sent: Offline Mode is on."); return }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let conversationID, !conversationID.isEmpty else {
@@ -520,7 +521,7 @@ final class WebViewController: NSViewController {
     }
 
     func openConversation(_ conversationID: String?) {
-        guard !OfflineMode.enabled else { return }
+        guard !AppLock.shared.isLocked, !OfflineMode.enabled else { return }
         guard let conversationID, !conversationID.isEmpty else { return }
         pendingOpenConversationID = conversationID
         pendingOpenAttempts = 0
@@ -528,7 +529,7 @@ final class WebViewController: NSViewController {
     }
 
     private func openPendingConversationIfReady() {
-        guard bridgeReady, let conversationID = pendingOpenConversationID,
+        guard !AppLock.shared.isLocked, bridgeReady, let conversationID = pendingOpenConversationID,
               let idJSON = Self.jsonString(conversationID) else { return }
         pendingOpenConversationID = nil
         let js = """
@@ -560,7 +561,7 @@ final class WebViewController: NSViewController {
     }
 
     private func processNextReplyIfReady() {
-        guard bridgeReady, activeReply == nil, !replyQueue.isEmpty else { return }
+        guard !AppLock.shared.isLocked, bridgeReady, activeReply == nil, !replyQueue.isEmpty else { return }
         let reply = replyQueue.removeFirst()
         activeReply = reply
         nativeSendReplyID = nil
@@ -600,7 +601,7 @@ final class WebViewController: NSViewController {
         """
         webView.evaluateJavaScript(script) { [weak self] result, error in
             Task { @MainActor in
-                guard let self, self.activeReply?.id == reply.id else { return }
+                guard let self, !AppLock.shared.isLocked, self.activeReply?.id == reply.id else { return }
                 guard error == nil, let target = result as? [String: Any],
                       let route = target["route"] as? String, let url = URL(string: route),
                       url.scheme == "https", url.host == "messages.google.com",
@@ -683,6 +684,20 @@ final class WebViewController: NSViewController {
         webView.evaluateJavaScript(js, completionHandler: nil)
     }
 
+    func prepareForAppLock() {
+        pendingOpenConversationID = nil
+        replyTimeoutTask?.cancel()
+        replyTimeoutTask = nil
+        activeReply = nil
+        replyQueue.removeAll()
+        nativeSendReplyID = nil
+        // Closing removes each controller via its delegate, so clear first.
+        let existingPopups = popups
+        popups.removeAll()
+        existingPopups.forEach { $0.close() }
+        hideLinkPreviewFallback()
+    }
+
     // Detach the web view before this controller is replaced (account switch)
     // so it stops loading, drops the bridge handler, and can deallocate.
     func teardown() {
@@ -744,6 +759,7 @@ final class WebViewController: NSViewController {
     // previews top-down — always through the same cautious CodeDetector as
     // Copy Code, never "any 4–8 digit number on the page".
     @objc func copyLatestCode(_ sender: Any?) {
+        guard !AppLock.shared.isLocked else { return }
         if let recent = lastReceivedCode, Date().timeIntervalSince(recent.at) < NotificationManager.codeLifetime {
             finishCopy(recent.code); return
         }
@@ -820,10 +836,11 @@ final class WebViewController: NSViewController {
     }
 
     private func captureDemo() async -> URL? {
-        await withCheckedContinuation { (done: CheckedContinuation<URL?, Never>) in
+        guard !AppLock.shared.isLocked else { return nil }
+        return await withCheckedContinuation { (done: CheckedContinuation<URL?, Never>) in
             webView.takeSnapshot(with: nil) { image, _ in
                 MainActor.assumeIsolated {
-                    guard let image, let tiff = image.tiffRepresentation,
+                    guard !AppLock.shared.isLocked, let image, let tiff = image.tiffRepresentation,
                           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
                     else { done.resume(returning: nil); return }
                     done.resume(returning: try? DemoMode.save(png: png))
@@ -834,10 +851,10 @@ final class WebViewController: NSViewController {
 
     // View → Save Demo Screenshot (only in demo mode).
     @objc func saveDemoScreenshot(_ sender: Any?) {
-        guard DemoMode.isEnabled else { return }
+        guard !AppLock.shared.isLocked, DemoMode.isEnabled else { return }
         webView.takeSnapshot(with: nil) { image, _ in
             Task { @MainActor in
-                guard let image, let tiff = image.tiffRepresentation,
+                guard !AppLock.shared.isLocked, let image, let tiff = image.tiffRepresentation,
                       let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]),
                       let url = try? DemoMode.save(png: png) else { NSSound.beep(); return }
                 NotificationManager.shared.notifyInfo("Saved demo screenshot: \(url.lastPathComponent)")
@@ -846,6 +863,7 @@ final class WebViewController: NSViewController {
     }
 
     private func finishCopy(_ code: String?) {
+        guard !AppLock.shared.isLocked else { return }
         guard let code else { NSSound.beep(); return }
         CodeClipboard.copy(code)
         NotificationManager.shared.notifyInfo(
@@ -1210,7 +1228,7 @@ extension WebViewController: WKUIDelegate {
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
-        guard !OfflineMode.enabled else { return nil }
+        guard !AppLock.shared.isLocked, !OfflineMode.enabled else { return nil }
         guard let url = navigationAction.request.url,
               WebNavigationPolicy.isAllowedTopLevelURL(url) else {
             if let url = navigationAction.request.url { NSWorkspace.shared.open(url) }
