@@ -270,8 +270,19 @@ def whats_new():
 <main id="main-content" tabindex="-1">
 <h1>What’s New</h1>
 <p class="lead">Release highlights, update instructions, and downloads for Textem.</p>
-<article class="release-entry" aria-labelledby="beta-4">
+<article class="release-entry" aria-labelledby="beta-5">
 <p class="release-date"><time datetime="2026-11-24">November 24, 2026</time> · Latest</p>
+<h2 id="beta-5">1.0 public beta 5</h2>
+<ul><li>While Textem is locked, notifications no longer show a <strong>Copy Code</strong> button, so a locked banner never reveals that a code arrived. <strong>Reply</strong> stays and asks you to unlock first.</li>
+<li>App Lock has its own section in <strong>Settings</strong>, which explains what locking does: notifications are cleared, the unread count stays, and your files rely on your Mac login and FileVault.</li>
+<li>The lock screen leads with Touch ID when your Mac has it, and asks only for your password when it doesn’t.</li>
+<li>The global copy-code shortcut unlocks with the macOS prompt without bringing Textem to the front.</li>
+<li>The sign-in guide can be closed, <strong>Delete Saved AutoFill Codes…</strong> asks before deleting, and AutoFill messages in Settings are in plain language.</li></ul>
+<p>On beta 2, 3 or 4, choose <strong>Textem → Check for Updates…</strong>. On beta 1, download the new app and replace the old copy in Applications.</p>
+<p class="release-links"><a href="https://github.com/Scarcrux/Textem/releases/download/v1.0.0-beta.5/Textem.dmg">Download beta 5</a><a href="https://github.com/Scarcrux/Textem/releases/tag/v1.0.0-beta.5">Full beta 5 release notes</a></p>
+</article>
+<article class="release-entry" aria-labelledby="beta-4">
+<p class="release-date"><time datetime="2026-11-24">November 24, 2026</time></p>
 <h2 id="beta-4">1.0 public beta 4</h2>
 <ul><li>Lock the Textem window with Touch ID or your Mac password. Choose when it locks in <strong>Settings → Privacy</strong>.</li>
 <li>Copy a verification code from an open conversation, or set your own global shortcut in <strong>Settings → Verification Codes</strong>.</li>
