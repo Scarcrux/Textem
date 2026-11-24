@@ -149,8 +149,14 @@ PAGES = {
 <li><strong>Notifications &gt; Hide sender and message preview</strong>: banners say only "New message".</li></ul>
 <p>These change only what's shown on your Mac. Read receipts and what you send are unaffected.</p>"""),
     ("Lock the Textem window", """
-<p>In <strong>Settings &gt; Privacy</strong>, turn on <strong>Require Touch ID or your Mac password to open Textem</strong>. Textem locks at launch and when your Mac sleeps or locks. You can also choose to lock immediately when you switch away, or after five minutes of inactivity in Textem.</p>
-<p>Choose <strong>Lock Textem</strong> from the app menu or the Textem menu-bar icon to lock immediately. On return, Textem can prompt for Touch ID. Use <strong>Use Mac Password…</strong> if macOS requires your password. Notification previews are hidden while locked. The lock protects the Textem window; your session and saved files rely on your Mac login and FileVault.</p>"""),
+<p>In <strong>Settings &gt; App Lock</strong>, turn on <strong>Require Touch ID or your Mac password to open Textem</strong> (on a Mac without Touch ID it asks for your Mac password). Textem locks at launch and when your Mac sleeps or locks. You can also choose to lock immediately when you switch away, or after five minutes of inactivity in Textem.</p>
+<p>Choose <strong>Lock Textem</strong> from the app menu or the Textem menu-bar icon to lock immediately. To unlock, choose <strong>Use Touch ID</strong>, or <strong>Use Mac Password…</strong> if macOS requires your password.</p>
+<p>While Textem is locked:</p>
+<ul><li>Its existing notifications are cleared, and new ones say only "Unlock Textem to see details."</li>
+<li>Locked notifications offer <strong>Reply</strong> (which asks you to unlock before sending) but not <strong>Copy Code</strong>, so a banner never reveals that a code arrived.</li>
+<li>The global copy-code shortcut asks macOS to unlock first, without bringing Textem to the front.</li>
+<li>The unread count in the Dock and menu bar stays visible.</li></ul>
+<p>The lock protects the Textem window. Your session and saved files rely on your Mac login and FileVault.</p>"""),
     ("What Textem connects to", """
 <p>Textem shows Google's own Messages for web and talks to Google. It adds no analytics, telemetry, accounts or relay servers, and your session is stored on your Mac. The only other connection is the daily update check to textem.scarcrux.com, which you can turn off in <strong>Settings &gt; Updates</strong>. To keep Google's sign-in working inside an app, Textem turns off WebKit's cross-site tracking prevention for its own Google session; this doesn't affect Safari.</p>"""),
     ("Offline Mode <span class=\"badge\">Experimental</span>", """

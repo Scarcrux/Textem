@@ -121,6 +121,12 @@ In **Settings → Privacy** you can blur message previews (hover to read) and
 hide avatars; in **Settings → Notifications** you can hide the sender and text
 from notifications. These change only what's shown on your Mac.
 
+**Settings → App Lock** can require Touch ID or your Mac password to open
+Textem. It locks at launch and when your Mac sleeps or locks, and optionally
+when you switch away or after five minutes idle. While locked, Textem's
+notifications are cleared and new ones show no preview. The lock protects the
+window; your session on disk relies on your Mac login and FileVault.
+
 ### Offline Mode (experimental)
 
 **View → Offline Mode** pauses Google Messages and shows what Textem has saved
