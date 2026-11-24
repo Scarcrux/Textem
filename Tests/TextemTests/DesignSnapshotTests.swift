@@ -96,6 +96,8 @@ final class DesignSnapshotTests: XCTestCase {
                        "saved-conversation-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: SavedPhoneConversationsView(model: emptySaved, onClose: {}).frame(width: 760, height: 900)),
                        "saved-conversation-empty-\(suffix)", appearance, output)
+            try render(NSHostingView(rootView: CodeShortcutPicker { _ in false }),
+                       "code-shortcut-picker-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: SettingsView(nativeCodes: codes, updates: updates)), "settings-\(suffix)", appearance, output)
             try render(NSHostingView(rootView: SettingsView(nativeCodes: codes, updates: updates)), "settings-scrolled-\(suffix)", appearance, output, scrollToBottom: true)
             try render(NSHostingView(rootView: SettingsView(nativeCodes: codes, updates: unavailableUpdates)), "settings-updates-unavailable-\(suffix)", appearance, output)

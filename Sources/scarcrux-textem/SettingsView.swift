@@ -15,6 +15,8 @@ struct SettingsView: View {
     @AppStorage("hideAvatars") private var hideAvatars = false
     @AppStorage("globalCopyCode") private var globalCopyCode = false
     @State private var shortcutUnavailable = false
+    @State private var codeShortcut = GlobalHotkey.Shortcut.savedCopyCode()
+    @State private var choosingCodeShortcut = false
     @AppStorage("copyCodeNotifications") private var copyCodeNotifications = true
     @State private var showPhoneTools = Preferences.showPhoneTools
     @State private var launchAtLogin = LoginItem.isEnabled
@@ -106,15 +108,25 @@ struct SettingsView: View {
                     }
                 )) {
                     row("Global Copy Latest Code shortcut",
-                        "Press ⌃⌥⌘C in any app to copy a code received in the active account in the last 3 minutes.")
+                        "Press \(codeShortcut.label) in any app to copy a code received in the active account in the last 3 minutes.")
                 }
                 .onAppear {
                     if globalCopyCode {
                         shortcutUnavailable = (NSApp.delegate as? AppDelegate)?.isGlobalCodeShortcutRegistered != true
                     }
                 }
+                Button("Change Shortcut…") { choosingCodeShortcut = true }
+                    .sheet(isPresented: $choosingCodeShortcut) {
+                        CodeShortcutPicker { candidate in
+                            guard (NSApp.delegate as? AppDelegate)?.changeGlobalCodeShortcut(to: candidate) == true
+                            else { return false }
+                            codeShortcut = candidate
+                            shortcutUnavailable = false
+                            return true
+                        }
+                    }
                 if shortcutUnavailable {
-                    Text("⌃⌥⌘C is unavailable. It may already be assigned to another app.")
+                    Text("\(codeShortcut.label) is unavailable. It may already be assigned to another app.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Toggle(isOn: Binding(

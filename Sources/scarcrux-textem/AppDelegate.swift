@@ -152,11 +152,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return true
         }
         if isGlobalCodeShortcutRegistered { return true }
-        let shortcut = GlobalHotkey(shortcut: .copyCode) { [weak self] in
+        return registerCodeShortcut(.savedCopyCode(), keepRegistered: true)
+    }
+
+    func changeGlobalCodeShortcut(to shortcut: GlobalHotkey.Shortcut) -> Bool {
+        let enabled = UserDefaults.standard.bool(forKey: "globalCopyCode")
+        guard registerCodeShortcut(shortcut, keepRegistered: enabled) else { return false }
+        shortcut.saveCopyCode()
+        return true
+    }
+
+    private func registerCodeShortcut(_ combination: GlobalHotkey.Shortcut, keepRegistered: Bool) -> Bool {
+        guard !combination.matches(.showTextem) else { return false }
+        if keepRegistered, let active = globalCodeHotkey, active.shortcut.matches(combination) {
+            return true
+        }
+        let candidate = GlobalHotkey(shortcut: combination) { [weak self] in
             Task { await self?.copyFreshCodeFromShortcut() }
         }
-        guard shortcut.register() else { return false }
-        globalCodeHotkey = shortcut
+        guard candidate.register() else { return false }
+        if keepRegistered {
+            globalCodeHotkey?.unregister()
+            globalCodeHotkey = candidate
+        } else {
+            candidate.unregister()
+        }
         return true
     }
 

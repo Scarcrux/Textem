@@ -6,20 +6,57 @@ import Carbon.HIToolbox
 // Accessibility permission and can be registered by any app.
 @MainActor
 final class GlobalHotkey {
-    enum Shortcut {
-        case showTextem, copyCode
+    struct Shortcut: Equatable, Codable {
+        static let showTextem = Self(key: UInt32(kVK_ANSI_M), modifiers: UInt32(cmdKey | optionKey), letter: "M")
+        static let copyCode = Self(key: UInt32(kVK_ANSI_C), modifiers: UInt32(cmdKey | optionKey | controlKey), letter: "C")
+        private static let preferenceKey = "globalCopyCodeShortcut"
 
-        var id: UInt32 { self == .showTextem ? 1 : 2 }
-        var key: UInt32 { UInt32(self == .showTextem ? kVK_ANSI_M : kVK_ANSI_C) }
-        var modifiers: UInt32 { UInt32(self == .showTextem ? cmdKey | optionKey : cmdKey | optionKey | controlKey) }
+        let key: UInt32
+        let modifiers: UInt32
+        let letter: String
+
+        var label: String {
+            [(controlKey, "⌃"), (optionKey, "⌥"), (shiftKey, "⇧"), (cmdKey, "⌘")]
+                .compactMap { modifiers & UInt32($0.0) != 0 ? $0.1 : nil }.joined() + letter
+        }
+
+        func matches(_ other: Self) -> Bool {
+            key == other.key && modifiers == other.modifiers
+        }
+
+        static func captured(from event: NSEvent) -> Self? {
+            let flags = event.modifierFlags.intersection([.command, .control, .shift, .option])
+            guard flags.rawValue.nonzeroBitCount >= 2,
+                  flags.contains(.command) || flags.contains(.control),
+                  let letter = event.characters(byApplyingModifiers: [])?.uppercased(), letter.count == 1,
+                  letter.unicodeScalars.allSatisfy(CharacterSet.alphanumerics.contains) else { return nil }
+            let modifiers = [(NSEvent.ModifierFlags.control, controlKey), (.option, optionKey),
+                             (.shift, shiftKey), (.command, cmdKey)]
+                .reduce(0) { $0 | (flags.contains($1.0) ? UInt32($1.1) : 0) }
+            return Self(key: UInt32(event.keyCode), modifiers: modifiers, letter: letter)
+        }
+
+        static func savedCopyCode(in defaults: UserDefaults = .standard) -> Self {
+            guard let data = defaults.data(forKey: preferenceKey),
+                  let shortcut = try? JSONDecoder().decode(Self.self, from: data) else { return .copyCode }
+            return shortcut
+        }
+
+        func saveCopyCode(in defaults: UserDefaults = .standard) {
+            defaults.set(try? JSONEncoder().encode(self), forKey: Self.preferenceKey)
+        }
     }
 
-    private let shortcut: Shortcut
+    private static var nextID: UInt32 = 0
+    private let id: UInt32
+    let shortcut: Shortcut
     private let onTrigger: () -> Void
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
 
     init(shortcut: Shortcut = .showTextem, onTrigger: @escaping () -> Void) {
+        Self.nextID &+= 1
+        id = Self.nextID
         self.shortcut = shortcut
         self.onTrigger = onTrigger
     }
@@ -46,7 +83,7 @@ final class GlobalHotkey {
             // Carbon hotkey events are delivered on the main thread.
             let id = identifier.id
             return MainActor.assumeIsolated {
-                guard hotkey.shortcut.id == id else { return OSStatus(eventNotHandledErr) }
+                guard hotkey.id == id else { return OSStatus(eventNotHandledErr) }
                 hotkey.onTrigger()
                 return noErr
             }
@@ -63,13 +100,13 @@ final class GlobalHotkey {
             return false
         }
 
-        let hotKeyID = EventHotKeyID(signature: OSType(0x5458544D), id: shortcut.id) // "TXTM"
+        let hotKeyID = EventHotKeyID(signature: OSType(0x5458544D), id: id) // "TXTM"
         let hotkeyStatus = RegisterEventHotKey(
             shortcut.key,
             shortcut.modifiers,
             hotKeyID,
             GetApplicationEventTarget(),
-            0,
+            shortcut.matches(.showTextem) ? 0 : OptionBits(kEventHotKeyExclusive),
             &hotKeyRef
         )
         guard hotkeyStatus == noErr else {
