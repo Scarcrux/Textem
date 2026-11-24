@@ -16,14 +16,14 @@ final class AppLockTests: XCTestCase {
     func testOptInIsAuthenticatedAndRelaunchStartsLocked() async throws {
         let (defaults, suite) = try isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
-        let denied = AppLock(defaults: defaults, authenticate: { _, _ in false })
+        let denied = AppLock(defaults: defaults, authenticate: { _, _, _ in false })
         XCTAssertFalse(denied.isLocked)
         await denied.setEnabled(true)
         XCTAssertFalse(denied.isEnabled)
-        let lock = AppLock(defaults: defaults, authenticate: { _, _ in true })
+        let lock = AppLock(defaults: defaults, authenticate: { _, _, _ in true })
         await lock.setEnabled(true)
         XCTAssertTrue(lock.isEnabled)
-        let relaunched = AppLock(defaults: defaults, authenticate: { _, _ in false })
+        let relaunched = AppLock(defaults: defaults, authenticate: { _, _, _ in false })
         XCTAssertTrue(relaunched.isLocked)
         await relaunched.setEnabled(false)
         let unlocked = await relaunched.unlock()
@@ -38,7 +38,7 @@ final class AppLockTests: XCTestCase {
         defaults.set(true, forKey: "requireAppUnlock")
         let started = expectation(description: "authentication started")
         var answer: CheckedContinuation<Bool, Never>?
-        let lock = AppLock(defaults: defaults, authenticate: { _, _ in
+        let lock = AppLock(defaults: defaults, authenticate: { _, _, _ in
             await withCheckedContinuation { continuation in
                 answer = continuation
                 started.fulfill()
@@ -56,7 +56,7 @@ final class AppLockTests: XCTestCase {
     func testAwayTimerLocksOnlyWhenEnabled() async throws {
         let (defaults, suite) = try isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
-        let lock = AppLock(defaults: defaults, awayDelay: .milliseconds(30), authenticate: { _, _ in true })
+        let lock = AppLock(defaults: defaults, awayDelay: .milliseconds(30), authenticate: { _, _, _ in true })
         await lock.setEnabled(true)
         lock.setAway(true)
         XCTAssertFalse(lock.isLocked)
@@ -70,14 +70,14 @@ final class AppLockTests: XCTestCase {
     func testImmediateAwayLockIsOptInAndPersists() async throws {
         let (defaults, suite) = try isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
-        let lock = AppLock(defaults: defaults, authenticate: { _, _ in true })
+        let lock = AppLock(defaults: defaults, authenticate: { _, _, _ in true })
         await lock.setEnabled(true)
         lock.setAway(true)
         XCTAssertFalse(lock.isLocked)
         lock.setAway(false)
         lock.lockOnFocusLoss = true
 
-        let relaunched = AppLock(defaults: defaults, authenticate: { _, _ in true })
+        let relaunched = AppLock(defaults: defaults, authenticate: { _, _, _ in true })
         XCTAssertTrue(relaunched.lockOnFocusLoss)
         let unlocked = await relaunched.unlock()
         XCTAssertTrue(unlocked)
@@ -93,7 +93,7 @@ final class AppLockTests: XCTestCase {
         defaults.set(true, forKey: "requireAppUnlock")
         var attempts = 0
         var dialogTakesFocus: (() -> Void)?
-        let lock = AppLock(defaults: defaults, authenticate: { _, _ in
+        let lock = AppLock(defaults: defaults, authenticate: { _, _, _ in
             attempts += 1
             dialogTakesFocus?()
             return attempts == 2
@@ -119,11 +119,28 @@ final class AppLockTests: XCTestCase {
         XCTAssertFalse(lock.isLocked)
     }
 
+    func testTouchIDCanBeRetriedSeparatelyFromSystemUnlock() async throws {
+        let (defaults, suite) = try isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "requireAppUnlock")
+        var policies: [LAPolicy] = []
+        let lock = AppLock(defaults: defaults, authenticate: { _, policy, _ in
+            policies.append(policy)
+            return policy == .deviceOwnerAuthenticationWithBiometrics
+        })
+        await lock.promptToUnlockOnFocus()
+        XCTAssertTrue(lock.isLocked)
+        let didUnlock = await lock.unlock(using: .deviceOwnerAuthenticationWithBiometrics)
+        XCTAssertTrue(didUnlock)
+        XCTAssertFalse(lock.isLocked)
+        XCTAssertEqual(policies, [.deviceOwnerAuthentication, .deviceOwnerAuthenticationWithBiometrics])
+    }
+
     func testNotificationActionRequiresAnActualUnlock() async throws {
         let (defaults, suite) = try isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: "requireAppUnlock")
-        let lock = AppLock(defaults: defaults, authenticate: { _, _ in true })
+        let lock = AppLock(defaults: defaults, authenticate: { _, _, _ in true })
         let declined = await lock.authorizeAction { false }
         XCTAssertFalse(declined)
         let fakeSuccess = await lock.authorizeAction { true }
@@ -150,7 +167,7 @@ final class AppLockTests: XCTestCase {
         let (defaults, suite) = try isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: "requireAppUnlock")
-        let lock = AppLock(defaults: defaults, authenticate: { _, _ in true })
+        let lock = AppLock(defaults: defaults, authenticate: { _, _, _ in true })
         let controller = MainWindowController(account: Account(name: "Example", storeIdentifier: nil),
             storeForAccount: { _ in WKWebsiteDataStore.nonPersistent() }, initialURL: URL(string: "about:blank"),
             appLock: lock)

@@ -83,9 +83,7 @@ final class MainWindowController: NSWindowController {
             offlineModel = nil
             window?.title = "Textem — Locked"
             window?.makeFirstResponder(nil)
-            let cover = NSHostingController(rootView: AppLockView(lock: appLock) { [weak appLock] in
-                Task { await appLock?.unlock() }
-            })
+            let cover = NSHostingController(rootView: AppLockView(lock: appLock))
             // The cover fills the existing window instead of sizing it to its
             // intrinsic text width.
             cover.sizingOptions = []

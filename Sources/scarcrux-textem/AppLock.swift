@@ -1,10 +1,12 @@
 import AppKit
 import LocalAuthentication
+import OSLog
 import SwiftUI
 
 @MainActor
 final class AppLock: ObservableObject {
     static let shared = AppLock()
+    nonisolated private static let log = Logger(subsystem: "com.scarcrux.textem", category: "AppLock")
     private static let enabledKey = "requireAppUnlock"
     private static let focusKey = "lockOnFocusLoss"
     private static let awayKey = "lockWhenAway"
@@ -25,7 +27,7 @@ final class AppLock: ObservableObject {
     var onLockChanged: (() -> Void)?
 
     private let defaults: UserDefaults
-    private let authenticate: @MainActor (LAContext, String) async -> Bool
+    private let authenticate: @MainActor (LAContext, LAPolicy, String) async -> Bool
     private let awayDelay: Duration
     private var context: LAContext?
     private var awayTask: Task<Void, Never>?
@@ -34,9 +36,12 @@ final class AppLock: ObservableObject {
     private var lastActivity = ContinuousClock.now
 
     init(defaults: UserDefaults = .standard, awayDelay: Duration = .seconds(300),
-         authenticate: @escaping @MainActor (LAContext, String) async -> Bool = { context, reason in
+         authenticate: @escaping @MainActor (LAContext, LAPolicy, String) async -> Bool = { context, policy, reason in
              await withCheckedContinuation { continuation in
-                 context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
+                 context.evaluatePolicy(policy, localizedReason: reason) { success, error in
+                     if let code = (error as? LAError)?.code.rawValue {
+                         AppLock.log.debug("Authentication policy \(policy.rawValue) returned \(code)")
+                     }
                      continuation.resume(returning: success)
                  }
              }
@@ -60,11 +65,17 @@ final class AppLock: ObservableObject {
         scheduleAwayLock()
     }
 
+    var hasTouchID: Bool {
+        let probe = LAContext()
+        _ = probe.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        return probe.biometryType == .touchID
+    }
+
     @discardableResult
-    func unlock() async -> Bool {
+    func unlock(using policy: LAPolicy = .deviceOwnerAuthentication) async -> Bool {
         guard isLocked else { return true }
         promptedDuringFocus = true
-        guard await verify("Unlock Textem to see your messages.") else { return false }
+        guard await verify("Unlock Textem to see your messages.", using: policy) else { return false }
         isLocked = false
         scheduleAwayLock()
         onLockChanged?()
@@ -131,13 +142,17 @@ final class AppLock: ObservableObject {
         }
     }
 
-    private func verify(_ reason: String) async -> Bool {
+    private func verify(_ reason: String, using policy: LAPolicy = .deviceOwnerAuthentication) async -> Bool {
         guard context == nil else { return false }
         let attempt = LAContext()
         context = attempt
         isAuthenticating = true
         authenticationFailed = false
-        let success = await authenticate(attempt, reason)
+        if policy == .deviceOwnerAuthenticationWithBiometrics {
+            // A separate system unlock button remains available for password entry.
+            attempt.localizedFallbackTitle = ""
+        }
+        let success = await authenticate(attempt, policy, reason)
         // A lock event, window closure or newer attempt invalidates this result.
         guard context === attempt else { return false }
         context = nil
@@ -150,13 +165,6 @@ final class AppLock: ObservableObject {
 
 struct AppLockView: View {
     @ObservedObject var lock: AppLock
-    private let unlock: () -> Void
-
-    init(lock: AppLock, unlock: @escaping () -> Void) {
-        self.lock = lock
-        self.unlock = unlock
-    }
-
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: "lock.fill")
@@ -166,10 +174,19 @@ struct AppLockView: View {
             Text("Textem is locked").font(.title2.bold())
             Text(lock.authenticationFailed ? "Textem couldn’t unlock. Try again." : "Use Touch ID or your Mac password to see your messages.")
                 .foregroundStyle(.secondary)
-            Button(lock.isAuthenticating ? "Waiting for macOS…" : "Unlock", action: unlock)
+            HStack {
+                if lock.hasTouchID {
+                    Button("Use Touch ID") {
+                        Task { await lock.unlock(using: .deviceOwnerAuthenticationWithBiometrics) }
+                    }
+                }
+                Button(lock.isAuthenticating ? "Waiting for macOS…" : "Unlock") {
+                    Task { await lock.unlock() }
+                }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(lock.isAuthenticating)
+            }
+            .disabled(lock.isAuthenticating)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
