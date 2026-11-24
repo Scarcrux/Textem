@@ -93,7 +93,7 @@ final class AppLockTests: XCTestCase {
         defaults.set(true, forKey: "requireAppUnlock")
         var attempts = 0
         var dialogTakesFocus: (() -> Void)?
-        let lock = AppLock(defaults: defaults, touchIDAvailable: { true }, authenticate: { _, _, _ in
+        let lock = AppLock(defaults: defaults, touchIDStatus: { .available }, authenticate: { _, _, _ in
             attempts += 1
             dialogTakesFocus?()
             return attempts == 2
@@ -124,7 +124,7 @@ final class AppLockTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: "requireAppUnlock")
         var policies: [LAPolicy] = []
-        let lock = AppLock(defaults: defaults, touchIDAvailable: { true }, authenticate: { _, policy, _ in
+        let lock = AppLock(defaults: defaults, touchIDStatus: { .available }, authenticate: { _, policy, _ in
             policies.append(policy)
             return policy == .deviceOwnerAuthentication
         })
@@ -141,11 +141,24 @@ final class AppLockTests: XCTestCase {
         let (defaults, suite) = try isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: "requireAppUnlock")
-        let lock = AppLock(defaults: defaults, touchIDAvailable: { false }, authenticate: { _, _, _ in
+        let lock = AppLock(defaults: defaults, touchIDStatus: { .unavailable }, authenticate: { _, _, _ in
             XCTFail("Focus should not prompt for a password")
             return false
         })
         await lock.promptToUnlockOnFocus()
+        XCTAssertTrue(lock.isLocked)
+    }
+
+    func testFocusReportsTouchIDLockoutWithoutPrompting() async throws {
+        let (defaults, suite) = try isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "requireAppUnlock")
+        let lock = AppLock(defaults: defaults, touchIDStatus: { .lockedOut }, authenticate: { _, _, _ in
+            XCTFail("Touch ID lockout should leave password entry to the user")
+            return false
+        })
+        await lock.promptToUnlockOnFocus()
+        XCTAssertTrue(lock.touchIDLockedOut)
         XCTAssertTrue(lock.isLocked)
     }
 
@@ -160,6 +173,14 @@ final class AppLockTests: XCTestCase {
         XCTAssertFalse(fakeSuccess)
         let unlocked = await lock.authorizeAction { await lock.unlock() }
         XCTAssertTrue(unlocked)
+    }
+
+    func testLockDistinguishesAnUnsentReplyFromAnUnconfirmedSend() {
+        XCTAssertNil(WebViewController.interruptedReplyNotice(active: false, dispatched: true, queued: false))
+        XCTAssertEqual(WebViewController.interruptedReplyNotice(active: true, dispatched: false, queued: false),
+                       "Textem locked before sending your reply.")
+        XCTAssertEqual(WebViewController.interruptedReplyNotice(active: true, dispatched: true, queued: true),
+                       "Reply status unknown. Check the conversation before resending. Other queued replies were not sent.")
     }
 
     func testLockedNotificationRemovesPreviewButPreservesAction() {
@@ -180,7 +201,7 @@ final class AppLockTests: XCTestCase {
         let (defaults, suite) = try isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: "requireAppUnlock")
-        let lock = AppLock(defaults: defaults, authenticate: { _, _, _ in true })
+        let lock = AppLock(defaults: defaults, touchIDStatus: { .lockedOut }, authenticate: { _, _, _ in true })
         let controller = MainWindowController(account: Account(name: "Example", storeIdentifier: nil),
             storeForAccount: { _ in WKWebsiteDataStore.nonPersistent() }, initialURL: URL(string: "about:blank"),
             appLock: lock)
@@ -198,6 +219,9 @@ final class AppLockTests: XCTestCase {
         XCTAssertEqual(window.frame.size, unlockedSize)
         XCTAssertNil(messages.window)
         XCTAssertEqual(window.title, "Textem — Locked")
+        lock.setAway(false)
+        await lock.promptToUnlockOnFocus()
+        XCTAssertTrue(lock.touchIDLockedOut)
         let cover = try XCTUnwrap(window.contentViewController as? NSHostingController<AppLockView>)
         if let destination = ProcessInfo.processInfo.environment["TEXTEM_APP_LOCK_SNAPSHOTS"] {
             let folder = URL(fileURLWithPath: destination)

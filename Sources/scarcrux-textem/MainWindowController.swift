@@ -4,6 +4,7 @@ import WebKit
 
 final class MainWindowController: NSWindowController {
     private let appLock: AppLock
+    private var interruptedReplyNotice: String?
     private let initialURL: URL?
     private let offlineLibrary: (UUID) -> OfflineLibraryModel
     private var displayedAccount: Account
@@ -66,10 +67,14 @@ final class MainWindowController: NSWindowController {
 
     func refreshLockPresentation() {
         if appLock.isLocked {
-            webViewController.prepareForAppLock()
+            if let notice = webViewController.prepareForAppLock() { interruptedReplyNotice = notice }
             if let sheet = window?.attachedSheet { window?.endSheet(sheet) }
         }
         presentContent(for: displayedAccount)
+        if !appLock.isLocked, let notice = interruptedReplyNotice {
+            interruptedReplyNotice = nil
+            NotificationManager.shared.notifyInfo(notice)
+        }
     }
 
     private func presentContent(for account: Account) {

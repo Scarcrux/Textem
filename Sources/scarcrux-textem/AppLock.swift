@@ -15,6 +15,7 @@ final class AppLock: ObservableObject {
     @Published private(set) var isLocked: Bool
     @Published private(set) var isAuthenticating = false
     @Published private(set) var authenticationFailed = false
+    @Published private(set) var touchIDLockedOut = false
     @Published var lockWhenAway: Bool {
         didSet {
             defaults.set(lockWhenAway, forKey: Self.awayKey)
@@ -27,7 +28,7 @@ final class AppLock: ObservableObject {
     var onLockChanged: (() -> Void)?
 
     private let defaults: UserDefaults
-    private let touchIDAvailable: @MainActor () -> Bool
+    private let touchIDStatus: @MainActor () -> TouchIDStatus
     private let authenticate: @MainActor (LAContext, LAPolicy, String) async -> Bool
     private let awayDelay: Duration
     private var context: LAContext?
@@ -36,9 +37,17 @@ final class AppLock: ObservableObject {
     private var isAway = false
     private var lastActivity = ContinuousClock.now
 
+    enum TouchIDStatus {
+        case available, lockedOut, unavailable
+    }
+
     init(defaults: UserDefaults = .standard, awayDelay: Duration = .seconds(300),
-         touchIDAvailable: @escaping @MainActor () -> Bool = {
-             LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+         touchIDStatus: @escaping @MainActor () -> TouchIDStatus = {
+             var error: NSError?
+             if LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) {
+                 return .available
+             }
+             return error?.code == LAError.biometryLockout.rawValue ? .lockedOut : .unavailable
          },
          authenticate: @escaping @MainActor (LAContext, LAPolicy, String) async -> Bool = { context, policy, reason in
              await withCheckedContinuation { continuation in
@@ -59,7 +68,7 @@ final class AppLock: ObservableObject {
          }) {
         self.defaults = defaults
         self.awayDelay = awayDelay
-        self.touchIDAvailable = touchIDAvailable
+        self.touchIDStatus = touchIDStatus
         self.authenticate = authenticate
         let enabled = defaults.bool(forKey: Self.enabledKey)
         isEnabled = enabled
@@ -74,6 +83,7 @@ final class AppLock: ObservableObject {
         guard await verify(reason) else { return }
         defaults.set(enabled, forKey: Self.enabledKey)
         isEnabled = enabled
+        NotificationCenter.default.post(name: Preferences.settingsChanged, object: nil)
         scheduleAwayLock()
     }
 
@@ -95,7 +105,10 @@ final class AppLock: ObservableObject {
     }
 
     func promptToUnlockOnFocus() async {
-        guard isLocked, !isAway, !promptedDuringFocus, touchIDAvailable() else { return }
+        guard isLocked, !isAway else { return }
+        let status = touchIDStatus()
+        touchIDLockedOut = status == .lockedOut
+        guard !promptedDuringFocus, status == .available else { return }
         await unlock(using: .deviceOwnerAuthenticationWithBiometrics)
     }
 
@@ -166,6 +179,7 @@ final class AppLock: ObservableObject {
         context = nil
         isAuthenticating = false
         authenticationFailed = !success
+        if !success && isLocked { touchIDLockedOut = touchIDStatus() == .lockedOut }
         attempt.invalidate()
         return success
     }
@@ -173,6 +187,13 @@ final class AppLock: ObservableObject {
 
 struct AppLockView: View {
     @ObservedObject var lock: AppLock
+
+    private var unlockHint: String {
+        if lock.touchIDLockedOut { return "macOS requires your password before you can use Touch ID again." }
+        if lock.authenticationFailed { return "Textem couldn’t unlock. Try again." }
+        return "Use Touch ID or your Mac password to see your messages."
+    }
+
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: "lock.fill")
@@ -180,10 +201,10 @@ struct AppLockView: View {
                 .foregroundStyle(Color.accentColor)
                 .accessibilityHidden(true)
             Text("Textem is locked").font(.title2.bold())
-            Text(lock.authenticationFailed ? "Textem couldn’t unlock. Try again." : "Use Touch ID or your Mac password to see your messages.")
+            Text(unlockHint)
                 .foregroundStyle(.secondary)
             HStack {
-                if lock.hasTouchID {
+                if !lock.touchIDLockedOut, lock.hasTouchID {
                     Button("Use Touch ID") {
                         Task { await lock.unlock(using: .deviceOwnerAuthenticationWithBiometrics) }
                     }

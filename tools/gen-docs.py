@@ -78,7 +78,7 @@ PAGES = {
     ("Reply from the notification", """
 <ol><li>Hover over the notification and click <strong>Reply</strong>.</li>
 <li>Type your reply and press Return.</li></ol>
-<p>Textem sends it to the conversation the notification came from, even if a different one is open. If Textem can't confirm the message went out, it says <em>Reply status unknown — check the thread before resending</em>, so you don't send it twice.</p>"""),
+<p>Textem sends it to the conversation the notification came from, even if a different one is open. If Textem is locked, unlock it first. If Textem locks while a reply is sending, check its status after unlocking. When the status is unknown, check the conversation before resending.</p>"""),
     ("Mute or hide what banners show", """
 <p>In <strong>Textem &gt; Settings…</strong>, under <strong>Notifications</strong>:</p>
 <ul><li><strong>Mute notifications</strong> stops banners. The Dock badge still updates.</li>
@@ -99,7 +99,10 @@ PAGES = {
 <li>Codes stay in memory only, and are copied marked as private so clipboard managers that respect that don't save them.</li>
 <li>To copy the most recent code at any time, choose <strong>Edit &gt; Copy Latest Code</strong> (""" + k("⇧", "⌘", "C") + """).</li>
 <li>To turn the button off: <strong>Textem &gt; Settings…</strong> &gt; <strong>Verification Codes</strong> &gt; <strong>Copy Code button in notifications</strong>.</li></ul>
-<p>Detection is cautious: it needs verification wording and exactly one 4–8 digit code, and ignores your own messages, promo codes, phone numbers and amounts. Codes already in your inbox when Textem opens are never offered.</p>"""),
+<p>Detection is cautious: it needs verification wording and exactly one 4–8 digit code, and ignores your own messages, promo codes, phone numbers and amounts. Notifications only offer newly received codes.</p>"""),
+    ("Copy from a conversation or another app", """
+<p>If the open conversation contains a detected verification code, choose <strong>Copy Code</strong> or use <strong>Show Message</strong> to find the original text. Check the age before using the code.</p>
+<p>To copy a fresh code while you are in another app, turn on <strong>Global Copy Latest Code shortcut</strong> in <strong>Settings &gt; Verification Codes</strong>. Choose <strong>Change Shortcut…</strong>, press a letter or number with at least two modifiers including Command or Control, then click <strong>Save</strong>. The global shortcut uses codes received in the active Textem account in the last three minutes.</p>"""),
     ("Textem Codes in AutoFill <span class=\"badge\">Experimental · macOS 15+</span>", """
 <p>Textem can also offer fresh codes in Safari's AutoFill, the way Apple's Messages app does. This is experimental and hasn't yet been confirmed showing up in every app.</p>
 <ol><li>Open <strong>System Settings &gt; General &gt; AutoFill &amp; Passwords</strong> and turn on <strong>Textem Codes</strong>.</li>
@@ -144,6 +147,9 @@ PAGES = {
 <li><strong>Privacy &gt; Hide avatars</strong>: removes contact pictures.</li>
 <li><strong>Notifications &gt; Hide sender and message preview</strong>: banners say only "New message".</li></ul>
 <p>These change only what's shown on your Mac. Read receipts and what you send are unaffected.</p>"""),
+    ("Lock the Textem window", """
+<p>In <strong>Settings &gt; Privacy</strong>, turn on <strong>Require Touch ID or your Mac password to open Textem</strong>. Textem locks at launch and when your Mac sleeps or locks. You can also choose to lock immediately when you switch away, or after five minutes of inactivity in Textem.</p>
+<p>Choose <strong>Lock Textem</strong> from the app menu or the Textem menu-bar icon to lock immediately. On return, Textem can prompt for Touch ID. Use <strong>Use Mac Password…</strong> if macOS requires your password. Notification previews are hidden while locked. The lock protects the Textem window; your session and saved files rely on your Mac login and FileVault.</p>"""),
     ("What Textem connects to", """
 <p>Textem shows Google's own Messages for web and talks to Google. It adds no analytics, telemetry, accounts or relay servers, and your session is stored on your Mac. The only other connection is the daily update check to textem.scarcrux.com, which you can turn off in <strong>Settings &gt; Updates</strong>. To keep Google's sign-in working inside an app, Textem turns off WebKit's cross-site tracking prevention for its own Google session; this doesn't affect Safari.</p>"""),
     ("Offline Mode <span class=\"badge\">Experimental</span>", """

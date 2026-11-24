@@ -72,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // Menu-bar presence + account switcher + background/launch toggles.
         statusItemController = StatusItemController(actions: .init(
             onShow: { [weak self] in self?.showMainWindow() },
+            onLock: { [weak self] in self?.lockTextem(nil) },
             onSwitchAccount: { [weak self] id in self?.switchAccount(id) },
             onAddAccount: { [weak self] in self?.addAccount() },
             onRenameAccount: { [weak self] in self?.renameAccount() },
@@ -368,10 +369,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func openNotification(accountID: UUID?, conversationID: String?) {
-        guard requireUnlocked() else { return }
+        guard !appLock.isLocked else { return }
         if let accountID, !switchAccount(accountID, show: false) {
             NotificationManager.shared.notifyInfo(
                 "That notification belongs to an account that has been removed.")
+            return
         }
         windowController?.webViewController.openConversation(conversationID)
         showMainWindow()

@@ -7,6 +7,7 @@ import AppKit
 final class StatusItemController: NSObject {
     struct Actions {
         let onShow: () -> Void
+        let onLock: () -> Void
         let onSwitchAccount: (UUID) -> Void
         let onAddAccount: () -> Void
         let onRenameAccount: () -> Void
@@ -48,6 +49,9 @@ final class StatusItemController: NSObject {
         let show = NSMenuItem(title: "Show Textem", action: #selector(showApp), keyEquivalent: "")
         show.target = self
         menu.addItem(show)
+        if AppLock.shared.isEnabled && !AppLock.shared.isLocked {
+            menu.addItem(actionItem("Lock Textem", #selector(lockApp)))
+        }
 
         let unread = NSMenuItem(title: unreadCount > 0 ? "\(unreadCount) unread" : "No unread messages", action: nil, keyEquivalent: "")
         unread.isEnabled = false
@@ -111,6 +115,7 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func showApp() { actions.onShow() }
+    @objc private func lockApp() { actions.onLock() }
 
     @objc private func settingsChanged() { rebuild() }
 

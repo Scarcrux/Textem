@@ -278,7 +278,9 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         }
 
         completionHandler()
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
         Task { @MainActor in
+            guard await self.unlockForNotificationAction() else { return }
             NSApp.activate(ignoringOtherApps: true)
             self.onOpen?(accountID, conversationID)
         }

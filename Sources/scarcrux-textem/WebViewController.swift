@@ -91,6 +91,7 @@ final class WebViewController: NSViewController {
     private var replyQueue: [PendingReply] = []
     private var activeReply: PendingReply?
     private var nativeSendReplyID: UUID?
+    private var replyWasDispatched = false
     private var replyTimeoutTask: Task<Void, Never>?
     private var pendingOpenConversationID: String?
     private var pendingOpenAttempts = 0
@@ -588,6 +589,7 @@ final class WebViewController: NSViewController {
         let reply = replyQueue.removeFirst()
         activeReply = reply
         nativeSendReplyID = nil
+        replyWasDispatched = false
         // The script is built by ReplyAutomation so the exact text injected here
         // is the one exercised against a fixture page in the WebKit tests.
         guard let js = ReplyAutomation.script(
@@ -636,6 +638,7 @@ final class WebViewController: NSViewController {
                     return
                 }
                 let sent = NativeWebClick.send(in: self.webView, target: target)
+                self.replyWasDispatched = sent
                 NotificationDiagnostics.record(sent ? "reply_native_dispatched" : "reply_native_unavailable")
                 if !sent {
                     self.finishReply(reply, ok: false, statusUnknown: false,
@@ -707,7 +710,18 @@ final class WebViewController: NSViewController {
         webView.evaluateJavaScript(js, completionHandler: nil)
     }
 
-    func prepareForAppLock() {
+    static func interruptedReplyNotice(active: Bool, dispatched: Bool, queued: Bool) -> String? {
+        if active && dispatched {
+            let suffix = queued ? " Other queued replies were not sent." : ""
+            return "Reply status unknown. Check the conversation before resending." + suffix
+        }
+        if active || queued { return "Textem locked before sending your reply." }
+        return nil
+    }
+
+    func prepareForAppLock() -> String? {
+        let notice = Self.interruptedReplyNotice(
+            active: activeReply != nil, dispatched: replyWasDispatched, queued: !replyQueue.isEmpty)
         presentConversationCode(nil)
         pendingOpenConversationID = nil
         replyTimeoutTask?.cancel()
@@ -720,6 +734,7 @@ final class WebViewController: NSViewController {
         popups.removeAll()
         existingPopups.forEach { $0.close() }
         hideLinkPreviewFallback()
+        return notice
     }
 
     // Detach the web view before this controller is replaced (account switch)
@@ -947,8 +962,7 @@ final class WebViewController: NSViewController {
         guard !AppLock.shared.isLocked else { return }
         guard let code else { NSSound.beep(); return }
         CodeClipboard.copy(code)
-        NotificationManager.shared.notifyInfo(
-            Preferences.hideNotificationPreview ? "Copied verification code" : "Copied code \(code)")
+        NotificationManager.shared.notifyInfo("Verification code copied")
     }
 
     // Start a new conversation by clicking Google's compose FAB (mw-fab-link,
