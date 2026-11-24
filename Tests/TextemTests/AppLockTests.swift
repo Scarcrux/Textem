@@ -183,17 +183,27 @@ final class AppLockTests: XCTestCase {
                        "Reply status unknown. Check the conversation before resending. Other queued replies were not sent.")
     }
 
-    func testLockedNotificationRemovesPreviewButPreservesAction() {
-        let content = UNMutableNotificationContent()
-        content.title = "Example sender"
-        content.subtitle = "Example thread"
-        content.body = "Example code 123456"
-        content.categoryIdentifier = "test-action"
-        NotificationManager.redactForAppLock(content)
-        XCTAssertEqual(content.title, "Textem")
-        XCTAssertEqual(content.subtitle, "")
-        XCTAssertEqual(content.body, "Unlock Textem to see details.")
-        XCTAssertEqual(content.categoryIdentifier, "test-action")
+    func testLockedNotificationRemovesPreviewAndCodeSignal() {
+        func redacted(_ category: String) -> UNMutableNotificationContent {
+            let content = UNMutableNotificationContent()
+            content.title = "Example sender"
+            content.subtitle = "Example thread"
+            content.body = "Example code 123456"
+            content.categoryIdentifier = category
+            NotificationManager.redactForAppLock(content)
+            return content
+        }
+        let message = redacted("textem.message")
+        XCTAssertEqual(message.title, "Textem")
+        XCTAssertEqual(message.subtitle, "")
+        XCTAssertEqual(message.body, "Unlock Textem to see details.")
+        // Reply survives (it asks for unlock before sending)...
+        XCTAssertEqual(message.categoryIdentifier, "textem.message")
+        // ...but a message with a code must look exactly like any other message,
+        // and a code-only notification loses its Copy Code action entirely.
+        XCTAssertEqual(redacted("textem.message.code").categoryIdentifier, "textem.message")
+        XCTAssertEqual(redacted("textem.code").categoryIdentifier, "")
+        XCTAssertEqual(redacted("textem.message.code").body, message.body)
     }
 
     func testLockedWindowDetachesMessagesAndRendersOpaqueCover() async throws {

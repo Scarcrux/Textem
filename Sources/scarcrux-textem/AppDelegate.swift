@@ -185,11 +185,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func copyFreshCodeFromShortcut() async {
+        // Unlock through the macOS prompt alone. Raising Textem here would pull
+        // the person out of the app they're about to paste the code into.
         guard isGlobalCodeShortcutRegistered,
-              await appLock.authorizeAction(asking: {
-                  self.showMainWindow()
-                  return await self.appLock.unlock()
-              }), !appLock.isLocked, isGlobalCodeShortcutRegistered else { return }
+              await appLock.authorizeAction(asking: { await self.appLock.unlock() }),
+              !appLock.isLocked, isGlobalCodeShortcutRegistered else { return }
         guard let code = windowController?.webViewController.freshObservedCode() else {
             NSSound.beep()
             NotificationManager.shared.notifyInfo("No fresh verification code in the active Textem account.")

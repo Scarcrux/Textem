@@ -16,6 +16,9 @@ final class AppLock: ObservableObject {
     @Published private(set) var isAuthenticating = false
     @Published private(set) var authenticationFailed = false
     @Published private(set) var touchIDLockedOut = false
+    /// The last failure was the person dismissing the macOS prompt. Views use
+    /// this to avoid calling a deliberate cancel an error.
+    @Published private(set) var lastAttemptCancelled = false
     @Published var lockWhenAway: Bool {
         didSet {
             defaults.set(lockWhenAway, forKey: Self.awayKey)
@@ -30,6 +33,7 @@ final class AppLock: ObservableObject {
     private let defaults: UserDefaults
     private let touchIDStatus: @MainActor () -> TouchIDStatus
     private let authenticate: @MainActor (LAContext, LAPolicy, String) async -> Bool
+    private let touchIDPresent: @MainActor () -> Bool
     private let awayDelay: Duration
     private var context: LAContext?
     private var awayTask: Task<Void, Never>?
@@ -53,11 +57,14 @@ final class AppLock: ObservableObject {
              await withCheckedContinuation { continuation in
                  context.evaluatePolicy(policy, localizedReason: reason) { success, error in
                      let code = (error as? LAError)?.code
+                     AppLock.lastErrorWasCancel = [.userCancel, .appCancel, .systemCancel].contains(code)
                      if let code {
                          AppLock.log.debug("Authentication policy \(policy.rawValue) returned \(code.rawValue)")
                      }
                      if policy == .deviceOwnerAuthenticationWithBiometrics, code == .userFallback {
-                         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
+                         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, error in
+                             let code = (error as? LAError)?.code
+                             AppLock.lastErrorWasCancel = [.userCancel, .appCancel, .systemCancel].contains(code)
                              continuation.resume(returning: success)
                          }
                      } else {
@@ -65,8 +72,14 @@ final class AppLock: ObservableObject {
                      }
                  }
              }
+         },
+         touchIDPresent: @escaping @MainActor () -> Bool = {
+             let probe = LAContext()
+             _ = probe.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+             return probe.biometryType == .touchID
          }) {
         self.defaults = defaults
+        self.touchIDPresent = touchIDPresent
         self.awayDelay = awayDelay
         self.touchIDStatus = touchIDStatus
         self.authenticate = authenticate
@@ -87,11 +100,12 @@ final class AppLock: ObservableObject {
         scheduleAwayLock()
     }
 
-    var hasTouchID: Bool {
-        let probe = LAContext()
-        _ = probe.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
-        return probe.biometryType == .touchID
-    }
+    var hasTouchID: Bool { touchIDPresent() }
+
+    // Written from LocalAuthentication's callback queue just before the
+    // continuation resumes, read on the main actor right after; the resume
+    // orders the two.
+    nonisolated(unsafe) static var lastErrorWasCancel = false
 
     @discardableResult
     func unlock(using policy: LAPolicy = .deviceOwnerAuthentication) async -> Bool {
@@ -173,12 +187,15 @@ final class AppLock: ObservableObject {
         context = attempt
         isAuthenticating = true
         authenticationFailed = false
+        lastAttemptCancelled = false
+        Self.lastErrorWasCancel = false
         let success = await authenticate(attempt, policy, reason)
         // A lock event, window closure or newer attempt invalidates this result.
         guard context === attempt else { return false }
         context = nil
         isAuthenticating = false
         authenticationFailed = !success
+        lastAttemptCancelled = !success && Self.lastErrorWasCancel
         if !success && isLocked { touchIDLockedOut = touchIDStatus() == .lockedOut }
         attempt.invalidate()
         return success
@@ -188,10 +205,13 @@ final class AppLock: ObservableObject {
 struct AppLockView: View {
     @ObservedObject var lock: AppLock
 
+    private var offersTouchID: Bool { !lock.touchIDLockedOut && lock.hasTouchID }
+
     private var unlockHint: String {
         if lock.touchIDLockedOut { return "macOS requires your password before you can use Touch ID again." }
-        if lock.authenticationFailed { return "Textem couldn’t unlock. Try again." }
-        return "Use Touch ID or your Mac password to see your messages."
+        if lock.authenticationFailed && !lock.lastAttemptCancelled { return "Textem couldn’t unlock. Try again." }
+        return offersTouchID ? "Use Touch ID or your Mac password to see your messages."
+            : "Use your Mac password to see your messages."
     }
 
     var body: some View {
@@ -203,20 +223,29 @@ struct AppLockView: View {
             Text("Textem is locked").font(.title2.bold())
             Text(unlockHint)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+            // The quickest way in is the prominent default: Touch ID when the
+            // Mac has it, otherwise the password.
             HStack {
-                if !lock.touchIDLockedOut, lock.hasTouchID {
+                if offersTouchID {
+                    Button("Use Mac Password…") { Task { await lock.unlock() } }
                     Button("Use Touch ID") {
                         Task { await lock.unlock(using: .deviceOwnerAuthenticationWithBiometrics) }
                     }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                } else {
+                    Button("Use Mac Password…") { Task { await lock.unlock() } }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
                 }
-                Button("Use Mac Password…") {
-                    Task { await lock.unlock() }
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
             }
+            .controlSize(.large)
             .disabled(lock.isAuthenticating)
-            if lock.isAuthenticating { Text("Waiting for macOS…").font(.caption) }
+            if lock.isAuthenticating {
+                Text("Waiting for macOS…").font(.caption).foregroundStyle(.secondary)
+            }
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -99,7 +99,7 @@ enum NativeCodeIndexReadback {
         self.clock = clock; self.accountExists = accountExists
         status = "Requires an AutoFill-provisioned build with the signed Textem Codes extension and shared Keychain access. No codes are being collected."
         if self.available {
-            do { enabled = try self.vault.isEnabled(); status = enabled ? "On. Codes that arrive in Textem are offered for 3 minutes." : "Native code AutoFill is off." }
+            do { enabled = try self.vault.isEnabled(); status = enabled ? "On. Codes that arrive in Textem are offered for 3 minutes." : "AutoFill verification codes are off." }
             catch { status = "Protected code storage is locked, unavailable or invalid. No code was read." }
         }
     }
@@ -205,7 +205,7 @@ enum NativeCodeIndexReadback {
                     status = samples.isEmpty ? "On. Codes that arrive in Textem are offered for 3 minutes."
                         : "\(samples.count) fresh code(s): \(open) in Textem's AutoFill list, \(entries.count) suggested for their own site."
                     if counts.withheld > 0 { status += " \(counts.withheld) site code(s) held back because their domains overlap; none was guessed." }
-                } else { status = "Native code AutoFill is off. Protected samples and source bindings were deleted." }
+                } else { status = "AutoFill verification codes are off. Saved codes and phone links were deleted." }
             } catch NativeCodeSetupError.indexReadbackRefused {
                 if revision == id {
                     counts.failure = 2
@@ -215,7 +215,7 @@ enum NativeCodeIndexReadback {
             } catch NativeCodeSetupError.notEnabled {
                 if revision == id {
                     diagnose(.providerDisabled, counts)
-                    status = enabled ? "Enable Textem Codes in System Settings → General → AutoFill & Passwords. Codes stay protected; native suggestions are not active." : "Native code AutoFill is off. Protected samples and source bindings were deleted; the OS has disabled its suggestion index."
+                    status = enabled ? "Enable Textem Codes in System Settings → General → AutoFill & Passwords. Codes stay protected; native suggestions are not active." : "AutoFill verification codes are off. Saved codes and phone links were deleted, and macOS no longer suggests them."
                 }
             } catch {
                 if revision == id {

@@ -190,12 +190,20 @@ final class NotificationManager: NSObject {
 
     // Apply at the final delivery boundary, including informational and code
     // notifications. Preserve identifiers so actions can revalidate on unlock.
+    // The category is narrowed too: Copy Code only appears on notifications
+    // that carry a code, so showing it on a locked banner would reveal that a
+    // code arrived. Reply stays (any message could have one) and still asks
+    // for unlock before sending.
     static func redactForAppLock(_ content: UNMutableNotificationContent) {
         content.title = "Textem"
         content.subtitle = ""
         content.body = "Unlock Textem to see details."
         content.attachments = []
         content.userInfo[Self.redactedKey] = true
+        switch content.categoryIdentifier {
+        case messageCategoryID, messageWithCodeCategoryID: content.categoryIdentifier = messageCategoryID
+        default: content.categoryIdentifier = ""
+        }
     }
 
     private func add(_ content: UNMutableNotificationContent, kind: String, code: String? = nil) {
@@ -204,7 +212,8 @@ final class NotificationManager: NSObject {
         let request = UNNotificationRequest(
             identifier: UUID().uuidString, content: content, trigger: nil)
         let requestID = request.identifier
-        if let code { rememberCode(code, forNotification: requestID) }
+        // A redacted banner offers no Copy Code, so don't keep its code.
+        if let code, !redacted { rememberCode(code, forNotification: requestID) }
         NotificationDiagnostics.record("request_" + kind)
         UNUserNotificationCenter.current().add(request) { error in
             Task { @MainActor in

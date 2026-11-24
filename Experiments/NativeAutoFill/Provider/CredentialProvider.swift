@@ -133,7 +133,11 @@ public final class CredentialProvider: ASCredentialProviderViewController {
         let close = NSButton(title: "Cancel", target: self, action: #selector(cancelSelection))
         close.bezelStyle = .rounded
         close.keyEquivalent = "\u{1b}"
-        rows.append(close)
+        close.identifier = NSUserInterfaceItemIdentifier("cancel-code")
+        // Cancel sits apart in the bottom-right corner so it doesn't read as
+        // another code choice; macOS sizes this sheet, so the corner also
+        // anchors the otherwise empty lower area.
+        close.translatesAutoresizingMaskIntoConstraints = false
         let stack = NSStackView(views: rows)
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 16
         for label in captions {
@@ -143,10 +147,14 @@ public final class CredentialProvider: ASCredentialProviderViewController {
         }
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
+        view.addSubview(close)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 24)
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 24),
+            close.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            close.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
+            close.topAnchor.constraint(greaterThanOrEqualTo: stack.bottomAnchor, constant: 16)
         ])
     }
 

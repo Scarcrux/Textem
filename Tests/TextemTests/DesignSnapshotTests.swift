@@ -133,6 +133,40 @@ final class DesignSnapshotTests: XCTestCase {
         }
     }
 
+    // The App Lock cover in each state a person can see. Async because the
+    // failed and locked-out states are reached through a real unlock attempt.
+    func testRenderAppLockCover() async throws {
+        guard let path = ProcessInfo.processInfo.environment["TEXTEM_DESIGN_SNAPSHOT_DIR"] else {
+            throw XCTSkip("Set TEXTEM_DESIGN_SNAPSHOT_DIR to render design snapshots.")
+        }
+        let output = URL(fileURLWithPath: path, isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let suite = "textem-design-lock-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "requireAppUnlock")
+
+        func lock(touchID: Bool, status: AppLock.TouchIDStatus = .available, failOnce: Bool = false) async -> AppLock {
+            let lock = AppLock(defaults: defaults, touchIDStatus: { status },
+                               authenticate: { _, _, _ in false }, touchIDPresent: { touchID })
+            if failOnce { await lock.unlock() }
+            return lock
+        }
+        let states: [(String, AppLock)] = [
+            ("touchid", await lock(touchID: true)),
+            ("failed", await lock(touchID: true, failOnce: true)),
+            ("lockedout", await lock(touchID: true, status: .lockedOut, failOnce: true)),
+            ("password", await lock(touchID: false)),
+        ]
+        for (appearanceName, suffix) in [(NSAppearance.Name.aqua, "light"), (.darkAqua, "dark")] {
+            let appearance = try XCTUnwrap(NSAppearance(named: appearanceName))
+            for (state, model) in states {
+                try render(NSHostingView(rootView: AppLockView(lock: model).frame(width: 900, height: 560)),
+                           "app-lock-\(state)-\(suffix)", appearance, output)
+            }
+        }
+    }
+
     // Fills with the window background so transparent SwiftUI roots are judged
     // against the colour they actually sit on, in the appearance under test.
     private final class Backdrop: NSView {

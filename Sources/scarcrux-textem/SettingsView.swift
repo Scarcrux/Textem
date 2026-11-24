@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var shortcutUnavailable = false
     @State private var codeShortcut = GlobalHotkey.Shortcut.savedCopyCode()
     @State private var choosingCodeShortcut = false
+    @State private var confirmingCodeDeletion = false
     @AppStorage("copyCodeNotifications") private var copyCodeNotifications = true
     @State private var showPhoneTools = Preferences.showPhoneTools
     @State private var launchAtLogin = LoginItem.isEnabled
@@ -97,7 +98,7 @@ struct SettingsView: View {
             Section {
                 Toggle(isOn: notifying($copyCodeNotifications)) {
                     row("Copy Code button in notifications",
-                        "When a text with a verification code arrives, its notification can copy the code.")
+                        "Notifications for texts with a verification code get a Copy Code button.")
                 }
                 Toggle(isOn: Binding(
                     get: { globalCopyCode },
@@ -108,7 +109,7 @@ struct SettingsView: View {
                     }
                 )) {
                     row("Global Copy Latest Code shortcut",
-                        "Press \(codeShortcut.label) in any app to copy a code received in the active account in the last 3 minutes.")
+                        "Press \(codeShortcut.label) in any app to copy a code received in the active account in the last 3 minutes. If Textem is locked, macOS asks you to unlock first.")
                 }
                 .onAppear {
                     if globalCopyCode {
@@ -135,9 +136,17 @@ struct SettingsView: View {
                     row("AutoFill verification codes (Experimental)",
                         "Offer codes from your texts in Safari and other apps, through Textem Codes. Not yet confirmed working in every app.")
                 }.disabled(!nativeCodes.available).accessibilityIdentifier("native-code-autofill-toggle")
-                Button("Delete native codes and source links", role: .destructive) {
-                    Task { await nativeCodes.setEnabled(false) }
-                }.disabled(!nativeCodes.available)
+                Button("Delete Saved AutoFill Codes…", role: .destructive) {
+                    confirmingCodeDeletion = true
+                }
+                .disabled(!nativeCodes.available || !nativeCodes.enabled)
+                .confirmationDialog("Delete saved AutoFill codes?", isPresented: $confirmingCodeDeletion) {
+                    Button("Delete and Turn Off AutoFill", role: .destructive) {
+                        Task { await nativeCodes.setEnabled(false) }
+                    }
+                } message: {
+                    Text("This removes the codes and phone links Textem Codes has saved, and turns off AutoFill verification codes. Codes in Google Messages aren’t affected.")
+                }
             } header: {
                 Text("Verification Codes")
             } footer: {
@@ -145,7 +154,8 @@ struct SettingsView: View {
             }
 
             Section {
-                Toggle("Require Touch ID or your Mac password to open Textem", isOn: Binding(
+                Toggle(appLock.hasTouchID ? "Require Touch ID or your Mac password to open Textem"
+                                          : "Require your Mac password to open Textem", isOn: Binding(
                     get: { appLock.isEnabled },
                     set: { enabled in Task { await appLock.setEnabled(enabled) } }
                 )).disabled(appLock.isAuthenticating)
@@ -156,11 +166,17 @@ struct SettingsView: View {
                     }
                     Toggle("Lock after 5 minutes of inactivity in Textem", isOn: $appLock.lockWhenAway)
                 }
-                if appLock.authenticationFailed {
-                    Text("macOS didn’t confirm the change. Try again.").font(.caption)
+                if appLock.authenticationFailed && !appLock.lastAttemptCancelled {
+                    Text("macOS didn’t confirm the change. Try again.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                Text("The lock protects Textem’s window. Your Google session and saved files still rely on your Mac login and FileVault.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text("App Lock")
+            } footer: {
+                footer("Textem also locks when your Mac sleeps or locks. Locking clears Textem’s notifications and hides previews in new ones until you unlock; the unread count stays visible. The lock protects Textem’s window. Your Google session and saved files still rely on your Mac login and FileVault.")
+            }
+
+            Section {
                 Toggle(isOn: Binding(
                     get: { blurMessages },
                     set: { blurMessages = $0; privacyChanged() }
