@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates the Textem user guides at docs/docs/ (served at /docs/).
+"""Generates the Textem user guides and public release history.
 
 Run from the repository root:  python3 -I tools/gen-docs.py
 Every UI name below must match the app (Sources/scarcrux-textem/MainMenu.swift,
@@ -195,7 +195,9 @@ def nav(current):
         parts.append(f"<h2>{name}</h2><ul>{items}</ul>")
     return "".join(parts)
 
-def head(title, description, path):
+def head(title, description, path, current="docs"):
+    docs_current = ' aria-current="page"' if current == "docs" else ""
+    news_current = ' aria-current="page"' if current == "news" else ""
     t = html.escape(title); d = html.escape(description)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -213,7 +215,7 @@ def head(title, description, path):
 </head><body>
 <a class="skip-link" href="#main-content">Skip to content</a>
 <header class="site-topbar"><a class="tb-brand" href="/"><img src="/media/app-icon.png" width="28" height="28" alt="">Textem</a>
-<nav aria-label="Site"><a href="/">Overview</a><a href="/docs/" aria-current="page">Documentation</a><a class="tb-github" href="https://github.com/Scarcrux/Textem">GitHub</a><a class="tb-download" href="https://github.com/Scarcrux/Textem/releases/latest/download/Textem.dmg">Download</a></nav></header>
+<nav aria-label="Site"><a href="/">Overview</a><a href="/docs/"{docs_current}>Documentation</a><a href="/whats-new/"{news_current}>What’s New</a><a class="tb-github" href="https://github.com/Scarcrux/Textem">GitHub</a><a class="tb-download" href="https://github.com/Scarcrux/Textem/releases/latest/download/Textem.dmg">Download</a></nav></header>
 """
 
 FOOT = f"""<footer><p>Textem documentation · Updated {UPDATED}</p>
@@ -249,10 +251,53 @@ def index():
         + '<p class="lead">Install Textem, pair it with your phone, and get the most out of notifications, verification codes and shortcuts.</p>'
         + "".join(cards) + "</main>" + FOOT + "</div></div>\n</body></html>\n")
 
+def whats_new():
+    return (head("What’s New | Textem", "Release highlights and downloads for Textem.", "/whats-new/", current="news")
+        + """<div class="release-history">
+<main id="main-content" tabindex="-1">
+<h1>What’s New</h1>
+<p class="lead">Release highlights, update instructions, and downloads for Textem.</p>
+<article class="release-entry" aria-labelledby="beta-3">
+<p class="release-date"><time datetime="2026-11-20">November 20, 2026</time> · Latest</p>
+<h2 id="beta-3">1.0 public beta 3</h2>
+<p>The new <strong>After Updating</strong> guide helps you restore notifications, Textem Codes, and launch at login after moving from 1.0b1. You can reopen it from <strong>Help → After Updating…</strong>.</p>
+<p>Beta 2 users can choose <strong>Textem → Check for Updates…</strong>. If you’re still on beta 1, download the new app once and replace your old copy in Applications.</p>
+<p class="release-links"><a href="https://github.com/Scarcrux/Textem/releases/download/v1.0.0-beta.3/Textem.dmg">Download beta 3</a><a href="https://github.com/Scarcrux/Textem/releases/tag/v1.0.0-beta.3">Full beta 3 release notes</a></p>
+</article>
+<article class="release-entry" aria-labelledby="beta-2">
+<p class="release-date"><time datetime="2026-11-19">November 19, 2026</time></p>
+<h2 id="beta-2">1.0 public beta 2</h2>
+<p>Textem moved to a new macOS app identifier and carries over your Google sign-in and settings. If the inbox loads without showing conversations, Textem retries once and then offers <strong>Try Again</strong>.</p>
+<p class="release-links"><a href="https://github.com/Scarcrux/Textem/releases/tag/v1.0.0-beta.2">Full beta 2 release notes and download</a></p>
+</article>
+<article class="release-entry" aria-labelledby="beta-1">
+<p class="release-date"><time datetime="2026-11-18">November 18, 2026</time></p>
+<h2 id="beta-1">1.0 public beta 1</h2>
+<p>Textem entered public beta with message notifications and inline replies, multiple accounts on macOS 14 or later, menu-bar-only mode, and experimental verification-code AutoFill on macOS 15 or later.</p>
+<p class="release-links"><a href="https://github.com/Scarcrux/Textem/commit/e68c630">Public beta announcement on GitHub</a></p>
+</article>
+<article class="release-entry" aria-labelledby="alpha">
+<p class="release-date"><time datetime="2026-11-18">November 18, 2026</time></p>
+<h2 id="alpha">0.1.0 alpha</h2>
+<p>The first public download introduced signed and notarized builds for Intel and Apple silicon Macs and a signed in-app update feed.</p>
+<p class="release-links"><a href="https://github.com/Scarcrux/Textem/commit/065cdf5">Alpha release record on GitHub</a></p>
+</article>
+</main>
+<footer>
+<p>Unofficial. Not affiliated with, endorsed by, or sponsored by Google. “Google Messages” is a trademark of Google LLC.</p>
+<p><a href="/docs/">Documentation</a> · <a href="https://github.com/Scarcrux/Textem/releases">All releases on GitHub</a> · © 2026 <a href="https://scarcrux.com">Scarcrux LLC</a></p>
+</footer></div>
+</body></html>
+""")
+
+
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "index.html").write_text(index(), encoding="utf-8")
     for slug in PAGES:
         (OUT / slug).mkdir(exist_ok=True)
         (OUT / slug / "index.html").write_text(page(slug), encoding="utf-8")
-    print("wrote", 1 + len(PAGES), "pages to", OUT)
+    news = OUT.parent / "whats-new"
+    news.mkdir(exist_ok=True)
+    (news / "index.html").write_text(whats_new(), encoding="utf-8")
+    print("wrote", 1 + len(PAGES), "guides and What’s New")
