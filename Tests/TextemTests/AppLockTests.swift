@@ -183,6 +183,13 @@ final class AppLockTests: XCTestCase {
                        "Reply status unknown. Check the conversation before resending. Other queued replies were not sent.")
     }
 
+    func testLockedTextemNotifiesEvenWhenFrontmost() {
+        XCTAssertFalse(WebViewController.shouldNotify(appActive: true, locked: false, muted: false))
+        XCTAssertTrue(WebViewController.shouldNotify(appActive: true, locked: true, muted: false))
+        XCTAssertTrue(WebViewController.shouldNotify(appActive: false, locked: false, muted: false))
+        XCTAssertFalse(WebViewController.shouldNotify(appActive: false, locked: true, muted: true))
+    }
+
     func testLockedNotificationRemovesPreviewAndCodeSignal() {
         func redacted(_ category: String) -> UNMutableNotificationContent {
             let content = UNMutableNotificationContent()
@@ -206,7 +213,11 @@ final class AppLockTests: XCTestCase {
         XCTAssertEqual(redacted("textem.message.code").body, message.body)
     }
 
-    func testLockedWindowDetachesMessagesAndRendersOpaqueCover() async throws {
+    // Regression (owner test 2026-11-24): a text sent while locked was first
+    // seen one second after unlocking, because the page had been taken out of
+    // the window and WebKit suspended it. The page must stay in the window,
+    // hidden under an opaque cover, from a cold locked launch onward.
+    func testLockedWindowKeepsMessagesRunningHiddenUnderOpaqueCover() async throws {
         _ = NSApplication.shared
         let (defaults, suite) = try isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -218,21 +229,27 @@ final class AppLockTests: XCTestCase {
         let window = try XCTUnwrap(controller.window)
         defer { window.orderOut(nil); controller.webViewController.teardown() }
         lock.onLockChanged = { [weak controller] in controller?.refreshLockPresentation() }
-        XCTAssertFalse(controller.webViewController.isViewLoaded, "Cold locked launch must not load the web view")
+        let messages = controller.webViewController.view
+        XCTAssertTrue(messages.window === window, "Cold locked launch must keep Messages running in the window")
+        XCTAssertTrue(messages.isHidden)
+        XCTAssertTrue(window.contentViewController is LockedContentController)
         let unlocked = await lock.unlock()
         XCTAssertTrue(unlocked)
-        let messages = controller.webViewController.view
         XCTAssertTrue(window.contentViewController === controller.webViewController)
+        XCTAssertFalse(messages.isHidden)
         let unlockedSize = window.frame.size
         lock.lockOnFocusLoss = true
         lock.setAway(true)
         XCTAssertEqual(window.frame.size, unlockedSize)
-        XCTAssertNil(messages.window)
+        XCTAssertTrue(messages.window === window, "Locking must not take Messages out of the window")
+        XCTAssertTrue(messages.isHidden && messages.isHiddenOrHasHiddenAncestor)
         XCTAssertEqual(window.title, "Textem — Locked")
         lock.setAway(false)
         await lock.promptToUnlockOnFocus()
         XCTAssertTrue(lock.touchIDLockedOut)
-        let cover = try XCTUnwrap(window.contentViewController as? NSHostingController<AppLockView>)
+        let locked = try XCTUnwrap(window.contentViewController as? LockedContentController)
+        let cover = try XCTUnwrap(locked.coverController as? NSHostingController<AppLockView>)
+        XCTAssertTrue(cover.view.superview?.subviews.last === cover.view, "The cover must be on top")
         if let destination = ProcessInfo.processInfo.environment["TEXTEM_APP_LOCK_SNAPSHOTS"] {
             let folder = URL(fileURLWithPath: destination)
             for (mode, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {

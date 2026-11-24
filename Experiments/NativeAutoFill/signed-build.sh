@@ -7,7 +7,7 @@ if [[ "$#" -gt 1 || ( "$#" -eq 1 && "$1" != --migrate-identifier ) ]]; then
 fi
 : "${BUILD_NUMBER:?Set BUILD_NUMBER to a new numeric build version}"
 [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]{0,12}$ ]]
-textem_version="${VERSION:-1.0b5}"
+textem_version="${VERSION:-1.0b6}"
 [[ "$textem_version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+|b[1-9][0-9]*)$ ]] || {
   echo 'VERSION must be a release (1.0.0) or a beta (1.0b2)' >&2
   exit 1

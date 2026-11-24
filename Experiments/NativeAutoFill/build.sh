@@ -22,7 +22,7 @@ lipo -create "$out/arm64/TextemCodeProvider" "$out/x86_64/TextemCodeProvider" \
   -output "$out/TextemCodeProvider.appex/Contents/MacOS/TextemCodeProvider"
 cp "$study/Extension-Info.plist" "$out/TextemCodeProvider.appex/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD_NUMBER:-1}" "$out/TextemCodeProvider.appex/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION:-1.0b5}" "$out/TextemCodeProvider.appex/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION:-1.0b6}" "$out/TextemCodeProvider.appex/Contents/Info.plist"
 plutil -lint "$out/TextemCodeProvider.appex/Contents/Info.plist"
 codesign --force --sign - "$out/TextemCodeProvider.appex"
 codesign --verify --strict "$out/TextemCodeProvider.appex"

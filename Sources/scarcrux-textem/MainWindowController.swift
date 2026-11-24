@@ -92,10 +92,20 @@ final class MainWindowController: NSWindowController {
             // The cover fills the existing window instead of sizing it to its
             // intrinsic text width.
             cover.sizingOptions = []
-            if let size = window?.contentView?.bounds.size { cover.view.frame.size = size }
-            window?.contentViewController = cover
+            let size = window?.contentView?.bounds.size ?? NSSize(width: 1280, height: 820)
+            if OfflineMode.enabled {
+                // No live page to keep running in Offline Mode.
+                cover.view.frame.size = size
+                window?.contentViewController = cover
+            } else {
+                // Keep Google Messages running, hidden, so messages keep
+                // arriving and redacted notifications still fire.
+                window?.contentViewController = LockedContentController(
+                    cover: cover, keepingAlive: webViewController.view, size: size)
+            }
             return
         }
+        (window?.contentViewController as? LockedContentController)?.releaseMessages()
         if OfflineMode.enabled {
             clearUnreadIndicators()
             let model = offlineLibrary(account.id)

@@ -299,7 +299,8 @@ final class WebViewController: NSViewController {
             lastReceivedCode = RecentVerificationCode(code: code, receivedAt: .now)
         }
         let plan = ReceivedCodes.plan(events: events, changed: activityTracker.changedRows,
-                                      notify: !NSApp.isActive && !Preferences.notificationsMuted,
+                                      notify: Self.shouldNotify(appActive: NSApp.isActive, locked: AppLock.shared.isLocked,
+                                                                       muted: Preferences.notificationsMuted),
                                       offerCopy: Preferences.copyCodeNotifications)
         for item in plan.store {
             Task { await NativeAutoFillCoordinator.shared.observe(message: item.message, accountID: accountID,
@@ -717,6 +718,13 @@ final class WebViewController: NSViewController {
         }
         if active || queued { return "Textem locked before sending your reply." }
         return nil
+    }
+
+    // Textem normally stays quiet while it's the active app, because the new
+    // message is on screen. A locked window hides it, so a locked Textem still
+    // notifies (with the redacted, lock-safe banner).
+    static func shouldNotify(appActive: Bool, locked: Bool, muted: Bool) -> Bool {
+        !muted && (!appActive || locked)
     }
 
     func prepareForAppLock() -> String? {
