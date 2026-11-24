@@ -73,6 +73,10 @@ final class WebViewController: NSViewController {
     private var stallReloads = 0
     private var stallCheck: Task<Void, Never>?
     // Find-in-page overlay (⌘F).
+    private var codeBar: ConversationCodeBar?
+    private var codeBarTopConstraints: (ordinary: NSLayoutConstraint, prompted: NSLayoutConstraint)?
+    private var codePrompt: ConversationCodePrompt?
+    private var dismissedCodePrompt: ConversationCodePrompt?
     private var findBar: FindBar!
     // Load-failure recovery. WKWebView paints a FAILED navigation as a blank
     // white page and reports nothing on its own, so without this a transient
@@ -164,6 +168,19 @@ final class WebViewController: NSViewController {
         webView.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(webView)
 
+        let codeBar = ConversationCodeBar(frame: .zero)
+        codeBar.translatesAutoresizingMaskIntoConstraints = false
+        codeBar.isHidden = true
+        codeBar.copyButton.target = self
+        codeBar.copyButton.action = #selector(copyConversationCode)
+        codeBar.dismissButton.target = self
+        codeBar.dismissButton.action = #selector(dismissConversationCode)
+        container.addSubview(codeBar)
+        self.codeBar = codeBar
+        let ordinaryTop = webView.topAnchor.constraint(equalTo: container.topAnchor)
+        let promptedTop = webView.topAnchor.constraint(equalTo: codeBar.bottomAnchor)
+        self.codeBarTopConstraints = (ordinaryTop, promptedTop)
+
         let bar = FindBar()
         bar.translatesAutoresizingMaskIntoConstraints = false
         bar.isHidden = true
@@ -183,11 +200,15 @@ final class WebViewController: NSViewController {
         NSLayoutConstraint.activate([
             webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            webView.topAnchor.constraint(equalTo: container.topAnchor),
+            codeBar.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
+            codeBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            codeBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            codeBar.heightAnchor.constraint(equalToConstant: 36),
+            ordinaryTop,
             webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             bar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            bar.topAnchor.constraint(equalTo: container.topAnchor),
+            bar.topAnchor.constraint(equalTo: webView.topAnchor),
             errorView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             errorView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             errorView.topAnchor.constraint(equalTo: container.topAnchor),
@@ -685,6 +706,7 @@ final class WebViewController: NSViewController {
     }
 
     func prepareForAppLock() {
+        presentConversationCode(nil)
         pendingOpenConversationID = nil
         replyTimeoutTask?.cancel()
         replyTimeoutTask = nil
@@ -701,6 +723,7 @@ final class WebViewController: NSViewController {
     // Detach the web view before this controller is replaced (account switch)
     // so it stops loading, drops the bridge handler, and can deallocate.
     func teardown() {
+        presentConversationCode(nil)
         phoneConversationModel?.cancel(); phoneConversationModel = nil
         bridgeReady = false
         replyTimeoutTask?.cancel()
@@ -747,6 +770,48 @@ final class WebViewController: NSViewController {
         } else {
             // CSS-zoom fallback for macOS 13; re-applied after each load.
             webView.evaluateJavaScript("document.documentElement.style.zoom='\(factor)'", completionHandler: nil)
+        }
+    }
+
+    private func presentConversationCode(_ candidate: ConversationCodePrompt?) {
+        let shown = candidate == dismissedCodePrompt ? nil : candidate
+        let isVisible = shown != nil
+        if codePrompt != shown { codeBar?.reset() }
+        codePrompt = shown
+        codeBar?.isHidden = !isVisible
+        if let tops = codeBarTopConstraints {
+            if isVisible {
+                tops.ordinary.isActive = false
+                tops.prompted.isActive = true
+            } else {
+                tops.prompted.isActive = false
+                tops.ordinary.isActive = true
+            }
+        }
+    }
+
+    @objc private func dismissConversationCode() {
+        dismissedCodePrompt = codePrompt
+        presentConversationCode(nil)
+    }
+
+    @objc private func copyConversationCode() {
+        guard !AppLock.shared.isLocked, !OfflineMode.enabled, let expected = codePrompt else { return }
+        webView.evaluateJavaScript(ConversationCodePrompt.readScript) { [weak self] result, _ in
+            MainActor.assumeIsolated {
+                guard let self, !AppLock.shared.isLocked, !OfflineMode.enabled,
+                      self.view.window?.contentViewController === self,
+                      self.codePrompt == expected else { return }
+                let current = (result as? [String: Any]).flatMap {
+                    ConversationCodePrompt(payload: $0, currentURL: self.webView.url)
+                }
+                guard current == expected else {
+                    self.presentConversationCode(current)
+                    return
+                }
+                CodeClipboard.copy(expected.code)
+                self.codeBar?.showCopied()
+            }
         }
     }
 
@@ -1090,6 +1155,7 @@ extension WebViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         bridgeReady = false
+        presentConversationCode(nil)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -1179,6 +1245,10 @@ extension WebViewController: WKScriptMessageHandler {
                 )
             }
             handleSnapshot(count, rows: rows, domRows: (body["domRows"] as? Int) ?? rows.count)
+        case "codeContext":
+            guard !AppLock.shared.isLocked, !OfflineMode.enabled, !DemoMode.isEnabled else { return }
+            if dismissedCodePrompt?.url != webView.url { dismissedCodePrompt = nil }
+            presentConversationCode(ConversationCodePrompt(payload: body, currentURL: webView.url))
         case "phoneOnlyState":
             handlePhoneOnlyState(
                 visible: (body["visible"] as? Bool) ?? false,

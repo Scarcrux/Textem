@@ -10,6 +10,7 @@ enum WebBridge {
     static let phoneImageRouteScript = """
     (() => {
       \(ConversationDOM.helpers)
+      \(ConversationCodePrompt.reader)
       const rows = document.querySelectorAll('mws-conversation-list-item [aria-selected="true"][href]');
       if (rows.length !== 1 || !/use\\s+the\\s+google\\s+messages\\s+app\\s+on\\s+your\\s+phone\\s+to\\s+chat\\s+with/i.test(document.body.innerText || '')) return '';
       const page = document.createElement('a'); page.href = location.href;
@@ -96,6 +97,7 @@ enum WebBridge {
 
       var lastSerialized = null;
       var lastPhoneOnlySerialized = null;
+      var lastCodeContext = null;
       var timer = null;
 
       function reportPhoneOnly(force) {
@@ -138,6 +140,12 @@ enum WebBridge {
             domRows: document.querySelectorAll('mws-conversation-list-item').length });
         }
         reportPhoneOnly(force);
+        var codeContext = textemCodeContext();
+        var serializedContext = JSON.stringify(codeContext);
+        if (force || serializedContext !== lastCodeContext) {
+          lastCodeContext = serializedContext;
+          post({ type: 'codeContext', url: codeContext.url, texts: codeContext.texts });
+        }
       }
 
       try {
@@ -150,7 +158,7 @@ enum WebBridge {
           subtree: true,
           characterData: true,
           attributes: true,
-          attributeFilter: ['aria-label', 'aria-selected', 'data-e2e-is-unread', 'data-e2e-conversation', 'href']
+          attributeFilter: ['aria-label', 'aria-selected', 'data-e2e-is-unread', 'data-e2e-conversation', 'href', 'is-outgoing', 'data-e2e-message-outgoing', 'aria-hidden', 'hidden']
         });
       } catch (e) {}
 
