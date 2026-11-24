@@ -270,8 +270,15 @@ def whats_new():
 <main id="main-content" tabindex="-1">
 <h1>What’s New</h1>
 <p class="lead">Release highlights, update instructions, and downloads for Textem.</p>
-<article class="release-entry" aria-labelledby="beta-5">
+<article class="release-entry" aria-labelledby="beta-6">
 <p class="release-date"><time datetime="2026-11-24">November 24, 2026</time> · Latest</p>
+<h2 id="beta-6">1.0 public beta 6</h2>
+<p><strong>Important fix for App Lock.</strong> In betas 4 and 5, a locked Textem stopped receiving messages, so no notifications arrived until you unlocked. Textem now keeps receiving messages while locked and notifies you without showing the sender or text. The lock screen still covers everything, and the hidden page can’t be clicked, typed into or read by VoiceOver.</p>
+<p>On beta 2 or later, choose <strong>Textem → Check for Updates…</strong>. On beta 1, download the new app and replace the old copy in Applications.</p>
+<p class="release-links"><a href="https://github.com/Scarcrux/Textem/releases/download/v1.0.0-beta.6/Textem.dmg">Download beta 6</a><a href="https://github.com/Scarcrux/Textem/releases/tag/v1.0.0-beta.6">Full beta 6 release notes</a></p>
+</article>
+<article class="release-entry" aria-labelledby="beta-5">
+<p class="release-date"><time datetime="2026-11-24">November 24, 2026</time></p>
 <h2 id="beta-5">1.0 public beta 5</h2>
 <ul><li>While Textem is locked, notifications no longer show a <strong>Copy Code</strong> button, so a locked banner never reveals that a code arrived. <strong>Reply</strong> stays and asks you to unlock first.</li>
 <li>App Lock has its own section in <strong>Settings</strong>, which explains what locking does: notifications are cleared, the unread count stays, and your files rely on your Mac login and FileVault.</li>

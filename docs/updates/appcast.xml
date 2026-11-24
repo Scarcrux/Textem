@@ -4,16 +4,16 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Textem</title>
         <item>
-            <title>1.0b5</title>
-            <pubDate>Tue, 24 Nov 2026 15:08:24 -0500</pubDate>
+            <title>1.0b6</title>
+            <pubDate>Tue, 24 Nov 2026 16:21:48 -0500</pubDate>
             <link>https://textem.scarcrux.com/</link>
-            <sparkle:version>2026112406</sparkle:version>
-            <sparkle:shortVersionString>1.0b5</sparkle:shortVersionString>
+            <sparkle:version>2026112408</sparkle:version>
+            <sparkle:shortVersionString>1.0b6</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://textem.scarcrux.com/updates/Textem-2026112406.zip" length="3257195" type="application/octet-stream" sparkle:edSignature="1QvGpySmhx3uFzAF4ZaRrZTMcclgIyLAW+dhCsCJrHFA51a2a5N1YL10GXZ+6tVLfbZC50WpX5I5vJMK0PyrAA=="></enclosure>
+            <enclosure url="https://textem.scarcrux.com/updates/Textem-2026112408.zip" length="3261328" type="application/octet-stream" sparkle:edSignature="0C/UZKhN7Mh1x7a0bg/QmF/6wDvwYuXdgPEdlHDHE0iaQS+rMC9mdg6Ylw90Ta94WTyXVODs+hSRXhhheoTaAg=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: eC8afXItEkxu4L+wnizAU2vlLin1up3nzregBXQTn4d9Ajtz44aRhd4KvwWzD6j3lC45i/uHYUReZw2PStq5Aw==
+edSignature: L3cWrwLJDyJe3RrgFyN7Bh+3Y/2lJ9QNeSx09fgfmxbMir4B9dawENC75qdo8CwnOavogPS54bFw//owZRvMCw==
 length: 1079
 -->

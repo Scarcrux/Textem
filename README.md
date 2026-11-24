@@ -17,7 +17,7 @@ bundled Chromium.
 
 **Documentation:** step-by-step help is at [textem.scarcrux.com/docs](https://textem.scarcrux.com/docs/).
 
-**Status: 1.0 public beta (1.0b5).** Download the signed, notarized app from
+**Status: 1.0 public beta (1.0b6).** Download the signed, notarized app from
 [GitHub Releases](https://github.com/Scarcrux/Textem/releases/latest). Textem
 checks for updates once a day and asks before installing one.
 
