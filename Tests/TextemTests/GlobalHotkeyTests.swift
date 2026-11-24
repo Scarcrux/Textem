@@ -5,6 +5,11 @@ import XCTest
 
 @MainActor
 final class GlobalHotkeyTests: XCTestCase {
+    func testModifierPreviewUsesTheSameOrderAsTheRecordedChord() {
+        XCTAssertEqual(GlobalHotkey.Shortcut.modifierLabel(for: [.command, .control, .capsLock]), "⌃⌘")
+        XCTAssertEqual(GlobalHotkey.Shortcut.modifierLabel(for: [.capsLock]), "")
+    }
+
     func testCapturedShortcutRoundTripsThroughPreferences() throws {
         let suite = "textem-hotkey-test-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

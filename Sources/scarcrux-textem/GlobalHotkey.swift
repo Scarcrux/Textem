@@ -15,9 +15,17 @@ final class GlobalHotkey {
         let modifiers: UInt32
         let letter: String
 
+        private static let modifierKeys: [(flag: NSEvent.ModifierFlags, carbon: Int, symbol: String)] = [
+            (.control, controlKey, "⌃"), (.option, optionKey, "⌥"),
+            (.shift, shiftKey, "⇧"), (.command, cmdKey, "⌘")
+        ]
+
         var label: String {
-            [(controlKey, "⌃"), (optionKey, "⌥"), (shiftKey, "⇧"), (cmdKey, "⌘")]
-                .compactMap { modifiers & UInt32($0.0) != 0 ? $0.1 : nil }.joined() + letter
+            Self.modifierKeys.filter { modifiers & UInt32($0.carbon) != 0 }.map(\.symbol).joined() + letter
+        }
+
+        static func modifierLabel(for flags: NSEvent.ModifierFlags) -> String {
+            modifierKeys.filter { flags.contains($0.flag) }.map(\.symbol).joined()
         }
 
         func matches(_ other: Self) -> Bool {
@@ -30,9 +38,7 @@ final class GlobalHotkey {
                   flags.contains(.command) || flags.contains(.control),
                   let letter = event.characters(byApplyingModifiers: [])?.uppercased(), letter.count == 1,
                   letter.unicodeScalars.allSatisfy(CharacterSet.alphanumerics.contains) else { return nil }
-            let modifiers = [(NSEvent.ModifierFlags.control, controlKey), (.option, optionKey),
-                             (.shift, shiftKey), (.command, cmdKey)]
-                .reduce(0) { $0 | (flags.contains($1.0) ? UInt32($1.1) : 0) }
+            let modifiers = modifierKeys.reduce(UInt32(0)) { $0 | (flags.contains($1.flag) ? UInt32($1.carbon) : 0) }
             return Self(key: UInt32(event.keyCode), modifiers: modifiers, letter: letter)
         }
 
