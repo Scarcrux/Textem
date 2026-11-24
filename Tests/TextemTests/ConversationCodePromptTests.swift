@@ -8,12 +8,16 @@ final class ConversationCodePromptTests: XCTestCase {
     func testPromptUsesCurrentConversationAndConservativeDetector() throws {
         let current = try XCTUnwrap(URL(string: "https://messages.google.com/web/conversations/A"))
         func payload(_ texts: [String], url: String? = nil) -> [String: Any] {
-            ["url": url ?? current.absoluteString, "texts": texts]
+            ["url": url ?? current.absoluteString, "messages": texts.enumerated().map {
+                ["index": $0.offset, "text": $0.element, "timeMS": 1_700_000_000_000] as [String: Any]
+            }]
         }
         let candidate = ConversationCodePrompt(payload: payload([
             "Order 903628 shipped", "Your verification code is 4312", "Your verification code is 3854",
         ]), currentURL: current)
         XCTAssertEqual(candidate?.code, "4312")
+        XCTAssertEqual(candidate?.receivedAt, Date(timeIntervalSince1970: 1_700_000_000))
+        XCTAssertTrue(candidate?.title(at: Date(timeIntervalSince1970: 1_700_000_120)).contains("unavailable") == false)
         XCTAssertNil(ConversationCodePrompt(payload: payload(["Your PIN is 4312"],
             url: "https://messages.google.com/web/conversations/B"), currentURL: current))
         XCTAssertNil(ConversationCodePrompt(payload: payload(["You: Your PIN is 4312"]), currentURL: current))
@@ -32,7 +36,7 @@ final class ConversationCodePromptTests: XCTestCase {
         web.navigationDelegate = delegate
         web.loadHTMLString("""
           <mws-conversation-list-item><a href="/web/conversations/A" aria-selected="true">Test</a></mws-conversation-list-item>
-          <mws-message-wrapper is-outgoing="false"><mws-text-message-part>Your PIN is 4312</mws-text-message-part></mws-message-wrapper>
+          <mws-message-wrapper is-outgoing="false"><time datetime="2023-11-14T22:13:20Z"></time><mws-text-message-part>Your PIN is 4312</mws-text-message-part></mws-message-wrapper>
           <mws-message-wrapper is-outgoing="true"><mws-text-message-part>My PIN is 9999</mws-text-message-part></mws-message-wrapper>
           <mws-message-wrapper hidden><mws-text-message-part>PIN 8888</mws-text-message-part></mws-message-wrapper>
           """, baseURL: URL(string: "https://textem-fixture.invalid/web/conversations/A"))
@@ -42,14 +46,46 @@ final class ConversationCodePromptTests: XCTestCase {
             let result = expectation(description: "read conversation")
             web.evaluateJavaScript(script) { value, error in
                 XCTAssertNil(error)
-                XCTAssertEqual((value as? [String: Any])?["texts"] as? [String], expected)
+                let entries = (value as? [String: Any])?["messages"] as? [[String: Any]]
+                XCTAssertEqual(entries?.compactMap { $0["text"] as? String }, expected)
+                if !expected.isEmpty {
+                    XCTAssertEqual(entries?.first?["timeMS"] as? Double, 1_700_000_000_000)
+                }
                 result.fulfill()
             }
             wait(for: [result], timeout: 5)
         }
         read(ConversationCodePrompt.readScript, expected: ["Your PIN is 4312"])
+        let googleURL = try XCTUnwrap(URL(string: "https://messages.google.com/web/conversations/A"))
+        let prompt = try XCTUnwrap(ConversationCodePrompt(payload: [
+            "url": googleURL.absoluteString, "messages": [["index": 0, "text": "Your PIN is 4312"]],
+        ], currentURL: googleURL))
+        // Exercise the exact script against a non-network fixture.
+        let reveal = try XCTUnwrap(prompt.revealScript).replacingOccurrences(of: "messages.google.com", with: "textem-fixture.invalid")
+        let revealed = expectation(description: "reveal exact message")
+        web.evaluateJavaScript(reveal) { value, error in
+            XCTAssertNil(error)
+            XCTAssertEqual(value as? Bool, true)
+            revealed.fulfill()
+        }
+        wait(for: [revealed], timeout: 5)
+        let stale = expectation(description: "reject changed message at same position")
+        web.evaluateJavaScript("document.querySelector('mws-text-message-part').textContent = 'PIN 4891'; " + reveal) { value, error in
+            XCTAssertNil(error)
+            XCTAssertEqual(value as? Bool, false)
+            stale.fulfill()
+        }
+        wait(for: [stale], timeout: 5)
         read("document.querySelector('a').href = '/web/conversations/B'; " + ConversationCodePrompt.readScript, expected: [])
         _ = delegate
+    }
+
+    func testGlobalShortcutCodeExpiresAtThreeMinutes() {
+        let received = ContinuousClock.now
+        let code = RecentVerificationCode(code: "4312", receivedAt: received)
+        XCTAssertNil(code.freshValue(at: received.advanced(by: .seconds(-1))))
+        XCTAssertEqual(code.freshValue(at: received.advanced(by: .seconds(179))), "4312")
+        XCTAssertNil(code.freshValue(at: received.advanced(by: .seconds(180))))
     }
 
     func testRenderCopyPrompt() throws {
@@ -59,6 +95,7 @@ final class ConversationCodePromptTests: XCTestCase {
         _ = NSApplication.shared
         for (mode, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let bar = ConversationCodeBar(frame: NSRect(x: 0, y: 0, width: 920, height: 36))
+            bar.update(title: "Verification code · 2 min. ago", reset: true)
             let window = NSWindow(contentRect: bar.frame, styleMask: [.titled], backing: .buffered, defer: false)
             window.appearance = NSAppearance(named: appearance)
             window.contentView = bar

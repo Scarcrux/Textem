@@ -55,7 +55,7 @@ final class WebViewController: NSViewController {
     // aren't deallocated mid-flow.
     private var popups: [PopupWindowController] = []
     // Most recent code seen arriving, for ⇧⌘C. Memory only.
-    private var lastReceivedCode: (code: String, at: Date)?
+    private var lastReceivedCode: RecentVerificationCode?
     // Notified whenever the unread count changes (drives the menu-bar item).
     var onUnreadCountChanged: ((Int) -> Void)?
     private let initialURL: URL?
@@ -173,6 +173,8 @@ final class WebViewController: NSViewController {
         codeBar.isHidden = true
         codeBar.copyButton.target = self
         codeBar.copyButton.action = #selector(copyConversationCode)
+        codeBar.showButton.target = self
+        codeBar.showButton.action = #selector(showConversationCodeMessage)
         codeBar.dismissButton.target = self
         codeBar.dismissButton.action = #selector(dismissConversationCode)
         container.addSubview(codeBar)
@@ -291,9 +293,9 @@ final class WebViewController: NSViewController {
             }
             return
         }
-        if let latest = ReceivedCodes.detect(in: activityTracker.changedRows).rows.last,
-           let code = CodeDetector.detect(latest.row.snippet)?.code {
-            lastReceivedCode = (code, Date())
+        if let newest = ReceivedCodes.detect(in: activityTracker.changedRows).rows.first,
+           let code = CodeDetector.detect(newest.row.snippet)?.code {
+            lastReceivedCode = RecentVerificationCode(code: code, receivedAt: .now)
         }
         let plan = ReceivedCodes.plan(events: events, changed: activityTracker.changedRows,
                                       notify: !NSApp.isActive && !Preferences.notificationsMuted,
@@ -776,7 +778,7 @@ final class WebViewController: NSViewController {
     private func presentConversationCode(_ candidate: ConversationCodePrompt?) {
         let shown = candidate == dismissedCodePrompt ? nil : candidate
         let isVisible = shown != nil
-        if codePrompt != shown { codeBar?.reset() }
+        if let shown { codeBar?.update(title: shown.title(), reset: codePrompt != shown) }
         codePrompt = shown
         codeBar?.isHidden = !isVisible
         if let tops = codeBarTopConstraints {
@@ -793,6 +795,17 @@ final class WebViewController: NSViewController {
     @objc private func dismissConversationCode() {
         dismissedCodePrompt = codePrompt
         presentConversationCode(nil)
+    }
+
+    @objc private func showConversationCodeMessage() {
+        guard !AppLock.shared.isLocked, !OfflineMode.enabled,
+              let prompt = codePrompt, let script = prompt.revealScript else { return }
+        webView.evaluateJavaScript(script) { [weak self] result, _ in
+            MainActor.assumeIsolated {
+                guard let self, self.codePrompt == prompt, !AppLock.shared.isLocked else { return }
+                if (result as? Bool) != true { self.presentConversationCode(nil) }
+            }
+        }
     }
 
     @objc private func copyConversationCode() {
@@ -815,6 +828,11 @@ final class WebViewController: NSViewController {
         }
     }
 
+    func freshObservedCode() -> String? {
+        guard !OfflineMode.enabled else { return nil }
+        return lastReceivedCode?.freshValue(at: .now)
+    }
+
     // Copy the most recent verification code to the clipboard (Texty Pro
     // parity). Scans conversation snippets + visible message text for a 4–8
     // digit number and copies the newest match. macOS's built-in SMS-code
@@ -825,9 +843,7 @@ final class WebViewController: NSViewController {
     // Copy Code, never "any 4–8 digit number on the page".
     @objc func copyLatestCode(_ sender: Any?) {
         guard !AppLock.shared.isLocked else { return }
-        if let recent = lastReceivedCode, Date().timeIntervalSince(recent.at) < NotificationManager.codeLifetime {
-            finishCopy(recent.code); return
-        }
+        if let code = freshObservedCode() { finishCopy(code); return }
         let js = """
         (function(){
           var text = function(n){ return (n.textContent || '').replace(/\\s+/g, ' ').trim(); };

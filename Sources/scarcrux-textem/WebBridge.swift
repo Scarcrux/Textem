@@ -144,7 +144,7 @@ enum WebBridge {
         var serializedContext = JSON.stringify(codeContext);
         if (force || serializedContext !== lastCodeContext) {
           lastCodeContext = serializedContext;
-          post({ type: 'codeContext', url: codeContext.url, texts: codeContext.texts });
+          post({ type: 'codeContext', url: codeContext.url, messages: codeContext.messages });
         }
       }
 
@@ -158,7 +158,7 @@ enum WebBridge {
           subtree: true,
           characterData: true,
           attributes: true,
-          attributeFilter: ['aria-label', 'aria-selected', 'data-e2e-is-unread', 'data-e2e-conversation', 'href', 'is-outgoing', 'data-e2e-message-outgoing', 'aria-hidden', 'hidden']
+          attributeFilter: ['aria-label', 'aria-selected', 'data-e2e-is-unread', 'data-e2e-conversation', 'href', 'is-outgoing', 'data-e2e-message-outgoing', 'aria-hidden', 'hidden', 'datetime', 'data-timestamp']
         });
       } catch (e) {}
 

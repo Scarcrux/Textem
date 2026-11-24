@@ -13,6 +13,8 @@ struct SettingsView: View {
     @AppStorage("hideNotificationPreview") private var hideNotificationPreview = false
     @AppStorage("blurMessages") private var blurMessages = false
     @AppStorage("hideAvatars") private var hideAvatars = false
+    @AppStorage("globalCopyCode") private var globalCopyCode = false
+    @State private var shortcutUnavailable = false
     @AppStorage("copyCodeNotifications") private var copyCodeNotifications = true
     @State private var showPhoneTools = Preferences.showPhoneTools
     @State private var launchAtLogin = LoginItem.isEnabled
@@ -94,6 +96,26 @@ struct SettingsView: View {
                 Toggle(isOn: notifying($copyCodeNotifications)) {
                     row("Copy Code button in notifications",
                         "When a text with a verification code arrives, its notification can copy the code.")
+                }
+                Toggle(isOn: Binding(
+                    get: { globalCopyCode },
+                    set: { enabled in
+                        let registered = (NSApp.delegate as? AppDelegate)?.configureGlobalCodeShortcut(enabled: enabled) ?? false
+                        shortcutUnavailable = enabled && !registered
+                        if registered { globalCopyCode = enabled }
+                    }
+                )) {
+                    row("Global Copy Latest Code shortcut",
+                        "Press ⌃⌥⌘C in any app to copy a code received in the active account in the last 3 minutes.")
+                }
+                .onAppear {
+                    if globalCopyCode {
+                        shortcutUnavailable = (NSApp.delegate as? AppDelegate)?.isGlobalCodeShortcutRegistered != true
+                    }
+                }
+                if shortcutUnavailable {
+                    Text("⌃⌥⌘C is unavailable. It may already be assigned to another app.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Toggle(isOn: Binding(
                     get: { nativeCodes.enabled }, set: { value in Task { await nativeCodes.setEnabled(value) } }

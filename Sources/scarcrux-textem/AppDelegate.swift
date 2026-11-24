@@ -12,6 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var migrationSheet: NSWindow?
     private var launchFinished = false
     private var globalHotkey: GlobalHotkey?
+    private var globalCodeHotkey: GlobalHotkey?
+
+    var isGlobalCodeShortcutRegistered: Bool { globalCodeHotkey?.isRegistered == true }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if ProcessInfo.processInfo.arguments.contains("--offline") { OfflineMode.setEnabled(true) }
@@ -125,6 +128,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         hotkey.register()
         globalHotkey = hotkey
+        if UserDefaults.standard.bool(forKey: "globalCopyCode") {
+            configureGlobalCodeShortcut(enabled: true)
+        }
 
         if ProcessInfo.processInfo.arguments.contains("--check-offline-mode") {
             try? OfflineDiagnostics.save(OfflineDiagnostics.collect(controller))
@@ -136,6 +142,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         } else {
             offerMigrationFollowUp()
         }
+    }
+
+    @discardableResult
+    func configureGlobalCodeShortcut(enabled: Bool) -> Bool {
+        if !enabled {
+            globalCodeHotkey?.unregister()
+            globalCodeHotkey = nil
+            return true
+        }
+        if isGlobalCodeShortcutRegistered { return true }
+        let shortcut = GlobalHotkey(shortcut: .copyCode) { [weak self] in
+            Task { await self?.copyFreshCodeFromShortcut() }
+        }
+        guard shortcut.register() else { return false }
+        globalCodeHotkey = shortcut
+        return true
+    }
+
+    private func copyFreshCodeFromShortcut() async {
+        guard isGlobalCodeShortcutRegistered,
+              await appLock.authorizeAction(asking: {
+                  self.showMainWindow()
+                  return await self.appLock.unlock()
+              }), !appLock.isLocked, isGlobalCodeShortcutRegistered else { return }
+        guard let code = windowController?.webViewController.freshObservedCode() else {
+            NSSound.beep()
+            NotificationManager.shared.notifyInfo("No fresh verification code in the active Textem account.")
+            return
+        }
+        CodeClipboard.copy(code)
+        NotificationManager.shared.notifyInfo("Verification code copied")
     }
 
     @objc func lockTextem(_ sender: Any?) {
@@ -465,6 +502,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     func applicationWillTerminate(_ notification: Notification) {
         if let activityMonitor { NSEvent.removeMonitor(activityMonitor) }
+        globalHotkey?.unregister()
+        globalCodeHotkey?.unregister()
         PhoneImageADBClient.shared.stop()
     }
 

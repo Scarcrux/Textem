@@ -15,3 +15,16 @@ enum CodeClipboard {
         pasteboard.setData(Data(), forType: transient)
     }
 }
+
+
+// Only observed incoming messages can supply the system-wide shortcut.
+// Use elapsed time so changing the wall clock can't refresh a stale PIN.
+struct RecentVerificationCode {
+    let code: String
+    let receivedAt: ContinuousClock.Instant
+
+    func freshValue(at now: ContinuousClock.Instant) -> String? {
+        let elapsed = receivedAt.duration(to: now)
+        return elapsed >= .zero && elapsed < .seconds(180) ? code : nil
+    }
+}
