@@ -216,7 +216,7 @@ final class AppLockTests: XCTestCase {
     // Regression (owner test 2026-11-24): a text sent while locked was first
     // seen one second after unlocking, because the page had been taken out of
     // the window and WebKit suspended it. The page must stay in the window,
-    // hidden under an opaque cover, from a cold locked launch onward.
+    // rendering (transparent) under an opaque cover, from a cold locked launch onward.
     func testLockedWindowKeepsMessagesRunningHiddenUnderOpaqueCover() async throws {
         _ = NSApplication.shared
         let (defaults, suite) = try isolatedDefaults()
@@ -231,18 +231,20 @@ final class AppLockTests: XCTestCase {
         lock.onLockChanged = { [weak controller] in controller?.refreshLockPresentation() }
         let messages = controller.webViewController.view
         XCTAssertTrue(messages.window === window, "Cold locked launch must keep Messages running in the window")
-        XCTAssertTrue(messages.isHidden)
+        XCTAssertFalse(messages.isHiddenOrHasHiddenAncestor, "A hidden page stops rendering (probe: 0 animation frames)")
+        XCTAssertEqual(messages.alphaValue, 0)
         XCTAssertTrue(window.contentViewController is LockedContentController)
         let unlocked = await lock.unlock()
         XCTAssertTrue(unlocked)
         XCTAssertTrue(window.contentViewController === controller.webViewController)
-        XCTAssertFalse(messages.isHidden)
+        XCTAssertEqual(messages.alphaValue, 1)
         let unlockedSize = window.frame.size
         lock.lockOnFocusLoss = true
         lock.setAway(true)
         XCTAssertEqual(window.frame.size, unlockedSize)
         XCTAssertTrue(messages.window === window, "Locking must not take Messages out of the window")
-        XCTAssertTrue(messages.isHidden && messages.isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(messages.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(messages.alphaValue, 0)
         XCTAssertEqual(window.title, "Textem — Locked")
         lock.setAway(false)
         await lock.promptToUnlockOnFocus()
@@ -250,6 +252,12 @@ final class AppLockTests: XCTestCase {
         let locked = try XCTUnwrap(window.contentViewController as? LockedContentController)
         let cover = try XCTUnwrap(locked.coverController as? NSHostingController<AppLockView>)
         XCTAssertTrue(cover.view.superview?.subviews.last === cover.view, "The cover must be on top")
+        let container = try XCTUnwrap(locked.view as? CoverOnlyView)
+        let centre = NSPoint(x: container.bounds.midX, y: container.bounds.midY)
+        if let hit = container.hitTest(centre) { XCTAssertTrue(hit.isDescendant(of: cover.view), "Clicks must reach only the cover") }
+        XCTAssertEqual((container.accessibilityChildren() as? [NSView])?.count, 1)
+        XCTAssertFalse(window.makeFirstResponder(controller.webViewController.view), "Keyboard focus must not reach the locked page")
+        XCTAssertTrue((container.accessibilityChildren() as? [NSView])?.first === cover.view)
         if let destination = ProcessInfo.processInfo.environment["TEXTEM_APP_LOCK_SNAPSHOTS"] {
             let folder = URL(fileURLWithPath: destination)
             for (mode, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {

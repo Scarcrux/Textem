@@ -30,7 +30,7 @@ final class MainWindowController: NSWindowController {
             accountID: account.id,
             dataStore: storeForAccount(account), initialURL: initialURL)
 
-        let window = NSWindow(
+        let window = LockAwareWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
