@@ -127,7 +127,8 @@ PAGES = {
 <table class="keys"><thead><tr><th>Action</th><th>Shortcut</th></tr></thead><tbody>
 <tr><td>Show or hide Textem from any app</td><td>""" + k("⌥", "⌘", "M") + """</td></tr>
 <tr><td>New conversation</td><td>""" + k("⌘", "N") + """</td></tr>
-<tr><td>Copy latest verification code</td><td>""" + k("⇧", "⌘", "C") + """</td></tr>
+<tr><td>Copy latest verification code (in Textem)</td><td>""" + k("⇧", "⌘", "C") + """</td></tr>
+<tr><td>Copy latest verification code from any app (off by default; turn on and change it in Settings)</td><td>""" + k("⌃", "⌥", "⌘", "C") + """</td></tr>
 <tr><td>Find on page / next / previous</td><td>""" + k("⌘", "F") + " " + k("⌘", "G") + " " + k("⇧", "⌘", "G") + """</td></tr>
 <tr><td>Zoom in / out / actual size</td><td>""" + k("⌘", "+") + " " + k("⌘", "−") + " " + k("⌘", "0") + """</td></tr>
 <tr><td>Reload / reload from origin (reconnect)</td><td>""" + k("⌘", "R") + " " + k("⇧", "⌘", "R") + """</td></tr>
@@ -221,7 +222,7 @@ def head(title, description, path, current="docs"):
 </head><body>
 <a class="skip-link" href="#main-content">Skip to content</a>
 <header class="site-topbar"><a class="tb-brand" href="/"><img src="/media/app-icon.png" width="28" height="28" alt="">Textem</a>
-<nav aria-label="Site"><a href="/">Overview</a><a href="/docs/"{docs_current}>Documentation</a><a href="/whats-new/"{news_current}>What’s New</a><a class="tb-github" href="https://github.com/Scarcrux/Textem">GitHub</a><a class="tb-download" href="https://github.com/Scarcrux/Textem/releases/latest/download/Textem.dmg">Download</a></nav></header>
+<nav aria-label="Site"><a class="tb-overview" href="/">Overview</a><a href="/docs/"{docs_current}><span class="tb-long">Documentation</span><span class="tb-short">Docs</span></a><a href="/whats-new/"{news_current}><span class="tb-long">What’s New</span><span class="tb-short">New</span></a><a class="tb-github" href="https://github.com/Scarcrux/Textem">GitHub</a><a class="tb-download" href="https://github.com/Scarcrux/Textem/releases/latest/download/Textem.dmg">Download</a></nav></header>
 """
 
 FOOT = f"""<footer><p>Textem documentation · Updated {UPDATED}</p>
