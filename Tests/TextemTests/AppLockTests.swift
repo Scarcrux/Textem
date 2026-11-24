@@ -93,7 +93,7 @@ final class AppLockTests: XCTestCase {
         defaults.set(true, forKey: "requireAppUnlock")
         var attempts = 0
         var dialogTakesFocus: (() -> Void)?
-        let lock = AppLock(defaults: defaults, authenticate: { _, _, _ in
+        let lock = AppLock(defaults: defaults, touchIDAvailable: { true }, authenticate: { _, _, _ in
             attempts += 1
             dialogTakesFocus?()
             return attempts == 2
@@ -119,21 +119,34 @@ final class AppLockTests: XCTestCase {
         XCTAssertFalse(lock.isLocked)
     }
 
-    func testTouchIDCanBeRetriedSeparatelyFromSystemUnlock() async throws {
+    func testFailedAutomaticTouchIDLeavesPasswordAsAnExplicitChoice() async throws {
         let (defaults, suite) = try isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: "requireAppUnlock")
         var policies: [LAPolicy] = []
-        let lock = AppLock(defaults: defaults, authenticate: { _, policy, _ in
+        let lock = AppLock(defaults: defaults, touchIDAvailable: { true }, authenticate: { _, policy, _ in
             policies.append(policy)
-            return policy == .deviceOwnerAuthenticationWithBiometrics
+            return policy == .deviceOwnerAuthentication
         })
         await lock.promptToUnlockOnFocus()
         XCTAssertTrue(lock.isLocked)
-        let didUnlock = await lock.unlock(using: .deviceOwnerAuthenticationWithBiometrics)
+        XCTAssertEqual(policies, [.deviceOwnerAuthenticationWithBiometrics])
+        let didUnlock = await lock.unlock()
         XCTAssertTrue(didUnlock)
         XCTAssertFalse(lock.isLocked)
-        XCTAssertEqual(policies, [.deviceOwnerAuthentication, .deviceOwnerAuthenticationWithBiometrics])
+        XCTAssertEqual(policies, [.deviceOwnerAuthenticationWithBiometrics, .deviceOwnerAuthentication])
+    }
+
+    func testFocusDoesNotPromptWhenTouchIDIsUnavailable() async throws {
+        let (defaults, suite) = try isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "requireAppUnlock")
+        let lock = AppLock(defaults: defaults, touchIDAvailable: { false }, authenticate: { _, _, _ in
+            XCTFail("Focus should not prompt for a password")
+            return false
+        })
+        await lock.promptToUnlockOnFocus()
+        XCTAssertTrue(lock.isLocked)
     }
 
     func testNotificationActionRequiresAnActualUnlock() async throws {

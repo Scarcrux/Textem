@@ -27,6 +27,7 @@ final class AppLock: ObservableObject {
     var onLockChanged: (() -> Void)?
 
     private let defaults: UserDefaults
+    private let touchIDAvailable: @MainActor () -> Bool
     private let authenticate: @MainActor (LAContext, LAPolicy, String) async -> Bool
     private let awayDelay: Duration
     private var context: LAContext?
@@ -36,6 +37,9 @@ final class AppLock: ObservableObject {
     private var lastActivity = ContinuousClock.now
 
     init(defaults: UserDefaults = .standard, awayDelay: Duration = .seconds(300),
+         touchIDAvailable: @escaping @MainActor () -> Bool = {
+             LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+         },
          authenticate: @escaping @MainActor (LAContext, LAPolicy, String) async -> Bool = { context, policy, reason in
              await withCheckedContinuation { continuation in
                  context.evaluatePolicy(policy, localizedReason: reason) { success, error in
@@ -48,6 +52,7 @@ final class AppLock: ObservableObject {
          }) {
         self.defaults = defaults
         self.awayDelay = awayDelay
+        self.touchIDAvailable = touchIDAvailable
         self.authenticate = authenticate
         let enabled = defaults.bool(forKey: Self.enabledKey)
         isEnabled = enabled
@@ -83,8 +88,8 @@ final class AppLock: ObservableObject {
     }
 
     func promptToUnlockOnFocus() async {
-        guard isLocked, !isAway, !promptedDuringFocus else { return }
-        await unlock()
+        guard isLocked, !isAway, !promptedDuringFocus, touchIDAvailable() else { return }
+        await unlock(using: .deviceOwnerAuthenticationWithBiometrics)
     }
 
     func authorizeAction(asking requestUnlock: () async -> Bool) async -> Bool {
@@ -180,13 +185,14 @@ struct AppLockView: View {
                         Task { await lock.unlock(using: .deviceOwnerAuthenticationWithBiometrics) }
                     }
                 }
-                Button(lock.isAuthenticating ? "Waiting for macOS…" : "Unlock") {
+                Button("Use Mac Password…") {
                     Task { await lock.unlock() }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
             }
             .disabled(lock.isAuthenticating)
+            if lock.isAuthenticating { Text("Waiting for macOS…").font(.caption) }
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
