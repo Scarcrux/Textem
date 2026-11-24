@@ -37,3 +37,7 @@
   .site-topbar nav { gap: .9rem; font-size: 14px; }
   .site-topbar .tb-github { display: none; }
 }
+@media (max-width: 480px) {
+  .site-topbar { flex-wrap: wrap; gap: .55rem; }
+  .site-topbar nav { width: 100%; flex-wrap: wrap; gap: .45rem .9rem; }
+}
