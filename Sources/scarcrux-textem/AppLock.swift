@@ -43,10 +43,17 @@ final class AppLock: ObservableObject {
          authenticate: @escaping @MainActor (LAContext, LAPolicy, String) async -> Bool = { context, policy, reason in
              await withCheckedContinuation { continuation in
                  context.evaluatePolicy(policy, localizedReason: reason) { success, error in
-                     if let code = (error as? LAError)?.code.rawValue {
-                         AppLock.log.debug("Authentication policy \(policy.rawValue) returned \(code)")
+                     let code = (error as? LAError)?.code
+                     if let code {
+                         AppLock.log.debug("Authentication policy \(policy.rawValue) returned \(code.rawValue)")
                      }
-                     continuation.resume(returning: success)
+                     if policy == .deviceOwnerAuthenticationWithBiometrics, code == .userFallback {
+                         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
+                             continuation.resume(returning: success)
+                         }
+                     } else {
+                         continuation.resume(returning: success)
+                     }
                  }
              }
          }) {
@@ -153,10 +160,6 @@ final class AppLock: ObservableObject {
         context = attempt
         isAuthenticating = true
         authenticationFailed = false
-        if policy == .deviceOwnerAuthenticationWithBiometrics {
-            // A separate system unlock button remains available for password entry.
-            attempt.localizedFallbackTitle = ""
-        }
         let success = await authenticate(attempt, policy, reason)
         // A lock event, window closure or newer attempt invalidates this result.
         guard context === attempt else { return false }
