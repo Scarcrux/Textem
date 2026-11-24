@@ -19,7 +19,7 @@ ARCH_BUILD_ROOT := .build/textem-arch
 UNIVERSAL_BIN := .build/textem-universal/$(BIN)
 APP_BUNDLE := $(APP).app
 CONTENTS   := $(APP_BUNDLE)/Contents
-VERSION    ?= 1.0b4
+VERSION    ?= 1.0b5
 BUILD_NUMBER ?= 1
 
 .PHONY: all build bundle run clean icloud-heal dmg sign release notarize require-developer-id
