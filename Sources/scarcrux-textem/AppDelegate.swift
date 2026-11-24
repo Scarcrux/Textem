@@ -250,7 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             NotificationManager.shared.hideDeliveredForAppLock()
             settingsWindowController?.close()
             phoneNotificationWindow?.close()
-            onboardingWindowController?.close()
+            onboardingWindowController?.dismissForLock()
             if NSApp.modalWindow != nil { NSApp.abortModal() }
         } else if launchFinished && !Preferences.hasSeenOnboarding {
             showOnboarding()

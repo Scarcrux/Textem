@@ -41,7 +41,7 @@ struct NativeAutoFillDiagnosticsTests {
         publisher.failure = NativeCodeSetupError.indexReadbackRefused
         await model.synchronize()
         #expect(events.last?.0 == .publicationRefused && events.last?.1.provider == 0 && events.last?.1.indexed == 0)
-        #expect(model.status.contains("readback did not match"))
+        #expect(model.status.contains("didn’t confirm the AutoFill update"))
         storage.locked = true
         await model.synchronize()
         #expect(events.last?.0 == .vaultRefused && events.last?.1.failure == -25308)
@@ -88,7 +88,7 @@ struct NativeAutoFillDiagnosticsTests {
         try vault.ingest(source: source, origin: "POSTED", message: "@example.com #004321", timestamp: now.addingTimeInterval(1), now: now.addingTimeInterval(1))
         await model.synchronize()
         #expect(events.last?.eligible == 2 && events.last?.indexed == 0 && events.last?.withheld == 2)
-        #expect(model.status.contains("domains overlap") && publisher.calls.last?.isEmpty == true)
+        #expect(model.status.contains("more than one site matched") && publisher.calls.last?.isEmpty == true)
         try vault.ingest(source: source, origin: "POSTED", message: "@other.example #998877", timestamp: now.addingTimeInterval(2), now: now.addingTimeInterval(2))
         await model.synchronize()
         #expect(events.last?.eligible == 3 && events.last?.indexed == 1 && events.last?.withheld == 2)

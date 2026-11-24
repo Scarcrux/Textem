@@ -97,10 +97,10 @@ enum NativeCodeIndexReadback {
         self.publisher = publisher ?? SystemCodeIndex()
         self.available = available ?? NativeCodeRuntime.available
         self.clock = clock; self.accountExists = accountExists
-        status = "Requires an AutoFill-provisioned build with the signed Textem Codes extension and shared Keychain access. No codes are being collected."
+        status = "AutoFill codes need the signed Textem download; this build isn’t provisioned for it. No codes are being collected."
         if self.available {
             do { enabled = try self.vault.isEnabled(); status = enabled ? "On. Codes that arrive in Textem are offered for 3 minutes." : "AutoFill verification codes are off." }
-            catch { status = "Protected code storage is locked, unavailable or invalid. No code was read." }
+            catch { status = "Textem couldn’t open its protected code storage. Your keychain may be locked. No code was read." }
         }
     }
 
@@ -119,7 +119,7 @@ enum NativeCodeIndexReadback {
             var counts = NativeAutoFillDiagnostics.Counts()
             if case CodeVaultError.unavailable(let status) = error { counts.failure = Int(status) }
             diagnose(.vaultRefused, counts)
-            status = "Could not change protected code storage. No fallback storage was used."
+            status = "Textem couldn’t change its protected code storage. Nothing was saved anywhere else."
         }
     }
 
@@ -133,7 +133,7 @@ enum NativeCodeIndexReadback {
             // Rebinding revokes old records even if this snapshot is truncated
             // or otherwise ineligible to contribute a replacement code.
             await synchronize()
-        } catch { status = "Source linking failed in protected storage; no account or business name was guessed." }
+        } catch { status = "Textem couldn’t link this phone to the account. No account was guessed." }
     }
 
     func ingest(_ snapshot: PhoneNotificationSnapshot) async {
@@ -146,8 +146,8 @@ enum NativeCodeIndexReadback {
             }
             await synchronize()
         } catch CodeVaultError.unboundSource {
-            status = "Notification source is unlinked. Explicitly choose its Textem account before offering codes."
-        } catch { status = "Notification code import was refused by protected storage. No fallback or clipboard write occurred." }
+            status = "Choose which Textem account this phone’s notifications belong to before its codes are offered."
+        } catch { status = "Textem couldn’t save the code from this notification. Nothing was copied or saved anywhere else." }
     }
 
     /// A code Textem saw arrive in its own Google Messages window for this
@@ -158,7 +158,7 @@ enum NativeCodeIndexReadback {
             guard try vault.ingestObserved(accountID: accountID, conversation: conversation, message: message,
                                            observedAt: clock(), now: clock()) != nil else { return }
             await synchronize()
-        } catch { status = "A received code was refused by protected storage. No fallback storage was used." }
+        } catch { status = "Textem couldn’t save a received code. Nothing was saved anywhere else." }
     }
 
     func removeAccount(_ id: UUID) throws {
@@ -204,25 +204,25 @@ enum NativeCodeIndexReadback {
                     let open = samples.filter { !$0.isDomainBound }.count
                     status = samples.isEmpty ? "On. Codes that arrive in Textem are offered for 3 minutes."
                         : "\(samples.count) fresh code(s): \(open) in Textem's AutoFill list, \(entries.count) suggested for their own site."
-                    if counts.withheld > 0 { status += " \(counts.withheld) site code(s) held back because their domains overlap; none was guessed." }
+                    if counts.withheld > 0 { status += " \(counts.withheld) site code(s) held back because more than one site matched; none was guessed." }
                 } else { status = "AutoFill verification codes are off. Saved codes and phone links were deleted." }
             } catch NativeCodeSetupError.indexReadbackRefused {
                 if revision == id {
                     counts.failure = 2
                     diagnose(.publicationRefused, counts)
-                    status = "macOS accepted the index update, but its metadata readback did not match. Native AutoFill readiness is unverified; no code was filled."
+                    status = "macOS didn’t confirm the AutoFill update, so Textem Codes may not show suggestions yet. No code was filled."
                 }
             } catch NativeCodeSetupError.notEnabled {
                 if revision == id {
                     diagnose(.providerDisabled, counts)
-                    status = enabled ? "Enable Textem Codes in System Settings → General → AutoFill & Passwords. Codes stay protected; native suggestions are not active." : "AutoFill verification codes are off. Saved codes and phone links were deleted, and macOS no longer suggests them."
+                    status = enabled ? "Turn on Textem Codes in System Settings → General → AutoFill & Passwords. Until then, codes stay protected and suggestions are not active." : "AutoFill verification codes are off. Saved codes and phone links were deleted, and macOS no longer suggests them."
                 }
             } catch {
                 if revision == id {
                     if case CodeVaultError.unavailable(let status) = error { counts.failure = Int(status) }
                     else if vaultRead { counts.failure = (error as NSError).code }
                     diagnose(vaultRead ? .publicationRefused : .vaultRefused, counts)
-                    status = "Native AutoFill update failed or protected storage is locked. No native suggestion success is claimed."
+                    status = "Textem couldn’t update AutoFill suggestions. Your keychain may be locked; suggestions may be out of date."
                 }
             }
         }
