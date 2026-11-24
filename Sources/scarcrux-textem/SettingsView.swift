@@ -138,6 +138,10 @@ struct SettingsView: View {
                     set: { enabled in Task { await appLock.setEnabled(enabled) } }
                 )).disabled(appLock.isAuthenticating)
                 if appLock.isEnabled {
+                    Toggle(isOn: $appLock.lockOnFocusLoss) {
+                        row("Lock immediately when I switch away",
+                            "Also locks when you minimize or close the Textem window.")
+                    }
                     Toggle("Lock after 5 minutes of inactivity in Textem", isOn: $appLock.lockWhenAway)
                 }
                 if appLock.authenticationFailed {

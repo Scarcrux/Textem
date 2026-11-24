@@ -6,6 +6,7 @@ import SwiftUI
 final class AppLock: ObservableObject {
     static let shared = AppLock()
     private static let enabledKey = "requireAppUnlock"
+    private static let focusKey = "lockOnFocusLoss"
     private static let awayKey = "lockWhenAway"
 
     @Published private(set) var isEnabled: Bool
@@ -17,6 +18,9 @@ final class AppLock: ObservableObject {
             defaults.set(lockWhenAway, forKey: Self.awayKey)
             scheduleAwayLock()
         }
+    }
+    @Published var lockOnFocusLoss: Bool {
+        didSet { defaults.set(lockOnFocusLoss, forKey: Self.focusKey) }
     }
     var onLockChanged: (() -> Void)?
 
@@ -42,6 +46,7 @@ final class AppLock: ObservableObject {
         let enabled = defaults.bool(forKey: Self.enabledKey)
         isEnabled = enabled
         isLocked = enabled
+        lockOnFocusLoss = defaults.bool(forKey: Self.focusKey)
         lockWhenAway = defaults.bool(forKey: Self.awayKey)
     }
 
@@ -88,7 +93,11 @@ final class AppLock: ObservableObject {
     func setAway(_ away: Bool) {
         guard away != isAway else { return }
         isAway = away
-        scheduleAwayLock()
+        if away && lockOnFocusLoss && isEnabled && !isLocked {
+            lock()
+        } else {
+            scheduleAwayLock()
+        }
     }
 
     func noteActivity() {

@@ -67,6 +67,26 @@ final class AppLockTests: XCTestCase {
         XCTAssertTrue(lock.isLocked)
     }
 
+    func testImmediateAwayLockIsOptInAndPersists() async throws {
+        let (defaults, suite) = try isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let lock = AppLock(defaults: defaults, authenticate: { _, _ in true })
+        await lock.setEnabled(true)
+        lock.setAway(true)
+        XCTAssertFalse(lock.isLocked)
+        lock.setAway(false)
+        lock.lockOnFocusLoss = true
+
+        let relaunched = AppLock(defaults: defaults, authenticate: { _, _ in true })
+        XCTAssertTrue(relaunched.lockOnFocusLoss)
+        let unlocked = await relaunched.unlock()
+        XCTAssertTrue(unlocked)
+        relaunched.setAway(true)
+        XCTAssertTrue(relaunched.isLocked)
+        relaunched.setAway(false)
+        XCTAssertTrue(relaunched.isLocked, "Focus returning must not unlock Textem")
+    }
+
     func testNotificationActionRequiresAnActualUnlock() async throws {
         let (defaults, suite) = try isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -111,7 +131,8 @@ final class AppLockTests: XCTestCase {
         let messages = controller.webViewController.view
         XCTAssertTrue(window.contentViewController === controller.webViewController)
         let unlockedSize = window.frame.size
-        lock.lock()
+        lock.lockOnFocusLoss = true
+        lock.setAway(true)
         XCTAssertEqual(window.frame.size, unlockedSize)
         XCTAssertNil(messages.window)
         XCTAssertEqual(window.title, "Textem — Locked")
