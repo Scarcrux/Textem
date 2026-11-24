@@ -53,6 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(lockForSessionChange(_:)),
             name: Notification.Name("com.apple.screenIsLocked"), object: nil, suspensionBehavior: .deliverImmediately)
+        NotificationCenter.default.addObserver(self, selector: #selector(mainWindowDidBecomeKey(_:)),
+            name: NSWindow.didBecomeKeyNotification, object: controller.window)
         NotificationCenter.default.addObserver(self, selector: #selector(mainWindowWillClose(_:)),
             name: NSWindow.willCloseNotification, object: controller.window)
         NotificationCenter.default.addObserver(self, selector: #selector(mainWindowWasMinimized(_:)),
@@ -137,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         // First-run: steer the user away from the passkey dead-end.
         launchFinished = true
+        offerUnlockForFocusedWindow()
         if !Preferences.hasSeenOnboarding && !appLock.isLocked {
             showOnboarding()
         } else {
@@ -209,6 +212,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     func applicationDidBecomeActive(_ notification: Notification) {
         appLock.setAway(windowController?.window?.isVisible != true || windowController?.window?.isMiniaturized == true)
+        offerUnlockForFocusedWindow()
+    }
+
+    @objc private func mainWindowDidBecomeKey(_ notification: Notification) {
+        if NSApp.isActive { appLock.setAway(false) }
+        offerUnlockForFocusedWindow()
+    }
+
+    private func offerUnlockForFocusedWindow() {
+        guard launchFinished, appLock.isLocked else { return }
+        Task { [weak self] in
+            guard let self, NSApp.isActive, let window = self.windowController?.window,
+                  window.isKeyWindow, window.isVisible, !window.isMiniaturized else { return }
+            await self.appLock.promptToUnlockOnFocus()
+        }
     }
 
     @objc private func mainWindowWillClose(_ notification: Notification) {

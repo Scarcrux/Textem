@@ -87,6 +87,38 @@ final class AppLockTests: XCTestCase {
         XCTAssertTrue(relaunched.isLocked, "Focus returning must not unlock Textem")
     }
 
+    func testFocusPromptsOnceAndRemainsLockedAfterCancellation() async throws {
+        let (defaults, suite) = try isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "requireAppUnlock")
+        var attempts = 0
+        var dialogTakesFocus: (() -> Void)?
+        let lock = AppLock(defaults: defaults, authenticate: { _, _ in
+            attempts += 1
+            dialogTakesFocus?()
+            return attempts == 2
+        })
+        lock.setAway(true)
+        await lock.promptToUnlockOnFocus()
+        XCTAssertEqual(attempts, 0)
+        lock.setAway(false)
+        dialogTakesFocus = {
+            lock.setAway(true)
+            lock.setAway(false)
+        }
+        await lock.promptToUnlockOnFocus()
+        dialogTakesFocus = nil
+        await lock.promptToUnlockOnFocus()
+        XCTAssertEqual(attempts, 1)
+        XCTAssertTrue(lock.isLocked)
+
+        lock.setAway(true)
+        lock.setAway(false)
+        await lock.promptToUnlockOnFocus()
+        XCTAssertEqual(attempts, 2)
+        XCTAssertFalse(lock.isLocked)
+    }
+
     func testNotificationActionRequiresAnActualUnlock() async throws {
         let (defaults, suite) = try isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }

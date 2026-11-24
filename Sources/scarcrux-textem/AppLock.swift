@@ -29,6 +29,7 @@ final class AppLock: ObservableObject {
     private let awayDelay: Duration
     private var context: LAContext?
     private var awayTask: Task<Void, Never>?
+    private var promptedDuringFocus = false
     private var isAway = false
     private var lastActivity = ContinuousClock.now
 
@@ -62,11 +63,17 @@ final class AppLock: ObservableObject {
     @discardableResult
     func unlock() async -> Bool {
         guard isLocked else { return true }
+        promptedDuringFocus = true
         guard await verify("Unlock Textem to see your messages.") else { return false }
         isLocked = false
         scheduleAwayLock()
         onLockChanged?()
         return true
+    }
+
+    func promptToUnlockOnFocus() async {
+        guard isLocked, !isAway, !promptedDuringFocus else { return }
+        await unlock()
     }
 
     func authorizeAction(asking requestUnlock: () async -> Bool) async -> Bool {
@@ -93,6 +100,8 @@ final class AppLock: ObservableObject {
     func setAway(_ away: Bool) {
         guard away != isAway else { return }
         isAway = away
+        // The system authentication dialog can temporarily take focus.
+        if away && !isAuthenticating { promptedDuringFocus = false }
         if away && lockOnFocusLoss && isEnabled && !isLocked {
             lock()
         } else {
@@ -155,7 +164,7 @@ struct AppLockView: View {
                 .foregroundStyle(Color.accentColor)
                 .accessibilityHidden(true)
             Text("Textem is locked").font(.title2.bold())
-            Text(lock.authenticationFailed ? "Textem couldn’t unlock. Try again." : "Unlock to see your messages.")
+            Text(lock.authenticationFailed ? "Textem couldn’t unlock. Try again." : "Use Touch ID or your Mac password to see your messages.")
                 .foregroundStyle(.secondary)
             Button(lock.isAuthenticating ? "Waiting for macOS…" : "Unlock", action: unlock)
                 .buttonStyle(.borderedProminent)
